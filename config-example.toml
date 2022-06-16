@@ -1,0 +1,31 @@
+########################################
+#                                      #
+#       rust-rxpy configuration        #
+#                                      #
+########################################
+
+##################################
+#         Global settings        #
+##################################
+
+## Address to listen to.
+listen_addresses = ['127.0.0.1:50844', '[::1]:50844']
+
+[tls]
+tls_cert_path = 'localhost.pem'
+tls_cert_key_path = 'localhost.pem'
+
+###################################
+#         Backend settings        #
+###################################
+[[backend]]
+domain = 'localhost'
+## List of destinations to send data to.
+## At this point, round-robin is used for load-balancing if multiple URLs are specified.
+destination = ['http://192.168.0.1:3000/', 'https://192.168.0.2:3000']
+allowhosts = ['127.0.0.1', '::1', '192.168.10.0/24']
+denyhosts = ['*']
+
+[[backend]]
+domain = '127.0.0.1'
+destination = 'https://www.google.com/'
