@@ -1,12 +1,12 @@
 use crate::{error::*, globals::Globals, log::*};
-
 use futures::{
   task::{Context, Poll},
   Future,
 };
-use hyper::http;
-use hyper::server::conn::Http;
-use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode};
+use hyper::{
+  client::connect::Connect, http, server::conn::Http, Body, Client, HeaderMap, Method, Request,
+  Response, StatusCode,
+};
 use std::{net::SocketAddr, pin::Pin, sync::Arc};
 use tokio::{
   io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -46,13 +46,20 @@ where
 }
 
 #[derive(Clone)]
-pub struct PacketAcceptor {
+pub struct PacketAcceptor<T>
+where
+  T: hyper::client::connect::Connect + Send + Sync + Clone + 'static,
+{
   pub listening_on: SocketAddr,
+  pub forwarder: Client<T>,
   pub globals: Arc<Globals>,
 }
 
 #[allow(clippy::type_complexity)]
-impl hyper::service::Service<http::Request<Body>> for PacketAcceptor {
+impl<T> hyper::service::Service<http::Request<Body>> for PacketAcceptor<T>
+where
+  T: Connect + Clone + Send + Sync + 'static,
+{
   type Response = Response<Body>;
 
   type Error = http::Error;
@@ -63,84 +70,114 @@ impl hyper::service::Service<http::Request<Body>> for PacketAcceptor {
   }
 
   fn call(&mut self, req: Request<Body>) -> Self::Future {
-    debug!("\nserve:{:?}\n{:?}", self.listening_on, req);
-    // let globals = &self.doh.globals;
-    // let self_inner = self.clone();
-    // if req.uri().path() == globals.path {
-    //   Box::pin(async move {
-    //     let mut subscriber = None;
-    //     if self_inner.doh.globals.enable_auth_target {
-    //       subscriber = match auth::authenticate(
-    //         &self_inner.doh.globals,
-    //         &req,
-    //         ValidationLocation::Target,
-    //         &self_inner.peer_addr,
-    //       ) {
-    //         Ok((sub, aud)) => {
-    //           debug!("Valid token or allowed ip: sub={:?}, aud={:?}", &sub, &aud);
-    //           sub
-    //         }
-    //         Err(e) => {
-    //           error!("{:?}", e);
-    //           return Ok(e);
-    //         }
-    //       };
-    //     }
-    //     match *req.method() {
-    //       Method::POST => self_inner.doh.serve_post(req, subscriber).await,
-    //       Method::GET => self_inner.doh.serve_get(req, subscriber).await,
-    //       _ => http_error(StatusCode::METHOD_NOT_ALLOWED),
-    //     }
-    //   })
-    // } else if req.uri().path() == globals.odoh_configs_path {
-    //   match *req.method() {
-    //     Method::GET => Box::pin(async move { self_inner.doh.serve_odoh_configs().await }),
-    //     _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
-    //   }
-    // } else {
-    //   #[cfg(not(feature = "odoh-proxy"))]
-    //   {
-    //     Box::pin(async { http_error(StatusCode::NOT_FOUND) })
-    //   }
-    //   #[cfg(feature = "odoh-proxy")]
-    //   {
-    //     if req.uri().path() == globals.odoh_proxy_path {
-    //       Box::pin(async move {
-    //         let mut subscriber = None;
-    //         if self_inner.doh.globals.enable_auth_proxy {
-    //           subscriber = match auth::authenticate(
-    //             &self_inner.doh.globals,
-    //             &req,
-    //             ValidationLocation::Proxy,
-    //             &self_inner.peer_addr,
-    //           ) {
-    //             Ok((sub, aud)) => {
-    //               debug!("Valid token or allowed ip: sub={:?}, aud={:?}", &sub, &aud);
-    //               sub
-    //             }
-    //             Err(e) => {
-    //               error!("{:?}", e);
-    //               return Ok(e);
-    //             }
-    //           };
-    //         }
-    //         // Draft:        https://datatracker.ietf.org/doc/html/draft-pauly-dprive-oblivious-doh-11
-    //         // Golang impl.: https://github.com/cloudflare/odoh-server-go
-    //         // Based on the draft and Golang implementation, only post method is allowed.
-    //         match *req.method() {
-    //           Method::POST => self_inner.doh.serve_odoh_proxy_post(req, subscriber).await,
-    //           _ => http_error(StatusCode::METHOD_NOT_ALLOWED),
-    //         }
-    //       })
-    //     } else {
-    Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+    debug!("\nserve: {:?}\n{:?}", self.listening_on, req);
+    let self_inner = self.clone();
+
+    // 1. check uri (domain queried host name)
+    // 2. build uri to forwarding target destination
+    // 3. build request from uri and body
+    // 4. send request to forwarding target
+
+    if *req.method() == Method::GET {
+      Box::pin(async move {
+        // let uri = req.uri();
+        let target_uri = hyper::Uri::builder()
+          .scheme("https")
+          .authority("www.google.com")
+          .path_and_query("/")
+          .build()
+          .unwrap();
+        println!("{:?}", target_uri);
+        match self_inner.forwarder.get(target_uri).await {
+          Ok(res) => Ok(res),
+          Err(e) => {
+            error!("{:?}", e);
+            http_error(StatusCode::INTERNAL_SERVER_ERROR)
+          }
+        }
+      })
+    } else {
+      // let globals = &self.doh.globals;
+      // let self_inner = self.clone();
+      // if req.uri().path() == globals.path {
+      //   Box::pin(async move {
+      //     let mut subscriber = None;
+      //     if self_inner.doh.globals.enable_auth_target {
+      //       subscriber = match auth::authenticate(
+      //         &self_inner.doh.globals,
+      //         &req,
+      //         ValidationLocation::Target,
+      //         &self_inner.peer_addr,
+      //       ) {
+      //         Ok((sub, aud)) => {
+      //           debug!("Valid token or allowed ip: sub={:?}, aud={:?}", &sub, &aud);
+      //           sub
+      //         }
+      //         Err(e) => {
+      //           error!("{:?}", e);
+      //           return Ok(e);
+      //         }
+      //       };
+      //     }
+      //     match *req.method() {
+      //       Method::POST => self_inner.doh.serve_post(req, subscriber).await,
+      //       Method::GET => self_inner.doh.serve_get(req, subscriber).await,
+      //       _ => http_error(StatusCode::METHOD_NOT_ALLOWED),
+      //     }
+      //   })
+      // } else if req.uri().path() == globals.odoh_configs_path {
+      //   match *req.method() {
+      //     Method::GET => Box::pin(async move { self_inner.doh.serve_odoh_configs().await }),
+      //     _ => Box::pin(async { http_error(StatusCode::METHOD_NOT_ALLOWED) }),
+      //   }
+      // } else {
+      //   #[cfg(not(feature = "odoh-proxy"))]
+      //   {
+      //     Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+      //   }
+      //   #[cfg(feature = "odoh-proxy")]
+      //   {
+      //     if req.uri().path() == globals.odoh_proxy_path {
+      //       Box::pin(async move {
+      //         let mut subscriber = None;
+      //         if self_inner.doh.globals.enable_auth_proxy {
+      //           subscriber = match auth::authenticate(
+      //             &self_inner.doh.globals,
+      //             &req,
+      //             ValidationLocation::Proxy,
+      //             &self_inner.peer_addr,
+      //           ) {
+      //             Ok((sub, aud)) => {
+      //               debug!("Valid token or allowed ip: sub={:?}, aud={:?}", &sub, &aud);
+      //               sub
+      //             }
+      //             Err(e) => {
+      //               error!("{:?}", e);
+      //               return Ok(e);
+      //             }
+      //           };
+      //         }
+      //         // Draft:        https://datatracker.ietf.org/doc/html/draft-pauly-dprive-oblivious-doh-11
+      //         // Golang impl.: https://github.com/cloudflare/odoh-server-go
+      //         // Based on the draft and Golang implementation, only post method is allowed.
+      //         match *req.method() {
+      //           Method::POST => self_inner.doh.serve_odoh_proxy_post(req, subscriber).await,
+      //           _ => http_error(StatusCode::METHOD_NOT_ALLOWED),
+      //         }
+      //       })
+      //     } else {
+      Box::pin(async { http_error(StatusCode::NOT_FOUND) })
+    }
     //     }
     // }
     // }
   }
 }
 
-impl PacketAcceptor {
+impl<T> PacketAcceptor<T>
+where
+  T: Connect + Clone + Send + Sync + 'static,
+{
   pub async fn client_serve<I>(self, stream: I, server: Http<LocalExecutor>, peer_addr: SocketAddr)
   where
     I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
