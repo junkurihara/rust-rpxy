@@ -19,11 +19,12 @@ impl Proxy {
       let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
       #[cfg(not(feature = "forward-hyper-trust-dns"))]
       let connector = hyper_tls::HttpsConnector::new();
+      let forwarder = Arc::new(Client::builder().build::<_, hyper::Body>(connector));
 
       let acceptor = PacketAcceptor {
         listening_on: addr,
         globals: self.globals.clone(),
-        forwarder: Client::builder().build::<_, hyper::Body>(connector),
+        forwarder,
       };
       self.globals.runtime_handle.spawn(acceptor.start())
     }));

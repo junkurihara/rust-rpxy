@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{future::FutureExt, join, select};
-use hyper::{client::connect::Connect, server::conn::Http};
+use hyper::client::connect::Connect;
+use hyper::server::conn::Http;
 use tokio::{
   net::TcpListener,
   sync::mpsc::{self, Receiver},
@@ -111,7 +112,7 @@ where
 
 impl<T> PacketAcceptor<T>
 where
-  T: Connect + Clone + Send + Sync + 'static,
+  T: Connect + Clone + Sync + Send + 'static,
 {
   async fn start_https_service(
     self,
