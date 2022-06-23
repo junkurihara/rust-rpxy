@@ -48,6 +48,7 @@ hyper-trust-dns = { version = "0.4.2", default-features = false, features = [
   "rustls-webpki",
 ], optional = true }
 hyper-tls = "0.5.0"
+rustls = "0.20.6"
 
 [dev-dependencies]
 

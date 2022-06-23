@@ -1,6 +1,4 @@
 use std::net::SocketAddr;
-#[cfg(feature = "tls")]
-use std::path::PathBuf;
 use std::sync::{
   atomic::{AtomicUsize, Ordering},
   Arc,
@@ -9,7 +7,9 @@ use tokio::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct Globals {
-  pub listen_addresses: Vec<SocketAddr>,
+  pub listen_sockets: Vec<SocketAddr>,
+  pub http_port: Option<u32>,
+  pub https_port: Option<u32>,
 
   pub timeout: Duration,
   pub max_clients: usize,
@@ -18,12 +18,6 @@ pub struct Globals {
   pub keepalive: bool,
 
   pub runtime_handle: tokio::runtime::Handle,
-
-  #[cfg(feature = "tls")]
-  pub tls_cert_path: Option<PathBuf>,
-
-  #[cfg(feature = "tls")]
-  pub tls_cert_key_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default)]

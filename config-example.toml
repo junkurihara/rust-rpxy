@@ -3,29 +3,36 @@
 #       rust-rxpy configuration        #
 #                                      #
 ########################################
-
-##################################
-#         Global settings        #
-##################################
-
-## Address to listen to.
-listen_addresses = ['127.0.0.1:50844', '[::1]:50844']
-
-[tls]
-tls_cert_path = 'localhost.pem'
-tls_cert_key_path = 'localhost.pem'
+###################################
+#         Global settings         #
+###################################
+http_port = 8080
+https_port = 8443
 
 ###################################
 #         Backend settings        #
 ###################################
-[[backend]]
-domain = 'localhost'
-## List of destinations to send data to.
-## At this point, round-robin is used for load-balancing if multiple URLs are specified.
-destination = ['http://192.168.0.1:3000/', 'https://192.168.0.2:3000']
-allowhosts = ['127.0.0.1', '::1', '192.168.10.0/24']
-denyhosts = ['*']
 
 [[backend]]
-domain = '127.0.0.1'
-destination = 'https://www.google.com/'
+app_name = 'localhost' # this should be option, if null then same as hostname
+hostname = 'localhost'
+redirect_to_https = true
+reverse_proxy = [
+  { path = '*', destination = 'https://192.168.10.0:3000' },
+  { path = '/path/to', destination = 'https://192.168.10.1:4000/path/to' },
+]
+## List of destinations to send data to.
+## At this point, round-robin is used for load-balancing if multiple URLs are specified.
+allowhosts = ['127.0.0.1', '::1', '192.168.10.0/24']
+denyhosts = ['*']
+tls_cert_path = 'localhost1.pem'
+tls_cert_key_path = 'localhost1.pem'
+
+
+[[backend]]
+app_name = 'locahost_application'
+hostname = 'localhost.localdomain'
+redirect_to_https = true
+reverse_proxy = [{ path = '/', destination = 'https://www.google.com/' }]
+tls_cert_path = 'localhost2.pem'
+tls_cert_key_path = 'localhost2.pem'
