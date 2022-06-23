@@ -8,7 +8,6 @@ mod error;
 mod globals;
 mod log;
 mod proxy;
-mod proxy_tls;
 
 use crate::{
   backend::Backend, config::parse_opts, constants::*, error::*, globals::*, log::*, proxy::Proxy,

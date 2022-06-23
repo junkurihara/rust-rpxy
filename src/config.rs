@@ -29,8 +29,8 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
   backends.insert(
     "localhost".to_string(),
     Backend {
-      app_name: "Google except for maps".to_string(),
-      hostname: "google.com".to_string(),
+      app_name: "Localhost to Google except for maps".to_string(),
+      hostname: "localhost".to_string(),
       reverse_proxy: ReverseProxy {
         default_destination_uri: "https://google.com/".parse::<Uri>().unwrap(),
         destination_uris: Some(map_example),

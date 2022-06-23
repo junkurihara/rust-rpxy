@@ -1,9 +1,5 @@
-use crate::{
-  constants::CERTS_WATCH_DELAY_SECS,
-  error::*,
-  log::*,
-  proxy::{LocalExecutor, Proxy},
-};
+use super::proxy_main::{LocalExecutor, Proxy};
+use crate::{constants::CERTS_WATCH_DELAY_SECS, error::*, log::*};
 use futures::{future::FutureExt, join, select};
 use hyper::{client::connect::Connect, server::conn::Http};
 use std::{sync::Arc, time::Duration};
@@ -43,8 +39,11 @@ where
 
             // First check SNI
             let rustls_acceptor = rustls::server::Acceptor::new().unwrap();
-            let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls_acceptor, raw_stream);
-            let start = acceptor.await.unwrap();
+            let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls_acceptor, raw_stream).await;
+            if acceptor.is_err() {
+              continue;
+            }
+            let start = acceptor.unwrap();
             let client_hello = start.client_hello();
             debug!("SNI in ClientHello: {:?}", client_hello.server_name());
             // Find server config for given SNI
