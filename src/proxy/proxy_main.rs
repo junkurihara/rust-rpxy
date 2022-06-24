@@ -1,7 +1,7 @@
 use super::proxy_handler::handle_request;
 use crate::{backend::Backend, error::*, globals::Globals, log::*};
 use hyper::{
-  client::connect::Connect, server::conn::Http, service::service_fn, Body, Client, Request,
+  client::connect::Connect, server::conn::Http, service::service_fn, Body, Client, Method, Request,
 };
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::{
@@ -65,7 +65,13 @@ where
         server.serve_connection(
           stream,
           service_fn(move |req: Request<Body>| {
-            handle_request(req, peer_addr, self.globals.clone())
+            handle_request(
+              req,
+              peer_addr,
+              self.tls_enabled,
+              self.globals.clone(),
+              self.backends.clone(),
+            )
           }),
         ),
       )
