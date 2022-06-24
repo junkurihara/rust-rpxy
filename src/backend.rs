@@ -12,7 +12,7 @@ pub struct Backend {
   pub app_name: String,
   pub hostname: String,
   pub reverse_proxy: ReverseProxy,
-  pub redirect_to_https: Option<bool>,
+  pub https_redirection: Option<bool>,
   pub tls_cert_path: Option<PathBuf>,
   pub tls_cert_key_path: Option<PathBuf>,
   pub server_config: Mutex<Option<ServerConfig>>,

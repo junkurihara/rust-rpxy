@@ -14,7 +14,6 @@ use crate::{
 };
 use futures::future::select_all;
 use hyper::Client;
-#[cfg(feature = "forward-hyper-trust-dns")]
 use hyper_trust_dns::TrustDnsResolver;
 use std::{collections::HashMap, io::Write, sync::Arc};
 use tokio::time::Duration;
@@ -40,7 +39,7 @@ fn main() {
 
   let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
   runtime_builder.enable_all();
-  runtime_builder.thread_name("rust-rpxy");
+  runtime_builder.thread_name("rpxy");
   let runtime = runtime_builder.build().unwrap();
 
   runtime.block_on(async {
@@ -69,10 +68,7 @@ fn main() {
 
 // entrypoint creates and spawns tasks of proxy services
 async fn entrypoint(globals: Arc<Globals>, backends: Arc<HashMap<String, Backend>>) -> Result<()> {
-  #[cfg(feature = "forward-hyper-trust-dns")]
   let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
-  #[cfg(not(feature = "forward-hyper-trust-dns"))]
-  let connector = hyper_tls::HttpsConnector::new();
   let forwarder = Arc::new(Client::builder().build::<_, hyper::Body>(connector));
 
   let addresses = globals.listen_sockets.clone();

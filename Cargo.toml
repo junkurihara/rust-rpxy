@@ -14,7 +14,6 @@ publish = false
 [features]
 default = ["tls"]
 tls = ["tokio-rustls", "rustls-pemfile"]
-forward-hyper-trust-dns = ["hyper-trust-dns"]
 
 [dependencies]
 anyhow = "1.0.57"
@@ -46,9 +45,9 @@ hyper-trust-dns = { version = "0.4.2", default-features = false, features = [
   "dnssec-ring",
   "dns-over-https-rustls",
   "rustls-webpki",
-], optional = true }
-hyper-tls = "0.5.0"
+] }
 rustls = "0.20.6"
+# phf = { version = "0.10", features = ["macros"] }
 
 [dev-dependencies]
 

@@ -24,7 +24,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
   let mut map_example: HashMap<String, Uri> = HashMap::new();
   map_example.insert(
     "/maps".to_string(),
-    "https://bing.com/".parse::<Uri>().unwrap(),
+    Uri::builder().authority("www.bing.com").build().unwrap(),
   );
   backends.insert(
     "localhost".to_string(),
@@ -32,10 +32,10 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
       app_name: "Localhost to Google except for maps".to_string(),
       hostname: "localhost".to_string(),
       reverse_proxy: ReverseProxy {
-        default_destination_uri: "https://google.com/".parse::<Uri>().unwrap(),
+        default_destination_uri: Uri::builder().authority("www.google.com").build().unwrap(),
         destination_uris: map_example,
       },
-      redirect_to_https: Some(true), // TODO: ここはtlsが存在する時はSomeにすべき。Noneはtlsがないときのみのはず
+      https_redirection: Some(true), // TODO: ここはtlsが存在する時はSomeにすべき。Noneはtlsがないときのみのはず
 
       tls_cert_path: Some(PathBuf::from(r"localhost1.pem")),
       tls_cert_key_path: Some(PathBuf::from(r"localhost1.pem")),
