@@ -33,7 +33,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
       hostname: "localhost".to_string(),
       reverse_proxy: ReverseProxy {
         default_destination_uri: "https://google.com/".parse::<Uri>().unwrap(),
-        destination_uris: Some(map_example),
+        destination_uris: map_example,
       },
       redirect_to_https: Some(true), // TODO: ここはtlsが存在する時はSomeにすべき。Noneはtlsがないときのみのはず
 

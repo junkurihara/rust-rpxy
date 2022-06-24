@@ -21,7 +21,7 @@ pub struct Backend {
 #[derive(Debug, Clone)]
 pub struct ReverseProxy {
   pub default_destination_uri: hyper::Uri,
-  pub destination_uris: Option<HashMap<String, hyper::Uri>>, // TODO: url pathで引っ掛ける。
+  pub destination_uris: HashMap<String, hyper::Uri>, // TODO: url pathで引っ掛ける。
 }
 
 impl Backend {

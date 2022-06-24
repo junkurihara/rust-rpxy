@@ -8,8 +8,8 @@ use tokio::time::Duration;
 #[derive(Debug, Clone)]
 pub struct Globals {
   pub listen_sockets: Vec<SocketAddr>,
-  pub http_port: Option<u32>,
-  pub https_port: Option<u32>,
+  pub http_port: Option<u16>,
+  pub https_port: Option<u16>,
 
   pub timeout: Duration,
   pub max_clients: usize,
