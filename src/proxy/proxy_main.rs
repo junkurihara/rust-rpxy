@@ -61,7 +61,6 @@ where
     self.globals.runtime_handle.clone().spawn(async move {
       tokio::time::timeout(
         self.globals.timeout + Duration::from_secs(1),
-        // server.serve_connection(stream, self),
         server.serve_connection(
           stream,
           service_fn(move |req: Request<Body>| self.clone().handle_request(req, peer_addr)),
@@ -71,6 +70,7 @@ where
       .ok();
 
       clients_count.decrement();
+      debug!("Client #: {}", clients_count.current());
     });
   }
 

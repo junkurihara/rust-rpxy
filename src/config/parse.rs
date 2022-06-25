@@ -32,10 +32,11 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
       app_name: "Localhost to Google except for maps".to_string(),
       hostname: "localhost".to_string(),
       reverse_proxy: ReverseProxy {
-        default_destination_uri: "https://www.google.com".parse::<Uri>().unwrap(),
+        // default_destination_uri: "http://www.google.com".parse::<Uri>().unwrap(),
+        default_destination_uri: "http://abehiroshi.la.coocan.jp/".parse::<Uri>().unwrap(), // httpのみの場合の好例
         destination_uris: map_example,
       },
-      https_redirection: Some(true), // TODO: ここはtlsが存在する時はSomeにすべき。Noneはtlsがないときのみのはず
+      https_redirection: Some(false), // TODO: ここはtlsが存在する時はSomeにすべき。Noneはtlsがないときのみのはず
 
       tls_cert_path: Some(PathBuf::from(r"localhost1.pem")),
       tls_cert_key_path: Some(PathBuf::from(r"localhost1.pem")),

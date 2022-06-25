@@ -4,7 +4,8 @@ use crate::{error::*, log::*};
 use hyper::{
   client::connect::Connect,
   header::{HeaderMap, HeaderValue},
-  Body, Request, Response, StatusCode, Uri,
+  http::uri::Scheme,
+  Body, Request, Response, StatusCode, Uri, Version,
 };
 use std::net::SocketAddr;
 use tokio::io::copy_bidirectional;
@@ -144,16 +145,6 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
 ) -> Result<Request<B>> {
   debug!("Generate request to be forwarded");
 
-  // update "host" key in request header
-  if req.headers().contains_key("host") {
-    // HTTP/1.1
-    req.headers_mut().insert(
-      "host",
-      HeaderValue::from_str(destination_scheme_host.host().unwrap())
-        .map_err(|_| anyhow!("Failed to insert destination host into forwarded request"))?,
-    );
-  }
-
   // Add te: trailer if contained in original request
   let te_trailer = {
     if let Some(te) = req.headers().get("te") {
@@ -178,6 +169,9 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
     headers.insert("te", "trailer".parse().unwrap());
   }
 
+  // Drop "host" key in request header to specify uri in absolute form
+  req.headers_mut().remove("host");
+
   // update uri in request
   *req.uri_mut() = Uri::builder()
     .scheme(destination_scheme_host.scheme().unwrap().as_str())
@@ -191,6 +185,11 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
     req
       .headers_mut()
       .insert("connection", HeaderValue::from_str("upgrade")?);
+  }
+
+  // Change version to http/1.1 when destination scheme is http
+  if req.version() != Version::HTTP_11 && destination_scheme_host.scheme() == Some(&Scheme::HTTP) {
+    *req.version_mut() = Version::HTTP_11;
   }
 
   Ok(req)
