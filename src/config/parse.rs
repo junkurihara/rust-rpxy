@@ -32,7 +32,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
       app_name: "Localhost to Google except for maps".to_string(),
       hostname: "localhost".to_string(),
       reverse_proxy: ReverseProxy {
-        // default_destination_uri: "http://www.google.com".parse::<Uri>().unwrap(),
+        // default_destination_uri: "https://www.google.com".parse::<Uri>().unwrap(),
         default_destination_uri: "http://abehiroshi.la.coocan.jp/".parse::<Uri>().unwrap(), // httpのみの場合の好例
         destination_uris: map_example,
       },

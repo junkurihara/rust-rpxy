@@ -16,8 +16,8 @@ default = ["tls"]
 tls = ["tokio-rustls", "rustls-pemfile"]
 
 [dependencies]
-anyhow = "1.0.57"
-clap = { version = "3.2.4", features = ["std", "cargo", "wrap_help"] }
+anyhow = "1.0.58"
+clap = { version = "3.2.6", features = ["std", "cargo", "wrap_help"] }
 env_logger = "0.9.0"
 futures = "0.3.21"
 hyper = { version = "0.14.19", default-features = false, features = [
@@ -47,7 +47,6 @@ hyper-trust-dns = { version = "0.4.2", default-features = false, features = [
   "rustls-webpki",
 ] }
 rustls = "0.20.6"
-# phf = { version = "0.10", features = ["macros"] }
 
 [dev-dependencies]
 
