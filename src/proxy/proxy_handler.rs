@@ -4,7 +4,6 @@ use crate::{error::*, log::*};
 use hyper::{
   client::connect::Connect,
   header::{HeaderMap, HeaderValue},
-  http::response,
   Body, Request, Response, StatusCode, Uri,
 };
 use std::net::SocketAddr;
@@ -115,8 +114,6 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
 ) -> Result<Request<B>> {
   debug!("Generate request to be forwarded");
 
-  // TODO: Transfer Encoding
-
   // update "host" key in request header
   if req.headers().contains_key("host") {
     // HTTP/1.1
@@ -127,6 +124,18 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
     );
   }
 
+  // Add te: trailer if contained in original request
+  let te_trailer = {
+    if let Some(te) = req.headers().get("te") {
+      te.to_str()
+        .unwrap()
+        .split(',')
+        .any(|x| x.trim() == "trailer")
+    } else {
+      false
+    }
+  };
+
   let headers = req.headers_mut();
   // delete headers specified in header.connection
   remove_connection_header(headers);
@@ -134,6 +143,10 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   remove_hop_header(headers);
   // X-Forwarded-For
   add_forwarding_header(headers, client_addr)?;
+  // Add te: trailer if te_trailer
+  if te_trailer {
+    headers.insert("te", "trailer".parse().unwrap());
+  }
 
   // update uri in request
   *req.uri_mut() = Uri::builder()
