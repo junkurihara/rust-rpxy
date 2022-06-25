@@ -1,9 +1,10 @@
-// Motivated by https://github.com/felipenoris/hyper-reverse-proxy
+// Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
 use super::Proxy;
 use crate::{error::*, log::*};
 use hyper::{
   client::connect::Connect,
   header::{HeaderMap, HeaderValue},
+  http::response,
   Body, Request, Response, StatusCode, Uri,
 };
 use std::net::SocketAddr;
@@ -77,19 +78,32 @@ where
     };
     debug!("Request to be forwarded: {:?}", req_forwarded);
 
-    // // Forward request to
-    // let res_backend = match self.forwarder.request(req_forwarded).await {
-    //   Ok(res) => res,
-    //   Err(e) => {
-    //     error!("Failed to get response from backend: {}", e);
-    //     return http_error(StatusCode::BAD_REQUEST);
-    //   }
-    // };
-    // debug!("Response from backend: {:?}", res_backend.status());
-    // Ok(res_backend)
+    // Forward request to
+    let mut res_backend = match self.forwarder.request(req_forwarded).await {
+      Ok(res) => res,
+      Err(e) => {
+        error!("Failed to get response from backend: {}", e);
+        return http_error(StatusCode::BAD_REQUEST);
+      }
+    };
+    debug!("Response from backend: {:?}", res_backend.status());
 
-    http_error(StatusCode::NOT_FOUND)
+    // TODO: Handle StatusCode::SWITCHING_PROTOCOLS
+
+    // Generate response to client
+    if generate_response_forwarded(&mut res_backend).is_ok() {
+      Ok(res_backend)
+    } else {
+      http_error(StatusCode::BAD_GATEWAY)
+    }
   }
+}
+
+fn generate_response_forwarded<B: core::fmt::Debug>(response: &mut Response<B>) -> Result<()> {
+  let headers = response.headers_mut();
+  remove_hop_header(headers);
+  remove_connection_header(headers);
+  Ok(())
 }
 
 fn generate_request_forwarded<B: core::fmt::Debug>(
