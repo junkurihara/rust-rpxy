@@ -1,10 +1,14 @@
 use crate::log::*;
+use rand::Rng;
 use std::{
   collections::HashMap,
   fs::File,
   io::{self, BufReader, Cursor, Read},
   path::PathBuf,
-  sync::Mutex,
+  sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+  },
 };
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
@@ -20,8 +24,58 @@ pub struct Backend {
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxy {
-  pub default_destination_uri: hyper::Uri,
-  pub destination_uris: HashMap<String, hyper::Uri>, // TODO: url pathで引っ掛ける。
+  pub default_upstream: Upstream,
+  pub upstream: HashMap<String, Upstream>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum LoadBalance {
+  RoundRobin,
+  Random,
+}
+impl Default for LoadBalance {
+  fn default() -> Self {
+    Self::RoundRobin
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct Upstream {
+  pub uri: Vec<hyper::Uri>,
+  pub lb: LoadBalance,
+  pub cnt: UpstreamCount, // counter for load balancing
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpstreamCount(Arc<AtomicUsize>);
+
+impl Upstream {
+  pub fn get(&self) -> Option<&hyper::Uri> {
+    match self.lb {
+      LoadBalance::RoundRobin => {
+        let idx = self.increment_cnt();
+        self.uri.get(idx)
+      }
+      LoadBalance::Random => {
+        let mut rng = rand::thread_rng();
+        let max = self.uri.len() - 1;
+        self.uri.get(rng.gen_range(0..max))
+      }
+    }
+  }
+
+  fn current_cnt(&self) -> usize {
+    self.cnt.0.load(Ordering::Relaxed)
+  }
+
+  fn increment_cnt(&self) -> usize {
+    if self.current_cnt() < self.uri.len() - 1 {
+      self.cnt.0.fetch_add(1, Ordering::Relaxed)
+    } else {
+      self.cnt.0.fetch_and(0, Ordering::Relaxed)
+    }
+  }
 }
 
 impl Backend {

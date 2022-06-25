@@ -14,13 +14,20 @@ https_port = 8443
 ###################################
 
 [[application]]
-app_name = 'localhost' # this should be option, if null then same as hostname
+app_name = 'localhost' # this should be option, if null then same as server_name
 hostname = 'localhost'
 https_redirection = true
 reverse_proxy = [
   # default destination if path is not specified
-  { destination = 'www.google.com', tls = true },
-  { destination = 'www.bing.com', path = '/maps', tls = true },
+  # TODO: Array for load balancing
+  { upstream = [
+    { location = 'www.google.com', tls = true },
+    { location = 'www.google.co.jp', tls = true },
+  ] },
+  { path = '/maps', upstream = [
+    { location = 'www.bing.com', tls = true },
+    { location = 'www.bing.co.jp', tls = true },
+  ] },
 ]
 ## List of destinations to send data to.
 ## At this point, round-robin is used for load-balancing if multiple URLs are specified.
@@ -34,6 +41,6 @@ tls_cert_key_path = 'localhost.pem'
 app_name = 'locahost_application'
 hostname = 'localhost.localdomain'
 https_redirection = true
-reverse_proxy = [{ destination = 'www.google.com', tls = true }]
+reverse_proxy = [{ upstream = [{ location = 'www.google.com', tls = true }] }]
 tls_cert_path = 'localhost.pem'
 tls_cert_key_path = 'localhost.pem'

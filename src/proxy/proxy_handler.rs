@@ -52,14 +52,18 @@ where
       return secure_redirection(&hostname, self.globals.https_port, &path_and_query);
     }
 
-    // Find reverse proxy for given path
+    // Find reverse proxy for given path and choose one of upstream host
     let path = req.uri().path();
-    let destination_scheme_host =
-      if let Some(uri) = backend.reverse_proxy.destination_uris.get(path) {
-        uri.to_owned()
-      } else {
-        backend.reverse_proxy.default_destination_uri.clone()
-      };
+    let upstream_uri = if let Some(upstream) = backend.reverse_proxy.upstream.get(path) {
+      upstream.get()
+    } else {
+      backend.reverse_proxy.default_upstream.get()
+    };
+    let upstream_scheme_host = if let Some(u) = upstream_uri {
+      u
+    } else {
+      return http_error(StatusCode::INTERNAL_SERVER_ERROR);
+    };
 
     // Upgrade in request header
     let upgrade_in_request = extract_upgrade(req.headers());
@@ -69,7 +73,7 @@ where
     let req_forwarded = if let Ok(req) = generate_request_forwarded(
       client_addr,
       req,
-      destination_scheme_host,
+      upstream_scheme_host,
       path_and_query,
       &upgrade_in_request,
     ) {
@@ -139,7 +143,7 @@ fn generate_response_forwarded<B: core::fmt::Debug>(response: &mut Response<B>) 
 fn generate_request_forwarded<B: core::fmt::Debug>(
   client_addr: SocketAddr,
   mut req: Request<B>,
-  destination_scheme_host: Uri,
+  upstream_scheme_host: &Uri,
   path_and_query: String,
   upgrade: &Option<String>,
 ) -> Result<Request<B>> {
@@ -174,8 +178,8 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
 
   // update uri in request
   *req.uri_mut() = Uri::builder()
-    .scheme(destination_scheme_host.scheme().unwrap().as_str())
-    .authority(destination_scheme_host.authority().unwrap().as_str())
+    .scheme(upstream_scheme_host.scheme().unwrap().as_str())
+    .authority(upstream_scheme_host.authority().unwrap().as_str())
     .path_and_query(&path_and_query)
     .build()?;
 
@@ -188,7 +192,7 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   }
 
   // Change version to http/1.1 when destination scheme is http
-  if req.version() != Version::HTTP_11 && destination_scheme_host.scheme() == Some(&Scheme::HTTP) {
+  if req.version() != Version::HTTP_11 && upstream_scheme_host.scheme() == Some(&Scheme::HTTP) {
     *req.version_mut() = Version::HTTP_11;
   }
 

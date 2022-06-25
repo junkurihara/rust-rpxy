@@ -21,10 +21,17 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
   globals.https_port = Some(HTTPS_LISTEN_PORT);
 
   // TODO:
-  let mut map_example: HashMap<String, Uri> = HashMap::new();
+  let mut map_example: HashMap<String, Upstream> = HashMap::new();
   map_example.insert(
     "/maps".to_string(),
-    "https://www.bing.com".parse::<Uri>().unwrap(),
+    Upstream {
+      uri: vec![
+        "https://www.bing.com".parse::<Uri>().unwrap(),
+        "https://www.bing.co.jp".parse::<Uri>().unwrap(),
+      ],
+      cnt: Default::default(),
+      lb: Default::default(),
+    },
   );
   backends.insert(
     "localhost".to_string(),
@@ -32,9 +39,16 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
       app_name: "Localhost to Google except for maps".to_string(),
       hostname: "localhost".to_string(),
       reverse_proxy: ReverseProxy {
-        // default_destination_uri: "https://www.google.com".parse::<Uri>().unwrap(),
-        default_destination_uri: "http://abehiroshi.la.coocan.jp/".parse::<Uri>().unwrap(), // httpのみの場合の好例
-        destination_uris: map_example,
+        default_upstream: Upstream {
+          uri: vec![
+            "https://www.google.com".parse::<Uri>().unwrap(),
+            "https://www.google.co.jp".parse::<Uri>().unwrap(),
+          ],
+          cnt: Default::default(),
+          lb: Default::default(),
+        },
+        // default_upstream_uri: vec!["http://abehiroshi.la.coocan.jp/".parse::<Uri>().unwrap()], // httpのみの場合の好例
+        upstream: map_example,
       },
       https_redirection: Some(false), // TODO: ここはtlsが存在する時はSomeにすべき。Noneはtlsがないときのみのはず
 
