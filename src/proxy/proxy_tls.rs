@@ -17,10 +17,10 @@ where
     let cert_service = async {
       info!("Start cert watch service for {}", self.listening_on);
       loop {
-        for (hostname, backend) in self.backends.iter() {
+        for (server_name, backend) in self.backends.iter() {
           if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
             if let Err(_e) = backend.update_server_config().await {
-              warn!("Failed to update certs for {}", hostname);
+              warn!("Failed to update certs for {}", server_name);
             }
           }
         }
@@ -59,9 +59,19 @@ where
               info!("No configuration for the server name {} given in client_hello", svn);
               continue;
             };
-            let server_config = backend_serve.get_tls_server_config();
+
+            if backend_serve.tls_cert_path.is_none() { // at least cert does exit
+              debug!("SNI indicates a site that doesn't support TLS.");
+              continue;
+            }
+            let server_config = if let Some(p) = backend_serve.get_tls_server_config(){
+              p
+            } else {
+              error!("Failed to load server config");
+              continue;
+            };
             // Finally serve the TLS connection
-            if let Ok(stream) = start.into_stream(Arc::new(server_config.unwrap())).await {
+            if let Ok(stream) = start.into_stream(Arc::new(server_config)).await {
               self.clone().client_serve(stream, server.clone(), _client_addr).await
             }
           }

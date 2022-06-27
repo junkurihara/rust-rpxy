@@ -57,7 +57,7 @@ fn main() {
 
     let mut backends: HashMap<String, Backend> = HashMap::new();
 
-    parse_opts(&mut globals, &mut backends);
+    let _ = parse_opts(&mut globals, &mut backends).expect("Invalid configuration");
 
     entrypoint(Arc::new(globals), Arc::new(backends))
       .await
@@ -77,8 +77,6 @@ async fn entrypoint(globals: Arc<Globals>, backends: Arc<HashMap<String, Backend
     if let Some(https_port) = globals.https_port {
       tls_enabled = https_port == (addr.port() as u16)
     }
-
-    info!("Listen address: {:?} (TLS = {})", addr, tls_enabled);
 
     let proxy = Proxy {
       globals: globals.clone(),

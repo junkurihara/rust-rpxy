@@ -14,17 +14,19 @@ use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
 pub struct Backend {
   pub app_name: String,
-  pub hostname: String,
+  pub server_name: String,
   pub reverse_proxy: ReverseProxy,
-  pub https_redirection: Option<bool>,
+
+  // tls settings
   pub tls_cert_path: Option<PathBuf>,
   pub tls_cert_key_path: Option<PathBuf>,
+  pub https_redirection: Option<bool>,
   pub server_config: Mutex<Option<ServerConfig>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxy {
-  pub default_upstream: Upstream,
+  pub default_upstream: Option<Upstream>,
   pub upstream: HashMap<String, Upstream>,
 }
 

@@ -32,14 +32,14 @@ where
     client_addr: SocketAddr, // アクセス制御用
   ) -> Result<Response<Body>> {
     debug!("Handling request: {:?}", req);
-    // Here we start to handle with hostname
-    // Find backend application for given hostname
-    let (hostname, _port) = if let Ok(v) = parse_host_port(&req, self.tls_enabled) {
+    // Here we start to handle with server_name
+    // Find backend application for given server_name
+    let (server_name, _port) = if let Ok(v) = parse_host_port(&req, self.tls_enabled) {
       v
     } else {
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     };
-    let backend = if let Some(be) = self.backends.get(hostname.as_str()) {
+    let backend = if let Some(be) = self.backends.get(server_name.as_str()) {
       be
     } else {
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
@@ -48,16 +48,19 @@ where
     // Redirect to https if tls_enabled is false and redirect_to_https is true
     let path_and_query = req.uri().path_and_query().unwrap().as_str().to_owned();
     if !self.tls_enabled && backend.https_redirection.unwrap_or(false) {
-      debug!("Redirect to secure connection: {}", hostname);
-      return secure_redirection(&hostname, self.globals.https_port, &path_and_query);
+      debug!("Redirect to secure connection: {}", server_name);
+      return secure_redirection(&server_name, self.globals.https_port, &path_and_query);
     }
 
     // Find reverse proxy for given path and choose one of upstream host
+    // TODO: More flexible path matcher
     let path = req.uri().path();
     let upstream_uri = if let Some(upstream) = backend.reverse_proxy.upstream.get(path) {
       upstream.get()
+    } else if let Some(default_upstream) = &backend.reverse_proxy.default_upstream {
+      default_upstream.get()
     } else {
-      backend.reverse_proxy.default_upstream.get()
+      return http_error(StatusCode::NOT_FOUND);
     };
     let upstream_scheme_host = if let Some(u) = upstream_uri {
       u
@@ -263,15 +266,15 @@ fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
 }
 
 fn secure_redirection(
-  hostname: &str,
+  server_name: &str,
   tls_port: Option<u16>,
   path_and_query: &str,
 ) -> Result<Response<Body>> {
   let dest_uri: String = if let Some(tls_port) = tls_port {
     if tls_port == 443 {
-      format!("https://{}{}", hostname, path_and_query)
+      format!("https://{}{}", server_name, path_and_query)
     } else {
-      format!("https://{}:{}{}", hostname, tls_port, path_and_query)
+      format!("https://{}:{}{}", server_name, tls_port, path_and_query)
     }
   } else {
     bail!("Internal error! TLS port is not set internally.");
@@ -285,15 +288,15 @@ fn secure_redirection(
 }
 
 fn parse_host_port(req: &Request<Body>, tls_enabled: bool) -> Result<(String, u16)> {
-  let hostname_port_headers = req.headers().get("host");
-  let hostname_uri = req.uri().host();
+  let host_port_headers = req.headers().get("host");
+  let host_uri = req.uri().host();
   let port_uri = req.uri().port_u16();
 
-  if hostname_port_headers.is_none() && hostname_uri.is_none() {
+  if host_port_headers.is_none() && host_uri.is_none() {
     bail!("No host in request header");
   }
 
-  let (hostname, port) = match (hostname_uri, hostname_port_headers) {
+  let (host, port) = match (host_uri, host_port_headers) {
     (Some(x), _) => {
       let port = if let Some(p) = port_uri {
         p
@@ -306,9 +309,9 @@ fn parse_host_port(req: &Request<Body>, tls_enabled: bool) -> Result<(String, u1
     }
     (None, Some(x)) => {
       let hp_as_uri = x.to_str().unwrap().parse::<Uri>().unwrap();
-      let hostname = hp_as_uri
+      let host = hp_as_uri
         .host()
-        .ok_or_else(|| anyhow!("Failed to parse hostname"))?;
+        .ok_or_else(|| anyhow!("Failed to parse host"))?;
       let port = if let Some(p) = hp_as_uri.port() {
         p.as_u16()
       } else if tls_enabled {
@@ -316,38 +319,12 @@ fn parse_host_port(req: &Request<Body>, tls_enabled: bool) -> Result<(String, u1
       } else {
         80
       };
-      (hostname.to_string(), port)
+      (host.to_string(), port)
     }
     (None, None) => {
       bail!("Host unspecified in request")
     }
   };
 
-  Ok((hostname, port))
+  Ok((host, port))
 }
-
-// fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
-//   #[allow(clippy::blocks_in_if_conditions)]
-//   if headers
-//     .get(&*CONNECTION_HEADER)
-//     .map(|value| {
-//       value
-//         .to_str()
-//         .unwrap()
-//         .split(',')
-//         .any(|e| e.trim() == *UPGRADE_HEADER)
-//     })
-//     .unwrap_or(false)
-//   {
-//     if let Some(upgrade_value) = headers.get(&*UPGRADE_HEADER) {
-//       debug!(
-//         "Found upgrade header with value: {}",
-//         upgrade_value.to_str().unwrap().to_owned()
-//       );
-
-//       return Some(upgrade_value.to_str().unwrap().to_owned());
-//     }
-//   }
-
-//   None
-// }

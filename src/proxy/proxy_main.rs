@@ -39,7 +39,7 @@ where
 {
   pub listening_on: SocketAddr,
   pub tls_enabled: bool,                       // TCP待受がTLSかどうか
-  pub backends: Arc<HashMap<String, Backend>>, // TODO: hyper::uriで抜いたhostnameで引っ掛ける。Stringでいいのか？
+  pub backends: Arc<HashMap<String, Backend>>, // TODO: hyper::uriで抜いたhostで引っ掛ける。Stringでいいのか？
   pub forwarder: Arc<Client<T>>,
   pub globals: Arc<Globals>,
 }

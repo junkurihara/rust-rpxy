@@ -48,6 +48,8 @@ hyper-trust-dns = { version = "0.4.2", default-features = false, features = [
 ] }
 rustls = "0.20.6"
 rand = "0.8.5"
+toml = "0.5.9"
+serde = { version = "1.0.137", features = ["derive"] }
 
 [dev-dependencies]
 
