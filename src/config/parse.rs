@@ -59,6 +59,14 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
     info!("Listen port: {} (for TLS)", globals.https_port.unwrap());
   }
 
+  // max values
+  if let Some(c) = config.max_clients {
+    globals.max_clients = c as usize;
+  }
+  if let Some(c) = config.max_concurrent_streams {
+    globals.max_concurrent_streams = c;
+  }
+
   // backend apps
   ensure!(config.apps.is_some(), "Missing application spec.");
   let apps = config.apps.unwrap();

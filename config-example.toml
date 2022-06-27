@@ -10,6 +10,9 @@
 listen_port = 8080
 listen_port_tls = 8443
 
+max_concurrent_streams = 128
+max_clients = 512
+
 ###################################
 #         Backend settings        #
 ###################################
