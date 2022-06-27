@@ -5,7 +5,7 @@ services:
     container_name: nginx-web
     restart: unless-stopped
     environment:
-      - VIRTUAL_HOST=localhost
+      - VIRTUAL_HOST="127.0.0.1"
       - VIRTUAL_PORT=80
     ports:
       - 127.0.0.1:8888:80
