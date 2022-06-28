@@ -10,6 +10,7 @@ pub struct ConfigToml {
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
   pub apps: Option<Apps>,
+  pub default_app: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]

@@ -5,6 +5,7 @@ listen_ipv6 = false
 max_concurrent_streams = 128
 max_clients = 512
 
+default_app = 'localhost' # passing through 127.0.0.1
 
 [apps]
 

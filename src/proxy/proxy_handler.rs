@@ -39,8 +39,11 @@ where
     } else {
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     };
-    let backend = if let Some(be) = self.backends.get(server_name.as_str()) {
+    let backend = if let Some(be) = self.backends.apps.get(server_name.as_str()) {
       be
+    } else if let Some(default_be) = &self.backends.default_app {
+      debug!("Serving by default app: {}", default_be);
+      self.backends.apps.get(default_be).unwrap()
     } else {
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     };

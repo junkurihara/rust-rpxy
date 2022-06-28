@@ -1,9 +1,9 @@
 // use super::proxy_handler::handle_request;
-use crate::{backend::Backend, error::*, globals::Globals, log::*};
+use crate::{backend::Backends, error::*, globals::Globals, log::*};
 use hyper::{
   client::connect::Connect, server::conn::Http, service::service_fn, Body, Client, Request,
 };
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{
   io::{AsyncRead, AsyncWrite},
   net::TcpListener,
@@ -38,8 +38,8 @@ where
   T: Connect + Clone + Sync + Send + 'static,
 {
   pub listening_on: SocketAddr,
-  pub tls_enabled: bool,                       // TCP待受がTLSかどうか
-  pub backends: Arc<HashMap<String, Backend>>, // TODO: hyper::uriで抜いたhostで引っ掛ける。Stringでいいのか？
+  pub tls_enabled: bool, // TCP待受がTLSかどうか
+  pub backends: Arc<Backends>,
   pub forwarder: Arc<Client<T>>,
   pub globals: Arc<Globals>,
 }

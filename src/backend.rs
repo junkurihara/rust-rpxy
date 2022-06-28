@@ -12,6 +12,11 @@ use std::{
 };
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
+pub struct Backends {
+  pub apps: HashMap<String, Backend>, // TODO: hyper::uriで抜いたhostで引っ掛ける。Stringでいいのか？
+  pub default_app: Option<String>,    // for plaintext http
+}
+
 pub struct Backend {
   pub app_name: String,
   pub server_name: String,

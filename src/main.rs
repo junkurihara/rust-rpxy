@@ -10,7 +10,13 @@ mod log;
 mod proxy;
 
 use crate::{
-  backend::Backend, config::parse_opts, constants::*, error::*, globals::*, log::*, proxy::Proxy,
+  backend::{Backend, Backends},
+  config::parse_opts,
+  constants::*,
+  error::*,
+  globals::*,
+  log::*,
+  proxy::Proxy,
 };
 use futures::future::select_all;
 use hyper::Client;
@@ -55,7 +61,10 @@ fn main() {
       runtime_handle: runtime.handle().clone(),
     };
 
-    let mut backends: HashMap<String, Backend> = HashMap::new();
+    let mut backends = Backends {
+      default_app: None,
+      apps: HashMap::<String, Backend>::new(),
+    };
 
     let _ = parse_opts(&mut globals, &mut backends).expect("Invalid configuration");
 
@@ -67,7 +76,7 @@ fn main() {
 }
 
 // entrypoint creates and spawns tasks of proxy services
-async fn entrypoint(globals: Arc<Globals>, backends: Arc<HashMap<String, Backend>>) -> Result<()> {
+async fn entrypoint(globals: Arc<Globals>, backends: Arc<Backends>) -> Result<()> {
   let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
   let forwarder = Arc::new(Client::builder().build::<_, hyper::Body>(connector));
 

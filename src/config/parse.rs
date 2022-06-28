@@ -7,7 +7,7 @@ use std::{collections::HashMap, sync::Mutex};
 // #[cfg(feature = "tls")]
 use std::path::PathBuf;
 
-pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>) -> Result<()> {
+pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> {
   let _ = include_str!("../../Cargo.toml");
   let options = clap::command!().arg(
     Arg::new("config_file")
@@ -110,7 +110,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
     ensure!(app.reverse_proxy.is_some(), "Missing reverse_proxy");
     let reverse_proxy = get_reverse_proxy(app.reverse_proxy.as_ref().unwrap())?;
 
-    backends.insert(
+    backends.apps.insert(
       server_name.to_owned(),
       Backend {
         app_name: app_name.to_owned(),
@@ -125,6 +125,18 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
     );
     info!("Registering application: {} ({})", app_name, server_name);
   }
+
+  // default backend application for plaintext http requests
+  if let Some(d) = config.default_app {
+    if backends.apps.contains_key(&d) {
+      info!(
+        "Serving plaintext http for requests to unconfigured server_name: {}.",
+        d
+      );
+    }
+    backends.default_app = Some(d);
+  }
+
   Ok(())
 }
 

@@ -15,6 +15,13 @@ max_clients = 512
 
 listen_ipv6 = false
 
+# App that serves all plaintext http request by referring to HOSTS or request header
+# execpt for configured application.
+# Note that this is only for http.
+# Note that nothing is served for requests via https since secure channel cannot be
+# established for unconfigured server_name, and they are always rejected by checking SNI.
+default_app = 'another_localhost'
+
 ###################################
 #         Backend settings        #
 ###################################

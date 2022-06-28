@@ -17,7 +17,7 @@ where
     let cert_service = async {
       info!("Start cert watch service for {}", self.listening_on);
       loop {
-        for (server_name, backend) in self.backends.iter() {
+        for (server_name, backend) in self.backends.apps.iter() {
           if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
             if let Err(_e) = backend.update_server_config().await {
               warn!("Failed to update certs for {}", server_name);
@@ -53,7 +53,7 @@ where
               info!("No SNI in ClientHello");
               continue;
             };
-            let backend_serve = if let Some(backend_serve) = self.backends.get(svn){
+            let backend_serve = if let Some(backend_serve) = self.backends.apps.get(svn){
               backend_serve
             } else {
               info!("No configuration for the server name {} given in client_hello", svn);
