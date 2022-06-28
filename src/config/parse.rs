@@ -128,13 +128,19 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
 
   // default backend application for plaintext http requests
   if let Some(d) = config.default_app {
-    if backends.apps.contains_key(&d) {
+    let d_sn: Vec<&str> = backends
+      .apps
+      .iter()
+      .filter(|(_k, v)| v.app_name == d)
+      .map(|(_, v)| v.server_name.as_ref())
+      .collect();
+    if !d_sn.is_empty() {
       info!(
-        "Serving plaintext http for requests to unconfigured server_name: {}.",
-        d
+        "Serving plaintext http for requests to unconfigured server_name by app {} (server_name: {}).",
+        d, d_sn[0]
       );
+      backends.default_app = Some(d_sn[0].to_owned());
     }
-    backends.default_app = Some(d);
   }
 
   Ok(())
