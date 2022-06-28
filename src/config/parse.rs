@@ -1,8 +1,9 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
 use crate::{backend::*, constants::*, error::*, globals::*, log::*};
 use clap::Arg;
+use parking_lot::Mutex;
+use rustc_hash::FxHashMap as HashMap;
 use std::net::SocketAddr;
-use std::{collections::HashMap, sync::Mutex};
 
 // #[cfg(feature = "tls")]
 use std::path::PathBuf;
@@ -147,7 +148,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
 }
 
 fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> Result<ReverseProxy> {
-  let mut upstream: HashMap<String, Upstream> = HashMap::new();
+  let mut upstream: HashMap<String, Upstream> = HashMap::default();
   let mut default_upstream: Option<Upstream> = None;
   rp_settings.iter().for_each(|rpo| {
     let elem = Upstream {

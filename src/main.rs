@@ -1,5 +1,6 @@
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod backend;
 mod config;
@@ -21,7 +22,8 @@ use crate::{
 use futures::future::select_all;
 use hyper::Client;
 // use hyper_trust_dns::TrustDnsResolver;
-use std::{collections::HashMap, io::Write, sync::Arc};
+use rustc_hash::FxHashMap as HashMap;
+use std::{io::Write, sync::Arc};
 use tokio::time::Duration;
 
 fn main() {
@@ -63,7 +65,7 @@ fn main() {
 
     let mut backends = Backends {
       default_app: None,
-      apps: HashMap::<String, Backend>::new(),
+      apps: HashMap::<String, Backend>::default(),
     };
 
     let _ = parse_opts(&mut globals, &mut backends).expect("Invalid configuration");

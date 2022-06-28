@@ -1,6 +1,7 @@
 use crate::error::*;
+use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
-use std::{collections::HashMap, fs};
+use std::fs;
 
 #[derive(Deserialize, Debug, Default)]
 pub struct ConfigToml {

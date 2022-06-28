@@ -1,13 +1,14 @@
 use crate::log::*;
+use parking_lot::Mutex;
 use rand::Rng;
+use rustc_hash::FxHashMap as HashMap;
 use std::{
-  collections::HashMap,
   fs::File,
   io::{self, BufReader, Cursor, Read},
   path::PathBuf,
   sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc,
   },
 };
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
@@ -88,11 +89,9 @@ impl Upstream {
 impl Backend {
   pub fn get_tls_server_config(&self) -> Option<ServerConfig> {
     let lock = self.server_config.lock();
-    if let Ok(opt) = lock {
-      let opt_clone = opt.clone();
-      if let Some(sc) = opt_clone {
-        return Some(sc);
-      }
+    let opt_clone = lock.clone();
+    if let Some(sc) = opt_clone {
+      return Some(sc);
     }
     None
   }
@@ -183,11 +182,8 @@ impl Backend {
       })?;
     server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
-    if let Ok(mut config_store) = self.server_config.lock() {
-      *config_store = Some(server_config);
-    } else {
-      error!("Some thing wrong to write into mutex")
-    }
+    let mut config_store = self.server_config.lock();
+    *config_store = Some(server_config);
 
     // server_config;
     Ok(())
