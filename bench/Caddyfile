@@ -1,0 +1,10 @@
+{
+  auto_https off
+}
+
+:80 {
+
+	# Proxy everything else to Rocket
+	reverse_proxy backend-nginx
+
+}
