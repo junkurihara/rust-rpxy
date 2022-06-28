@@ -24,14 +24,14 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
   curl -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain stable && \
   export PATH="$HOME/.cargo/bin:$PATH" && \
   echo "Building rpxy from source" && \
-  cargo build --release --no-default-features && \
+  cargo build --release && \
   mkdir -p /opt/rpxy/sbin && \
-  mv /tmp/target/release/rpxy /opt/rpxy/sbin/ && \
+  mv /tmp/target/release/rust-rpxy /opt/rpxy/sbin/rpxy && \
   strip --strip-all /opt/rpxy/sbin/rpxy && \
   apt-get -qy purge $BUILD_DEPS && apt-get -qy autoremove && \
   rm -fr ~/.cargo ~/.rustup && \
-  rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log
-rm -fr ~/.cargo ~/.rustup && \
+  rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log &&\
+  rm -fr ~/.cargo ~/.rustup && \
   rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log
 
 COPY docker-bin/run.sh /

@@ -38,8 +38,13 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut HashMap<String, Backend>
     },
     anyhow!("Wrong port spec.")
   );
-  globals.listen_sockets = LISTEN_ADDRESSES
-    .to_vec()
+  let mut listen_addresses: Vec<&str> = LISTEN_ADDRESSES_V4.to_vec();
+  if let Some(v) = config.listen_ipv6 {
+    if v {
+      listen_addresses.extend(LISTEN_ADDRESSES_V6.iter());
+    }
+  }
+  globals.listen_sockets = listen_addresses
     .iter()
     .flat_map(|x| {
       let mut v: Vec<SocketAddr> = vec![];

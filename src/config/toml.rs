@@ -6,6 +6,7 @@ use std::{collections::HashMap, fs};
 pub struct ConfigToml {
   pub listen_port: Option<u16>,
   pub listen_port_tls: Option<u16>,
+  pub listen_ipv6: Option<bool>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
   pub apps: Option<Apps>,

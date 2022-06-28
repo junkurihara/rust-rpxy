@@ -15,13 +15,31 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      bench-nw:
+        ipv4_address: 192.168.100.100
+
+  rpxy-rp:
+    image: jqtype/rpxy
+    container_name: proxy-rpxy
+    build:
+      context: ../
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8080:8080
+    tty: false
+    privileged: true
+    volumes:
+      - ./rpxy.toml:/etc/rpxy.toml:ro
+    networks:
+      bench-nw:
 
   nginx-rp:
     image: jwilder/nginx-proxy:alpine
     container_name: proxy-nginx
     ports:
       - 127.0.0.1:8090:80
-    restart: always
+    restart: unless-stopped
     tty: false
     privileged: true
     volumes:
@@ -30,6 +48,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      bench-nw:
 
   caddy-rp:
     image: caddy:2
@@ -40,3 +60,14 @@ services:
     tty: false
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      bench-nw:
+
+networks:
+  bench-nw:
+    name: bench-nw
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.100.0/24
