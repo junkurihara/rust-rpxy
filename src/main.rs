@@ -20,7 +20,7 @@ use crate::{
 };
 use futures::future::select_all;
 use hyper::Client;
-use hyper_trust_dns::TrustDnsResolver;
+// use hyper_trust_dns::TrustDnsResolver;
 use std::{collections::HashMap, io::Write, sync::Arc};
 use tokio::time::Duration;
 
@@ -77,7 +77,13 @@ fn main() {
 
 // entrypoint creates and spawns tasks of proxy services
 async fn entrypoint(globals: Arc<Globals>, backends: Arc<Backends>) -> Result<()> {
-  let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
+  // let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
+  let connector = hyper_rustls::HttpsConnectorBuilder::new()
+    .with_webpki_roots()
+    .https_or_http()
+    .enable_http1()
+    .enable_http2()
+    .build();
   let forwarder = Arc::new(Client::builder().build::<_, hyper::Body>(connector));
 
   let addresses = globals.listen_sockets.clone();

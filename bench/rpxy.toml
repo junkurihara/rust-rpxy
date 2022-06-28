@@ -14,5 +14,6 @@ server_name = 'localhost'
 reverse_proxy = [
   # default destination if path is not specified
   # Array for load balancing
-  { upstream = [{ location = '192.168.100.100', tls = false }] },
+  { upstream = [{ location = 'backend-nginx', tls = false }] },
+  # { upstream = [{ location = '192.168.100.100', tls = false }] },
 ]
