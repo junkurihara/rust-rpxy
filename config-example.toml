@@ -10,12 +10,14 @@
 listen_port = 8080
 listen_port_tls = 8443
 
+# Optional
 max_concurrent_streams = 128
 max_clients = 512
 
+# Optional: Listen [::]
 listen_ipv6 = false
 
-# App that serves all plaintext http request by referring to HOSTS or request header
+# Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # execpt for configured application.
 # Note that this is only for http.
 # Note that nothing is served for requests via https since secure channel cannot be
@@ -41,6 +43,7 @@ reverse_proxy = [
     { location = 'www.bing.co.jp', tls = true },
   ] },
 ]
+# Optional: TLS setting. if https_port is specified and tls is true above, this must be given.
 tls = { https_redirection = true, tls_cert_path = 'localhost.pem', tls_cert_key_path = 'localhost.pem' }
 
 
