@@ -48,14 +48,6 @@ hyper-rustls = { version = "0.23.0", default-features = false, features = [
   "http2",
 ] }
 parking_lot = "0.12.1"
-# hyper-trust-dns = { version = "0.4.2", default-features = false, features = [
-#   "rustls-http2",
-#   "dnssec-ring",
-#   "dns-over-https-rustls",
-#   "rustls-webpki",
-#   "rustls-native",
-#   "native-tls",
-# ] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5.0"
