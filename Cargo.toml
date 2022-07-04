@@ -12,7 +12,8 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = []
+default = ["h3"]
+h3 = ["quinn"]
 
 [dependencies]
 anyhow = "1.0.58"
@@ -26,7 +27,7 @@ hyper = { version = "0.14.19", default-features = false, features = [
   "stream",
 ] }
 log = "0.4.17"
-tokio = { version = "1.19.2", features = [
+tokio = { version = "1.19.2", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "parking_lot",
@@ -48,6 +49,10 @@ hyper-rustls = { version = "0.23.0", default-features = false, features = [
   "http2",
 ] }
 parking_lot = "0.12.1"
+quinn = { version = "0.8.3", optional = true }
+h3 = { git = "https://github.com/hyperium/h3.git" }
+h3-quinn = { git = "https://github.com/hyperium/h3.git" }
+bytes = "1.1.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5.0"

@@ -180,7 +180,20 @@ impl Backend {
           "Unable to find a valid certificate and key",
         )
       })?;
-    server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    #[cfg(feature = "h3")]
+    {
+      server_config.alpn_protocols = vec![
+        b"h3".to_vec(),
+        b"hq-29".to_vec(), // quinn draft example TODO: remove later
+        b"h2".to_vec(),
+        b"http/1.1".to_vec(),
+      ];
+    }
+    #[cfg(not(feature = "h3"))]
+    {
+      server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    }
 
     let mut config_store = self.server_config.lock();
     *config_store = Some(server_config);

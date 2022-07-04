@@ -74,13 +74,14 @@ where
     });
   }
 
-  async fn start_without_tls(
-    self,
-    listener: TcpListener,
-    server: Http<LocalExecutor>,
-  ) -> Result<()> {
+  async fn start_without_tls(self, server: Http<LocalExecutor>) -> Result<()> {
     let listener_service = async {
-      while let Ok((stream, _client_addr)) = listener.accept().await {
+      let tcp_listener = TcpListener::bind(&self.listening_on).await?;
+      info!(
+        "Start TCP proxy serving with HTTP request for configured host names: {:?}",
+        tcp_listener.local_addr()?
+      );
+      while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
         self
           .clone()
           .client_serve(stream, server.clone(), _client_addr)
@@ -93,8 +94,6 @@ where
   }
 
   pub async fn start(self) -> Result<()> {
-    let tcp_listener = TcpListener::bind(&self.listening_on).await?;
-
     let mut server = Http::new();
     server.http1_keep_alive(self.globals.keepalive);
     server.http2_max_concurrent_streams(self.globals.max_concurrent_streams);
@@ -103,18 +102,10 @@ where
     let server = server.with_executor(executor);
 
     if self.tls_enabled {
-      info!(
-        "Start TCP proxy serving with HTTPS request for configured host names: {:?}",
-        tcp_listener.local_addr()?
-      );
       // #[cfg(feature = "tls")]
-      self.start_with_tls(tcp_listener, server).await?;
+      self.start_with_tls(server).await?;
     } else {
-      info!(
-        "Start TCP proxy serving with HTTP request for configured host names: {:?}",
-        tcp_listener.local_addr()?
-      );
-      self.start_without_tls(tcp_listener, server).await?;
+      self.start_without_tls(server).await?;
     }
 
     Ok(())

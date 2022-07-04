@@ -16,6 +16,7 @@ max_clients = 512
 
 # Optional: Listen [::]
 listen_ipv6 = false
+listen_only_ipv6 = false
 
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # execpt for configured application.

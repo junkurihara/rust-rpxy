@@ -200,6 +200,9 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   // Change version to http/1.1 when destination scheme is http
   if req.version() != Version::HTTP_11 && upstream_scheme_host.scheme() == Some(&Scheme::HTTP) {
     *req.version_mut() = Version::HTTP_11;
+  } else if req.version() == Version::HTTP_3 {
+    debug!("HTTP/3 is currently unsupported for request to upstream. Use HTTP/2.");
+    *req.version_mut() = Version::HTTP_2;
   }
 
   Ok(req)
@@ -290,7 +293,10 @@ fn secure_redirection(
   Ok(response)
 }
 
-fn parse_host_port(req: &Request<Body>, tls_enabled: bool) -> Result<(String, u16)> {
+fn parse_host_port<B: core::fmt::Debug>(
+  req: &Request<B>,
+  tls_enabled: bool,
+) -> Result<(String, u16)> {
   let host_port_headers = req.headers().get("host");
   let host_uri = req.uri().host();
   let port_uri = req.uri().port_u16();
