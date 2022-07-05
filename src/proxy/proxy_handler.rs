@@ -249,7 +249,7 @@ fn remove_connection_header(headers: &mut HeaderMap) {
 }
 
 fn remove_hop_header(headers: &mut HeaderMap) {
-  let _ = HOP_HEADERS.iter().for_each(|key| {
+  HOP_HEADERS.iter().for_each(|key| {
     headers.remove(*key);
   });
 }

@@ -39,20 +39,11 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
     },
     anyhow!("Wrong port spec.")
   );
-  let mut listen_addresses: Vec<&str> = Vec::new();
-  if let Some(v) = config.listen_only_ipv6 {
-    if v {
-      listen_addresses.extend(LISTEN_ADDRESSES_V6.iter());
-    } else {
-      listen_addresses.extend(LISTEN_ADDRESSES_V4.iter());
-    }
-  } else if let Some(v) = config.listen_ipv6 {
-    listen_addresses.extend(LISTEN_ADDRESSES_V4.iter());
+  let mut listen_addresses: Vec<&str> = LISTEN_ADDRESSES_V4.to_vec();
+  if let Some(v) = config.listen_ipv6 {
     if v {
       listen_addresses.extend(LISTEN_ADDRESSES_V6.iter());
     }
-  } else {
-    listen_addresses.extend(LISTEN_ADDRESSES_V4.iter());
   }
   globals.listen_sockets = listen_addresses
     .iter()

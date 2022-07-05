@@ -19,7 +19,7 @@ where
         for (server_name, backend) in self.backends.apps.iter() {
           if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
             if let Err(_e) = backend.update_server_config().await {
-              warn!("Failed to update certs for {}", server_name);
+              warn!("Failed to update certs for {}: {}", server_name, _e);
             }
           }
         }

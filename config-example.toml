@@ -16,7 +16,6 @@ max_clients = 512
 
 # Optional: Listen [::]
 listen_ipv6 = false
-listen_only_ipv6 = false
 
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # execpt for configured application.
@@ -45,7 +44,7 @@ reverse_proxy = [
   ] },
 ]
 # Optional: TLS setting. if https_port is specified and tls is true above, this must be given.
-tls = { https_redirection = true, tls_cert_path = '/tmp/localhost.pem', tls_cert_key_path = '/tmp/localhost.pem' }
+tls = { https_redirection = true, tls_cert_path = 'localhost.pem', tls_cert_key_path = 'localhost.pem' }
 
 
 ## List of destinations to send data to.

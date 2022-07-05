@@ -69,7 +69,7 @@ fn main() {
       apps: HashMap::<String, Backend>::default(),
     };
 
-    let _ = parse_opts(&mut globals, &mut backends).expect("Invalid configuration");
+    parse_opts(&mut globals, &mut backends).expect("Invalid configuration");
 
     entrypoint(Arc::new(globals), Arc::new(backends))
       .await
