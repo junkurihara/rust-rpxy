@@ -55,3 +55,9 @@ tls = { https_redirection = true, tls_cert_path = 'localhost.pem', tls_cert_key_
 [apps.another_localhost]
 server_name = 'localhost.localdomain'
 reverse_proxy = [{ upstream = [{ location = 'www.google.com', tls = true }] }]
+
+###################################
+#      Experimantal settings      #
+###################################
+[experimental]
+h3 = true

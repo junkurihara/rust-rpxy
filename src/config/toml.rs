@@ -13,6 +13,12 @@ pub struct ConfigToml {
   pub max_clients: Option<u32>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
+  pub experimental: Option<Experimental>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct Experimental {
+  pub h3: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Default)]

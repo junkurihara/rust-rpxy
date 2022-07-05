@@ -151,6 +151,16 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
     }
   }
 
+  // experimental
+  if let Some(exp) = config.experimental {
+    if let Some(b) = exp.h3 {
+      globals.http3 = b;
+      if b {
+        info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.")
+      }
+    }
+  }
+
   Ok(())
 }
 
