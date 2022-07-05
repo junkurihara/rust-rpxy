@@ -5,12 +5,12 @@ services:
     container_name: rpxy
     restart: unless-stopped
     ports:
-      - 127.0.0.1:8080:80
-      - 127.0.0.1:8443:443
+      - 127.0.0.1:8080:8080
+      - 127.0.0.1:8443:8443
     build:
       context: ./
     tty: false
     privileged: true
     volumes:
-      - ./localhost.pem:/localhost.pem:ro
+      - ./localhost.pem:/tmp/localhost.pem:ro
       - ./config-example.toml:/etc/rpxy.toml:ro
