@@ -100,10 +100,12 @@ where
     };
     #[cfg(feature = "h3")]
     {
-      if let Some(port) = self.globals.https_port {
-        res_backend
-          .headers_mut()
-          .insert("alt-svc", format!("h3=\":{}\"", port).parse().unwrap());
+      if self.globals.http3 {
+        if let Some(port) = self.globals.https_port {
+          res_backend
+            .headers_mut()
+            .insert("alt-svc", format!("h3=\":{}\"", port).parse().unwrap());
+        }
       }
     }
     debug!("Response from backend: {:?}", res_backend.status());

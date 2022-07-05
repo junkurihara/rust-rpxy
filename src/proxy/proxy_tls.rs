@@ -91,14 +91,20 @@ where
         .collect();
       ensure!(!tls_app_names.is_empty(), "No TLS supported app");
       let initial_app_name = tls_app_names.get(0).unwrap().as_str();
-      info!("Initial app_name: {}", initial_app_name);
+      debug!(
+        "HTTP/3 SNI multiplexer initial app_name: {}",
+        initial_app_name
+      );
       let backend_serve = self.backends.apps.get(initial_app_name).unwrap();
       let server_crypto = backend_serve.get_tls_server_config().unwrap();
       let server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
 
       let (endpoint, incoming) =
         quinn::Endpoint::server(server_config_h3, self.listening_on).unwrap();
-      debug!("HTTP/3 UDP listening on {}", endpoint.local_addr().unwrap());
+      info!(
+        "Start UDP proxy serving with HTTP/3 request for configured host names: {:?}",
+        endpoint.local_addr()?
+      );
 
       let mut p = incoming.peekable();
       loop {
@@ -156,7 +162,11 @@ where
     }
     #[cfg(feature = "h3")]
     {
-      join!(listener_service, cert_service, listener_service_h3).0
+      if self.globals.http3 {
+        join!(listener_service, cert_service, listener_service_h3).0
+      } else {
+        join!(listener_service, cert_service).0
+      }
     }
   }
 
