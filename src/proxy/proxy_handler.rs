@@ -98,6 +98,14 @@ where
         return http_error(StatusCode::BAD_REQUEST);
       }
     };
+    #[cfg(feature = "h3")]
+    {
+      if let Some(port) = self.globals.https_port {
+        res_backend
+          .headers_mut()
+          .insert("alt-svc", format!("h3=\":{}\"", port).parse().unwrap());
+      }
+    }
     debug!("Response from backend: {:?}", res_backend.status());
 
     if res_backend.status() == StatusCode::SWITCHING_PROTOCOLS {
@@ -156,12 +164,12 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   debug!("Generate request to be forwarded");
 
   // Add te: trailer if contained in original request
-  let te_trailer = {
+  let te_trailers = {
     if let Some(te) = req.headers().get("te") {
       te.to_str()
         .unwrap()
         .split(',')
-        .any(|x| x.trim() == "trailer")
+        .any(|x| x.trim() == "trailers")
     } else {
       false
     }
@@ -175,7 +183,7 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   // X-Forwarded-For
   add_forwarding_header(headers, client_addr)?;
   // Add te: trailer if te_trailer
-  if te_trailer {
+  if te_trailers {
     headers.insert("te", "trailer".parse().unwrap());
   }
 
