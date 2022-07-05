@@ -16,6 +16,7 @@ pub struct Globals {
   pub clients_count: ClientsCount,
   pub max_concurrent_streams: u32,
   pub keepalive: bool,
+  pub http3: bool,
 
   pub runtime_handle: tokio::runtime::Handle,
 }

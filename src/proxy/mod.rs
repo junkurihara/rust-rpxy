@@ -1,3 +1,5 @@
+#[cfg(feature = "h3")]
+mod proxy_h3;
 mod proxy_handler;
 mod proxy_main;
 mod proxy_tls;

@@ -8,10 +8,17 @@ pub struct ConfigToml {
   pub listen_port: Option<u16>,
   pub listen_port_tls: Option<u16>,
   pub listen_ipv6: Option<bool>,
+  pub listen_only_ipv6: Option<bool>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
+  pub experimental: Option<Experimental>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct Experimental {
+  pub h3: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Default)]

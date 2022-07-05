@@ -16,6 +16,7 @@ max_clients = 512
 
 # Optional: Listen [::]
 listen_ipv6 = false
+listen_only_ipv6 = false
 
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # execpt for configured application.
@@ -54,3 +55,9 @@ tls = { https_redirection = true, tls_cert_path = 'localhost.pem', tls_cert_key_
 [apps.another_localhost]
 server_name = 'localhost.localdomain'
 reverse_proxy = [{ upstream = [{ location = 'www.google.com', tls = true }] }]
+
+###################################
+#      Experimantal settings      #
+###################################
+[experimental]
+h3 = true

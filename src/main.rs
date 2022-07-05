@@ -55,6 +55,7 @@ fn main() {
       listen_sockets: Vec::new(),
       http_port: None,
       https_port: None,
+      http3: false,
       timeout: Duration::from_secs(TIMEOUT_SEC),
       max_clients: MAX_CLIENTS,
       clients_count: Default::default(),
