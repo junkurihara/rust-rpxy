@@ -32,7 +32,8 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
   rm -fr ~/.cargo ~/.rustup && \
   rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log &&\
   rm -fr ~/.cargo ~/.rustup && \
-  rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log
+  rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log &&\
+  mkdir -p /var/log/rpxy && touch /var/log/rpxy/rpxy.log
 
 COPY docker-bin/run.sh /
 COPY docker-bin/entrypoint.sh /
@@ -40,7 +41,7 @@ COPY docker-bin/entrypoint.sh /
 RUN chmod 755 /run.sh && \
   chmod 755 /entrypoint.sh
 
-EXPOSE 53/udp 53/tcp
+EXPOSE 80 443
 
 CMD ["/entrypoint.sh"]
 
