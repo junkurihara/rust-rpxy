@@ -9,8 +9,10 @@ services:
       - 127.0.0.1:8443:8443
     build:
       context: ./
+    environment:
+      - DEBUG=true
     tty: false
     privileged: true
     volumes:
-      - ./example-certs:/tmp/certs:ro
+      - ./localhost.pem:/certs/localhost.pem:ro
       - ./config-example.toml:/etc/rpxy.toml:ro

@@ -51,6 +51,13 @@ EOF
 cp -p /etc/cron.daily/logrotate /etc/cron.hourly/
 service cron start
 
+# debug level logging
+  LOG_LEVEL=info
+  if [ ${DEBUG} ]; then
+    echo "Logging in debug mode"
+    LOG_LEVEL=debug
+  fi
+
 echo "Start rpxy"
 
-RUST_LOG=info /opt/rpxy/sbin/rpxy --config ${CONFIG_FILE}
+RUST_LOG=${LOG_LEVEL} /opt/rpxy/sbin/rpxy --config ${CONFIG_FILE}

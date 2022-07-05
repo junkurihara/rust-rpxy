@@ -118,13 +118,19 @@ where
           let mut response_upgraded = res_backend
             .extensions_mut()
             .remove::<hyper::upgrade::OnUpgrade>()
-            .expect("Response does not have an upgrade extension")
+            .ok_or_else(|| anyhow!("Response does not have an upgrade extension"))? // TODO: any response code?
             .await?;
+          // TODO: H3で死ぬことがある
+          // thread 'rpxy' panicked at 'Failed to upgrade request: hyper::Error(User(ManualUpgrade))', src/proxy/proxy_handler.rs:124:63
           tokio::spawn(async move {
-            let mut request_upgraded = request_upgraded.await.expect("Failed to upgrade request");
+            let mut request_upgraded = request_upgraded.await.map_err(|e| {
+              error!("Failed to upgrade request: {}", e);
+              anyhow!("Failed to upgrade request: {}", e)
+            })?; // TODO: any response code?
             copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
               .await
-              .expect("Coping between upgraded connections failed");
+              .map_err(|e| anyhow!("Coping between upgraded connections failed: {}", e))?; // TODO: any response code?
+            Ok(()) as Result<()>
           });
           Ok(res_backend)
         } else {

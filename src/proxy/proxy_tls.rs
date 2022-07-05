@@ -110,44 +110,47 @@ where
       loop {
         // TODO: Not sure if this properly works to handle multiple "server_name"s to host multiple hosts.
         // peek() should work for that.
-        if let Some(peeked_conn) = std::pin::Pin::new(&mut p).peek_mut().await {
+        let success = if let Some(peeked_conn) = std::pin::Pin::new(&mut p).peek_mut().await {
           let hsd = peeked_conn.handshake_data().await;
           let hsd_downcast = hsd?
             .downcast::<quinn::crypto::rustls::HandshakeData>()
             .unwrap();
-          let svn = if let Some(sni) = hsd_downcast.server_name {
-            sni
+          if let Some(svn) = hsd_downcast.server_name {
+            if let Some(new_server_crypto) = self.fetch_server_crypto(&svn) {
+              // Set ServerConfig::set_server_config for given SNI
+              let mut new_server_config_h3 =
+                quinn::ServerConfig::with_crypto(Arc::new(new_server_crypto));
+              if svn == "localhost" {
+                new_server_config_h3.concurrent_connections(512);
+              }
+              info!(
+                "HTTP/3 connection incoming (SNI {:?}): Overwrite ServerConfig",
+                svn
+              );
+              endpoint.set_server_config(Some(new_server_config_h3));
+              true
+            } else {
+              false
+            }
           } else {
             debug!("HTTP/3 no SNI is given");
-            continue;
-          };
-          let new_server_crypto = if let Some(p) = self.fetch_server_crypto(&svn) {
-            p
-          } else {
-            continue;
-          };
-          // Set ServerConfig::set_server_config for given SNI
-          let mut new_server_config_h3 =
-            quinn::ServerConfig::with_crypto(Arc::new(new_server_crypto));
-          if svn == "localhost" {
-            new_server_config_h3.concurrent_connections(512);
+            false
           }
-          info!(
-            "HTTP/3 connection incoming (SNI {:?}): Overwrite ServerConfig",
-            svn
-          );
-          endpoint.set_server_config(Some(new_server_config_h3));
-        }
+        } else {
+          false
+        };
 
         // Then acquire actual connection
         let peekable_incoming = std::pin::Pin::new(&mut p);
         if let Some(conn) = peekable_incoming.get_mut().next().await {
-          let fut = self.clone().client_serve_h3(conn);
-          self.globals.runtime_handle.spawn(async {
-            if let Err(e) = fut.await {
-              warn!("QUIC or HTTP/3 connection failed: {}", e)
-            }
-          });
+          if success {
+            let fut = self.clone().client_serve_h3(conn);
+            self.globals.runtime_handle.spawn(async {
+              if let Err(e) = fut.await {
+                warn!("QUIC or HTTP/3 connection failed: {}", e)
+              }
+            });
+          }
         } else {
           break;
         }
