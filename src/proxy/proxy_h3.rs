@@ -38,7 +38,7 @@ where
         while let Some((req, stream)) = h3_conn
           .accept()
           .await
-          .map_err(|e| anyhow!("HTTP/3 accept failed (likely timeout): {}", e))?
+          .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
         {
           info!("HTTP/3 new request received");
 

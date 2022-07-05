@@ -79,6 +79,7 @@ where
     #[cfg(feature = "h3")]
     let listener_service_h3 = async {
       // TODO: Work around to initially serve incoming connection
+      // かなり適当。エラーが出たり出なかったり。原因がわからない…
       let tls_app_names: Vec<String> = self
         .backends
         .apps
@@ -95,40 +96,55 @@ where
       let server_crypto = backend_serve.get_tls_server_config().unwrap();
       let server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
 
-      let (endpoint, mut incoming) =
+      let (endpoint, incoming) =
         quinn::Endpoint::server(server_config_h3, self.listening_on).unwrap();
       debug!("HTTP/3 UDP listening on {}", endpoint.local_addr().unwrap());
 
-      // let peekable_incoming = incoming.peekable();
-
-      while let Some(mut conn) = incoming.next().await {
-        let hsd = conn.handshake_data().await;
-        let hsd_downcast = hsd?
-          .downcast::<quinn::crypto::rustls::HandshakeData>()
-          .unwrap();
-        let svn = if let Some(sni) = hsd_downcast.server_name {
-          info!("HTTP/3 connection incoming (SNI {:?})", sni);
-          sni
-        } else {
-          debug!("HTTP/3 no SNI is given");
-          continue;
-        };
-
-        let new_server_crypto = if let Some(p) = self.fetch_server_crypto(&svn) {
-          p
-        } else {
-          continue;
-        };
-        // Set ServerConfig::set_server_config for given SNI
-        let new_server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(new_server_crypto));
-        endpoint.set_server_config(Some(new_server_config_h3));
-
-        let fut = self.clone().client_serve_h3(conn);
-        self.globals.runtime_handle.spawn(async {
-          if let Err(e) = fut.await {
-            warn!("QUIC or HTTP/3 connection failed: {}", e)
+      let mut p = incoming.peekable();
+      loop {
+        // TODO: Not sure if this properly works to handle multiple "server_name"s to host multiple hosts.
+        // peek() should work for that.
+        if let Some(peeked_conn) = std::pin::Pin::new(&mut p).peek_mut().await {
+          let hsd = peeked_conn.handshake_data().await;
+          let hsd_downcast = hsd?
+            .downcast::<quinn::crypto::rustls::HandshakeData>()
+            .unwrap();
+          let svn = if let Some(sni) = hsd_downcast.server_name {
+            sni
+          } else {
+            debug!("HTTP/3 no SNI is given");
+            continue;
+          };
+          let new_server_crypto = if let Some(p) = self.fetch_server_crypto(&svn) {
+            p
+          } else {
+            continue;
+          };
+          // Set ServerConfig::set_server_config for given SNI
+          let mut new_server_config_h3 =
+            quinn::ServerConfig::with_crypto(Arc::new(new_server_crypto));
+          if svn == "localhost" {
+            new_server_config_h3.concurrent_connections(512);
           }
-        });
+          info!(
+            "HTTP/3 connection incoming (SNI {:?}): Overwrite ServerConfig",
+            svn
+          );
+          endpoint.set_server_config(Some(new_server_config_h3));
+        }
+
+        // Then acquire actual connection
+        let peekable_incoming = std::pin::Pin::new(&mut p);
+        if let Some(conn) = peekable_incoming.get_mut().next().await {
+          let fut = self.clone().client_serve_h3(conn);
+          self.globals.runtime_handle.spawn(async {
+            if let Err(e) = fut.await {
+              warn!("QUIC or HTTP/3 connection failed: {}", e)
+            }
+          });
+        } else {
+          break;
+        }
       }
       endpoint.wait_idle().await;
       Ok(()) as Result<()>
