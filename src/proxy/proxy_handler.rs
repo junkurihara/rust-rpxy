@@ -1,6 +1,6 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
 use super::Proxy;
-use crate::{error::*, log::*};
+use crate::{constants::*, error::*, log::*};
 use hyper::{
   client::connect::Connect,
   header::{HeaderMap, HeaderValue},
@@ -112,9 +112,15 @@ where
     {
       if self.globals.http3 {
         if let Some(port) = self.globals.https_port {
-          res_backend
-            .headers_mut()
-            .insert("alt-svc", format!("h3=\":{}\"", port).parse().unwrap());
+          res_backend.headers_mut().insert(
+            hyper::header::ALT_SVC,
+            format!(
+              "h3=\":{}\"; ma={}, h3-29\":{}\"; ma={}",
+              port, H3_ALT_SVC_MAX_AGE, port, H3_ALT_SVC_MAX_AGE
+            )
+            .parse()
+            .unwrap(),
+          );
         }
       }
     }
