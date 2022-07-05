@@ -41,7 +41,12 @@ where
           .await
           .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
         {
-          info!("HTTP/3 new request received");
+          info!(
+            "HTTP/3 new request received from {}: {}, {}",
+            client_addr,
+            req.method(),
+            req.uri()
+          );
 
           let self_inner = self.clone();
           self.globals.runtime_handle.spawn(async move {
