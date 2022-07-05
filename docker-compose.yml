@@ -1,0 +1,12 @@
+version: "3"
+services:
+  rpxy-rp:
+    image: jqtype/rpxy
+    container_name: rpxy
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8080:8080
+    tty: false
+    privileged: true
+    volumes:
+      - ./config-example.toml:/etc/rpxy.toml:ro
