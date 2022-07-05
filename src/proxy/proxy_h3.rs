@@ -41,8 +41,8 @@ where
           .await
           .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
         {
-          info!(
-            "HTTP/3 new request received from {}: {}, {}",
+          debug!(
+            "HTTP/3 new request from {}: {} {}",
             client_addr,
             req.method(),
             req.uri()

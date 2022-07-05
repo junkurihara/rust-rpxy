@@ -31,7 +31,17 @@ where
     mut req: Request<Body>,
     client_addr: SocketAddr, // アクセス制御用
   ) -> Result<Response<Body>> {
-    debug!("Handling request: {:?}", req);
+    info!(
+      "Handling {:?} request from {}: {} {} {:?}",
+      req.version(),
+      client_addr,
+      req.method(),
+      req.uri(),
+      req
+        .headers()
+        .get("user-agent")
+        .map_or_else(|| "<none>", |ua| ua.to_str().unwrap())
+    );
     // Here we start to handle with server_name
     // Find backend application for given server_name
     let (server_name, _port) = if let Ok(v) = parse_host_port(&req, self.tls_enabled) {
