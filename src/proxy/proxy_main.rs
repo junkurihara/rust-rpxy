@@ -1,5 +1,6 @@
 // use super::proxy_handler::handle_request;
-use crate::{backend::Backends, error::*, globals::Globals, log::*};
+use super::Backends;
+use crate::{error::*, globals::Globals, log::*};
 use hyper::{
   client::connect::Connect, server::conn::Http, service::service_fn, Body, Client, Request,
 };

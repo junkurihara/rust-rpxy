@@ -1,5 +1,5 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
-use super::Proxy;
+use super::{Proxy, Upstream, UpstreamOption};
 use crate::{constants::*, error::*, log::*};
 use hyper::{
   client::connect::Connect,
@@ -68,14 +68,14 @@ where
     // Find reverse proxy for given path and choose one of upstream host
     // TODO: More flexible path matcher
     let path = req.uri().path();
-    let upstream_uri = if let Some(upstream) = backend.reverse_proxy.upstream.get(path) {
-      upstream.get()
+    let upstream = if let Some(upstream) = backend.reverse_proxy.upstream.get(path) {
+      upstream
     } else if let Some(default_upstream) = &backend.reverse_proxy.default_upstream {
-      default_upstream.get()
+      default_upstream
     } else {
       return http_error(StatusCode::NOT_FOUND);
     };
-    let upstream_scheme_host = if let Some(u) = upstream_uri {
+    let upstream_scheme_host = if let Some(u) = upstream.get() {
       u
     } else {
       return http_error(StatusCode::INTERNAL_SERVER_ERROR);
@@ -92,6 +92,7 @@ where
       upstream_scheme_host,
       path_and_query,
       &upgrade_in_request,
+      upstream,
     ) {
       req
     } else {
@@ -184,6 +185,7 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   upstream_scheme_host: &Uri,
   path_and_query: String,
   upgrade: &Option<String>,
+  upstream: &Upstream,
 ) -> Result<Request<B>> {
   debug!("Generate request to be forwarded");
 
@@ -206,10 +208,26 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   remove_hop_header(headers);
   // X-Forwarded-For
   add_forwarding_header(headers, client_addr)?;
+
   // Add te: trailer if te_trailer
   if te_trailers {
     headers.insert("te", "trailer".parse().unwrap());
   }
+
+  // add "host" header of original server_name if not exist (default)
+  if req.headers().get(hyper::header::HOST).is_none() {
+    let org_host = req.uri().host().unwrap_or("none").to_owned();
+    req.headers_mut().insert(
+      hyper::header::HOST,
+      HeaderValue::from_str(org_host.as_str()).unwrap(),
+    );
+  };
+
+  // apply upstream-specific headers given in upstream_option
+  let headers = req.headers_mut();
+  println!("before {:?}", headers);
+  apply_upstream_options_to_header(headers, client_addr, upstream_scheme_host, upstream)?;
+  println!("after {:?}", req);
 
   // update uri in request
   *req.uri_mut() = Uri::builder()
@@ -223,7 +241,7 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
     req.headers_mut().insert("upgrade", v.parse().unwrap());
     req
       .headers_mut()
-      .insert("connection", HeaderValue::from_str("upgrade")?);
+      .insert(hyper::header::CONNECTION, HeaderValue::from_str("upgrade")?);
   }
 
   // Change version to http/1.1 when destination scheme is http
@@ -237,8 +255,29 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   Ok(req)
 }
 
+fn apply_upstream_options_to_header(
+  headers: &mut HeaderMap,
+  _client_addr: SocketAddr,
+  upstream_scheme_host: &Uri,
+  upstream: &Upstream,
+) -> Result<()> {
+  upstream.opts.iter().for_each(|opt| match opt {
+    UpstreamOption::OverrideHost => {
+      let upstream_host = upstream_scheme_host.host().unwrap();
+      headers
+        .insert(
+          hyper::header::HOST,
+          HeaderValue::from_str(upstream_host).unwrap(),
+        )
+        .unwrap();
+    }
+  });
+  Ok(())
+}
+
 fn add_forwarding_header(headers: &mut HeaderMap, client_addr: SocketAddr) -> Result<()> {
-  // TODO: Option対応？
+  // default process
+  // optional process defined by upstream_option is applied in fn apply_upstream_options
   let client_ip = client_addr.ip();
   match headers.entry("x-forwarded-for") {
     hyper::header::Entry::Vacant(entry) => {

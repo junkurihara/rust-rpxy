@@ -2,7 +2,6 @@
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-mod backend;
 mod config;
 mod constants;
 mod error;
@@ -11,13 +10,12 @@ mod log;
 mod proxy;
 
 use crate::{
-  backend::{Backend, Backends},
   config::parse_opts,
   constants::*,
   error::*,
   globals::*,
   log::*,
-  proxy::Proxy,
+  proxy::{Backend, Backends, Proxy},
 };
 use futures::future::select_all;
 use hyper::Client;

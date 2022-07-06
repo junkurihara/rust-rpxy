@@ -1,7 +1,8 @@
+use super::UpstreamOption;
 use crate::log::*;
 use parking_lot::Mutex;
 use rand::Rng;
-use rustc_hash::FxHashMap as HashMap;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
   fs::File,
   io::{self, BufReader, Cursor, Read},
@@ -53,6 +54,7 @@ pub struct Upstream {
   pub uri: Vec<hyper::Uri>,
   pub lb: LoadBalance,
   pub cnt: UpstreamCount, // counter for load balancing
+  pub opts: HashSet<UpstreamOption>,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -1,8 +1,14 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
-use crate::{backend::*, constants::*, error::*, globals::*, log::*};
+use crate::{
+  constants::*,
+  error::*,
+  globals::*,
+  log::*,
+  proxy::{Backend, Backends, ReverseProxy, Upstream, UpstreamOption},
+};
 use clap::Arg;
 use parking_lot::Mutex;
-use rustc_hash::FxHashMap as HashMap;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::net::SocketAddr;
 
 // #[cfg(feature = "tls")]
@@ -165,7 +171,18 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> Result<ReverseProxy>
       uri: rpo.upstream.iter().map(|x| x.to_uri().unwrap()).collect(),
       cnt: Default::default(),
       lb: Default::default(),
+      opts: {
+        if let Some(opts) = &rpo.upstream_options {
+          opts
+            .iter()
+            .filter_map(|str| UpstreamOption::try_from(str.as_str()).ok())
+            .collect::<HashSet<UpstreamOption>>()
+        } else {
+          Default::default()
+        }
+      },
     };
+
     if rpo.path.is_some() {
       upstream.insert(rpo.path.as_ref().unwrap().to_owned(), elem);
     } else {

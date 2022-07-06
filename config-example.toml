@@ -37,10 +37,14 @@ reverse_proxy = [
   { upstream = [
     { location = 'www.google.com', tls = true },
     { location = 'www.google.co.jp', tls = true },
+  ], upstream_options = [
+    "override_host",
   ] },
   { path = '/maps', upstream = [
     { location = 'www.bing.com', tls = true },
     { location = 'www.bing.co.jp', tls = true },
+  ], upstream_options = [
+    "override_host",
   ] },
 ]
 # Optional: TLS setting. if https_port is specified and tls is true above, this must be given.

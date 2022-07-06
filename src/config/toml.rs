@@ -40,15 +40,16 @@ pub struct TlsOption {
 #[derive(Deserialize, Debug, Default)]
 pub struct ReverseProxyOption {
   pub path: Option<String>,
-  pub upstream: Vec<UpstreamOption>,
+  pub upstream: Vec<UpstreamParams>,
+  pub upstream_options: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Default)]
-pub struct UpstreamOption {
+pub struct UpstreamParams {
   pub location: String,
   pub tls: Option<bool>,
 }
-impl UpstreamOption {
+impl UpstreamParams {
   pub fn to_uri(&self) -> Result<hyper::Uri> {
     let mut scheme = "http";
     if let Some(t) = self.tls {
