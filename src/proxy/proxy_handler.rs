@@ -211,9 +211,6 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
     headers.insert("te", "trailer".parse().unwrap());
   }
 
-  // Drop "host" key in request header to specify uri in absolute form
-  req.headers_mut().remove("host");
-
   // update uri in request
   *req.uri_mut() = Uri::builder()
     .scheme(upstream_scheme_host.scheme().unwrap().as_str())
@@ -241,6 +238,7 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
 }
 
 fn add_forwarding_header(headers: &mut HeaderMap, client_addr: SocketAddr) -> Result<()> {
+  // TODO: Option対応？
   let client_ip = client_addr.ip();
   match headers.entry("x-forwarded-for") {
     hyper::header::Entry::Vacant(entry) => {
