@@ -10,3 +10,5 @@ pub const CERTS_WATCH_DELAY_SECS: u32 = 10;
 
 #[cfg(feature = "h3")]
 pub const H3_ALT_SVC_MAX_AGE: u32 = 60;
+#[cfg(feature = "h3")]
+pub const H3_CONN_TIMEOUT_MILLIS: u64 = 2000;

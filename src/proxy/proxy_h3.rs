@@ -1,5 +1,5 @@
 use super::Proxy;
-use crate::{error::*, log::*};
+use crate::{constants::*, error::*, log::*};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, HeaderMap, Request, Response};
@@ -36,11 +36,24 @@ where
             .await?;
         info!("HTTP/3 connection established");
 
-        while let Some((req, stream)) = h3_conn
-          .accept()
-          .await
-          .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
+        // TODO: Work around for timeout...
+        //while let Some((req, stream)) = h3_conn
+        // if let Some((req, stream)) =
+        //   .await
+        //   .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
+        if let Some((req, stream)) = match tokio::time::timeout(
+          tokio::time::Duration::from_millis(H3_CONN_TIMEOUT_MILLIS),
+          h3_conn.accept(),
+        )
+        .await
         {
+          Ok(r) => r.map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?,
+          Err(_) => {
+            warn!("No incoming stream after connection establishment");
+            h3_conn.shutdown(0).await?;
+            return Ok(());
+          }
+        } {
           debug!(
             "HTTP/3 new request from {}: {} {}",
             client_addr,
@@ -53,6 +66,11 @@ where
             if let Err(e) = self_inner.handle_request_h3(req, stream, client_addr).await {
               error!("HTTP/3 request failed: {}", e);
             }
+            // TODO: Work around for timeout
+            if let Err(e) = h3_conn.shutdown(0).await {
+              error!("HTTP/3 connection shutdown failed: {}", e);
+            }
+            debug!("HTTP/3 connection shutdown (currently shutdown each time as work around for timeout)");
           });
         }
       }
@@ -106,6 +124,7 @@ where
         let data = hyper::body::to_bytes(new_body).await?;
         stream.send_data(data).await?;
         stream.send_trailers(trailers).await?;
+        return Ok(stream.finish().await?);
       }
       Err(err) => {
         error!("Unable to send response to connection peer: {:?}", err);
