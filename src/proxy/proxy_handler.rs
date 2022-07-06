@@ -225,9 +225,7 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
 
   // apply upstream-specific headers given in upstream_option
   let headers = req.headers_mut();
-  println!("before {:?}", headers);
   apply_upstream_options_to_header(headers, client_addr, upstream_scheme_host, upstream)?;
-  println!("after {:?}", req);
 
   // update uri in request
   *req.uri_mut() = Uri::builder()
