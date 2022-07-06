@@ -6,7 +6,6 @@ use futures::{future::FutureExt, join, select};
 use hyper::{client::connect::Connect, server::conn::Http};
 use rustls::ServerConfig;
 use std::{sync::Arc, time::Duration};
-use tokio::net::TcpListener;
 
 impl<T> Proxy<T>
 where
@@ -29,7 +28,8 @@ where
 
     // TCP Listener Service, i.e., http/2 and http/1.1
     let listener_service = async {
-      let tcp_listener = TcpListener::bind(&self.listening_on).await?;
+      // let tcp_listener = TcpListener::bind(&self.listening_on).await?;
+      let tcp_listener = self.try_bind_tcp_listener().await?;
       info!(
         "Start TCP proxy serving with HTTPS request for configured host names: {:?}",
         tcp_listener.local_addr()?
@@ -96,6 +96,9 @@ where
         initial_app_name
       );
       let backend_serve = self.backends.apps.get(initial_app_name).unwrap();
+      while backend_serve.get_tls_server_config().is_none() {
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+      }
       let server_crypto = backend_serve.get_tls_server_config().unwrap();
       let server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
 
@@ -174,7 +177,19 @@ where
     #[cfg(feature = "h3")]
     {
       if self.globals.http3 {
-        join!(listener_service, cert_service, listener_service_h3).0
+        tokio::select! {
+          _= cert_service => {
+            error!("Cert service for TLS exited");
+          },
+          _ = listener_service => {
+            error!("TCP proxy service for TLS exited");
+          },
+          _= listener_service_h3 => {
+            error!("UDP proxy service for TLS exited");
+          },
+        };
+        // join!(listener_service, cert_service, listener_service_h3).0
+        Ok(())
       } else {
         join!(listener_service, cert_service).0
       }
@@ -187,19 +202,20 @@ where
     &self,
     server_config: quinn::ServerConfig,
   ) -> Result<(quinn::Endpoint, quinn::Incoming)> {
-    let fut = async {
-      loop {
-        if let Ok(listener) = quinn::Endpoint::server(server_config.clone(), self.listening_on) {
-          break listener;
-        }
+    let mut cnt = 0;
+    while cnt < GET_LISTENER_RETRY_MAX_CNT {
+      if let Ok(listener) = quinn::Endpoint::server(server_config.clone(), self.listening_on) {
+        return Ok(listener);
       }
-    };
-    tokio::time::timeout(
-      tokio::time::Duration::from_secs(GET_LISTENER_RETRY_TIMEOUT_SEC),
-      fut,
-    )
-    .await
-    .map_err(|_e| anyhow!("Failed to get listener"))
+      cnt += 1;
+      tokio::time::sleep(tokio::time::Duration::from_millis(
+        GET_LISTENER_RETRY_WAITING_MSEC,
+      ))
+      .await;
+    }
+
+    error!("Failed to get quic listener: {}", self.listening_on);
+    Err(anyhow!("Failed to get tcp listener: {}", self.listening_on))
   }
 
   fn fetch_server_crypto(&self, server_name: &str) -> Option<ServerConfig> {
