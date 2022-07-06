@@ -115,7 +115,7 @@ where
           res_backend.headers_mut().insert(
             hyper::header::ALT_SVC,
             format!(
-              "h3=\":{}\"; ma={}, h3-29\":{}\"; ma={}",
+              "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
               port, H3_ALT_SVC_MAX_AGE, port, H3_ALT_SVC_MAX_AGE
             )
             .parse()

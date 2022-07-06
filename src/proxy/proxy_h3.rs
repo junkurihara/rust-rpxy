@@ -10,7 +10,6 @@ where
   T: Connect + Clone + Sync + Send + 'static,
 {
   pub async fn client_serve_h3(self, conn: quinn::Connecting) -> Result<()> {
-    // TODO: client数の管理
     let client_addr = conn.remote_address();
 
     match conn.await {
@@ -37,11 +36,11 @@ where
         info!("HTTP/3 connection established");
 
         // TODO: Work around for timeout...
-        //while let Some((req, stream)) = h3_conn
-        // if let Some((req, stream)) =
+        // while let Some((req, stream)) = h3_conn
+        //   .accept()
         //   .await
         //   .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
-        if let Some((req, stream)) = match tokio::time::timeout(
+        while let Some((req, stream)) = match tokio::time::timeout(
           tokio::time::Duration::from_millis(H3_CONN_TIMEOUT_MILLIS),
           h3_conn.accept(),
         )
@@ -49,7 +48,7 @@ where
         {
           Ok(r) => r.map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?,
           Err(_) => {
-            warn!("No incoming stream after connection establishment");
+            warn!("No incoming stream after connection establishment / previous use");
             h3_conn.shutdown(0).await?;
             return Ok(());
           }
@@ -66,11 +65,11 @@ where
             if let Err(e) = self_inner.handle_request_h3(req, stream, client_addr).await {
               error!("HTTP/3 request failed: {}", e);
             }
-            // TODO: Work around for timeout
-            if let Err(e) = h3_conn.shutdown(0).await {
-              error!("HTTP/3 connection shutdown failed: {}", e);
-            }
-            debug!("HTTP/3 connection shutdown (currently shutdown each time as work around for timeout)");
+            // // TODO: Work around for timeout
+            // if let Err(e) = h3_conn.shutdown(0).await {
+            //   error!("HTTP/3 connection shutdown failed: {}", e);
+            // }
+            // debug!("HTTP/3 connection shutdown (currently shutdown each time as work around for timeout)");
           });
         }
       }
