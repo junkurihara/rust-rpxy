@@ -61,10 +61,12 @@ where
     self.globals.runtime_handle.clone().spawn(async move {
       tokio::time::timeout(
         self.globals.timeout + Duration::from_secs(1),
-        server.serve_connection(
-          stream,
-          service_fn(move |req: Request<Body>| self.clone().handle_request(req, peer_addr)),
-        ),
+        server
+          .serve_connection(
+            stream,
+            service_fn(move |req: Request<Body>| self.clone().handle_request(req, peer_addr)),
+          )
+          .with_upgrades(),
       )
       .await
       .ok();
