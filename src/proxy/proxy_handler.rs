@@ -36,10 +36,10 @@ where
       req.version(),
       client_addr,
       req.method(),
-      req
-        .headers()
-        .get("host")
-        .map_or_else(|| "<none>", |h| h.to_str().unwrap()),
+      req.headers().get("host").map_or_else(
+        || req.uri().host().unwrap_or("<none>"),
+        |h| h.to_str().unwrap()
+      ),
       req.uri(),
       req
         .headers()
