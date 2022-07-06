@@ -1,5 +1,5 @@
 use super::proxy_main::{LocalExecutor, Proxy};
-use crate::{constants::CERTS_WATCH_DELAY_SECS, error::*, log::*};
+use crate::{constants::*, error::*, log::*};
 #[cfg(feature = "h3")]
 use futures::StreamExt;
 use futures::{future::FutureExt, join, select};
@@ -99,8 +99,8 @@ where
       let server_crypto = backend_serve.get_tls_server_config().unwrap();
       let server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
 
-      let (endpoint, incoming) =
-        quinn::Endpoint::server(server_config_h3, self.listening_on).unwrap();
+      let (endpoint, incoming) = self.try_bind_quic_listener(server_config_h3).await?;
+      // quinn::Endpoint::server(server_config_h3, self.listening_on).unwrap();
       info!(
         "Start UDP proxy serving with HTTP/3 request for configured host names: {:?}",
         endpoint.local_addr()?
@@ -179,6 +179,27 @@ where
         join!(listener_service, cert_service).0
       }
     }
+  }
+
+  // Work around to forcibly get quic listener for "address already in use"
+  #[cfg(feature = "h3")]
+  async fn try_bind_quic_listener(
+    &self,
+    server_config: quinn::ServerConfig,
+  ) -> Result<(quinn::Endpoint, quinn::Incoming)> {
+    let fut = async {
+      loop {
+        if let Ok(listener) = quinn::Endpoint::server(server_config.clone(), self.listening_on) {
+          break listener;
+        }
+      }
+    };
+    tokio::time::timeout(
+      tokio::time::Duration::from_secs(GET_LISTENER_RETRY_TIMEOUT_SEC),
+      fut,
+    )
+    .await
+    .map_err(|_e| anyhow!("Failed to get listener"))
   }
 
   fn fetch_server_crypto(&self, server_name: &str) -> Option<ServerConfig> {

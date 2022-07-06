@@ -32,10 +32,14 @@ where
     client_addr: SocketAddr, // アクセス制御用
   ) -> Result<Response<Body>> {
     info!(
-      "Handling {:?} request from {}: {} {} {:?}",
+      "Handling {:?} request from {}: {} {:?} {} {:?}",
       req.version(),
       client_addr,
       req.method(),
+      req
+        .headers()
+        .get("host")
+        .map_or_else(|| "<none>", |h| h.to_str().unwrap()),
       req.uri(),
       req
         .headers()
