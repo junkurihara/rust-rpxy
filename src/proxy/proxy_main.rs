@@ -1,6 +1,6 @@
 // use super::proxy_handler::handle_request;
 use super::Backends;
-use crate::{constants::*, error::*, globals::Globals, log::*};
+use crate::{error::*, globals::Globals, log::*};
 use hyper::{
   client::connect::Connect, server::conn::Http, service::service_fn, Body, Client, Request,
 };
@@ -77,28 +77,9 @@ where
     });
   }
 
-  // Work around to forcibly get tcp listener for "address already in use"
-  pub(super) async fn try_bind_tcp_listener(&self) -> Result<TcpListener> {
-    let mut cnt = 0;
-    while cnt < GET_LISTENER_RETRY_MAX_CNT {
-      if let Ok(listener) = TcpListener::bind(&self.listening_on).await {
-        return Ok(listener);
-      }
-      cnt += 1;
-      tokio::time::sleep(tokio::time::Duration::from_millis(
-        GET_LISTENER_RETRY_WAITING_MSEC,
-      ))
-      .await;
-    }
-
-    error!("Failed to get tcp listener: {}", self.listening_on);
-    Err(anyhow!("Failed to get tcp listener: {}", self.listening_on))
-  }
-
   async fn start_without_tls(self, server: Http<LocalExecutor>) -> Result<()> {
     let listener_service = async {
-      // let tcp_listener = TcpListener::bind(&self.listening_on).await?;
-      let tcp_listener = self.try_bind_tcp_listener().await?;
+      let tcp_listener = TcpListener::bind(&self.listening_on).await?;
       info!("Start TCP proxy serving with HTTP request for configured host names");
       while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
         self
