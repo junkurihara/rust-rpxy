@@ -180,6 +180,12 @@ fn generate_response_forwarded<B: core::fmt::Debug>(response: &mut Response<B>) 
   let headers = response.headers_mut();
   remove_hop_header(headers);
   remove_connection_header(headers);
+  append_header_entry(
+    headers,
+    "server",
+    &format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
+  )?;
+
   Ok(())
 }
 
@@ -278,25 +284,24 @@ fn apply_upstream_options_to_header(
   Ok(())
 }
 
+fn append_header_entry(headers: &mut HeaderMap, key: &'static str, value: &str) -> Result<()> {
+  match headers.entry(key) {
+    hyper::header::Entry::Vacant(entry) => {
+      entry.insert(value.parse::<HeaderValue>()?);
+    }
+    hyper::header::Entry::Occupied(mut entry) => {
+      entry.append(value.parse::<HeaderValue>()?);
+    }
+  }
+
+  Ok(())
+}
+
 fn add_forwarding_header(headers: &mut HeaderMap, client_addr: SocketAddr) -> Result<()> {
   // default process
   // optional process defined by upstream_option is applied in fn apply_upstream_options
-  let client_ip = client_addr.ip();
-  match headers.entry("x-forwarded-for") {
-    hyper::header::Entry::Vacant(entry) => {
-      entry.insert(client_ip.to_string().parse()?);
-    }
-    hyper::header::Entry::Occupied(mut entry) => {
-      let client_ip_str = client_ip.to_string();
-      let mut addr = String::with_capacity(entry.get().as_bytes().len() + 2 + client_ip_str.len());
+  append_header_entry(headers, "x-forwarded-for", &client_addr.ip().to_string())?;
 
-      addr.push_str(std::str::from_utf8(entry.get().as_bytes()).unwrap());
-      addr.push(',');
-      addr.push(' ');
-      addr.push_str(&client_ip_str);
-      entry.insert(addr.to_owned().parse()?);
-    }
-  }
   Ok(())
 }
 
