@@ -9,7 +9,23 @@ impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub async fn client_serve_h3(self, conn: quinn::Connecting) -> Result<()> {
+  pub async fn client_serve_h3(self, conn: quinn::Connecting) {
+    let clients_count = self.globals.clients_count.clone();
+    if clients_count.increment() > self.globals.max_clients {
+      clients_count.decrement();
+      return;
+    }
+    let fut = self.clone().handle_connection_h3(conn);
+    self.globals.runtime_handle.spawn(async move {
+      if let Err(e) = fut.await {
+        warn!("QUIC or HTTP/3 connection failed: {}", e)
+      }
+      clients_count.decrement();
+      debug!("Client #: {}", clients_count.current());
+    });
+  }
+
+  pub async fn handle_connection_h3(self, conn: quinn::Connecting) -> Result<()> {
     let client_addr = conn.remote_address();
 
     match conn.await {
