@@ -45,12 +45,17 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
     },
     anyhow!("Wrong port spec.")
   );
-  let mut listen_addresses: Vec<&str> = LISTEN_ADDRESSES_V4.to_vec();
-  if let Some(v) = config.listen_ipv6 {
-    if v {
-      listen_addresses.extend(LISTEN_ADDRESSES_V6.iter());
+  // NOTE: when [::]:xx is bound, both v4 and v6 listeners are enabled.
+  let listen_addresses: Vec<&str> = match config.listen_ipv6 {
+    Some(true) => {
+      info!("Listen both IPv4 and IPv6");
+      LISTEN_ADDRESSES_V6.to_vec()
     }
-  }
+    Some(false) | None => {
+      info!("Listen IPv4");
+      LISTEN_ADDRESSES_V4.to_vec()
+    }
+  };
   globals.listen_sockets = listen_addresses
     .iter()
     .flat_map(|x| {

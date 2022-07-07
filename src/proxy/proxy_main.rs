@@ -99,10 +99,7 @@ where
     let listener_service = async {
       // let tcp_listener = TcpListener::bind(&self.listening_on).await?;
       let tcp_listener = self.try_bind_tcp_listener().await?;
-      info!(
-        "Start TCP proxy serving with HTTP request for configured host names: {:?}",
-        tcp_listener.local_addr()?
-      );
+      info!("Start TCP proxy serving with HTTP request for configured host names");
       while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
         self
           .clone()

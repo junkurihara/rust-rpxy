@@ -12,7 +12,7 @@ where
   T: Connect + Clone + Sync + Send + 'static,
 {
   pub async fn cert_service(&self) {
-    info!("Start cert watch service for {}", self.listening_on);
+    info!("Start cert watch service");
     loop {
       for (server_name, backend) in self.backends.apps.iter() {
         if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
@@ -29,10 +29,7 @@ where
   pub async fn listener_service(&self, server: Http<LocalExecutor>) -> Result<()> {
     // let tcp_listener = TcpListener::bind(&self.listening_on).await?;
     let tcp_listener = self.try_bind_tcp_listener().await?;
-    info!(
-      "Start TCP proxy serving with HTTPS request for configured host names: {:?}",
-      tcp_listener.local_addr()?
-    );
+    info!("Start TCP proxy serving with HTTPS request for configured host names");
 
     loop {
       select! {
@@ -102,10 +99,7 @@ where
 
     let (endpoint, incoming) = self.try_bind_quic_listener(server_config_h3).await?;
     // quinn::Endpoint::server(server_config_h3, self.listening_on).unwrap();
-    info!(
-      "Start UDP proxy serving with HTTP/3 request for configured host names: {:?}",
-      endpoint.local_addr()?
-    );
+    info!("Start UDP proxy serving with HTTP/3 request for configured host names");
 
     let mut p = incoming.peekable();
     loop {
