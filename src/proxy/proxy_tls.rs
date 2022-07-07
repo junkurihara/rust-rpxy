@@ -72,7 +72,7 @@ where
   }
 
   #[cfg(feature = "h3")]
-  async fn get_new_server_config_h3(
+  async fn parse_sni_and_get_config_h3(
     &self,
     peeked_conn: &mut quinn::Connecting,
   ) -> Option<quinn::ServerConfig> {
@@ -141,7 +141,7 @@ where
         .await
         .ok_or_else(|| anyhow!("Failed to peek"))?;
       let is_acceptable =
-        if let Some(new_server_config) = self.get_new_server_config_h3(peeked_conn).await {
+        if let Some(new_server_config) = self.parse_sni_and_get_config_h3(peeked_conn).await {
           // Set ServerConfig::set_server_config for given SNI
           endpoint.set_server_config(Some(new_server_config));
           true
