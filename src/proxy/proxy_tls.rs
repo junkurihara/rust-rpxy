@@ -5,8 +5,8 @@ use futures::StreamExt;
 use futures::{future::FutureExt, select};
 use hyper::{client::connect::Connect, server::conn::Http};
 use rustls::ServerConfig;
-use std::{sync::Arc, time::Duration};
-use tokio::net::TcpListener;
+use std::sync::Arc;
+use tokio::{net::TcpListener, time::Duration};
 
 impl<T> Proxy<T>
 where
@@ -122,7 +122,7 @@ where
       .get(initial_app_name)
       .ok_or_else(|| anyhow!(""))?;
     while backend_serve.get_tls_server_config().is_none() {
-      tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+      tokio::time::sleep(Duration::from_millis(10)).await;
     }
     let server_crypto = backend_serve
       .get_tls_server_config()

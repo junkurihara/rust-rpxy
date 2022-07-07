@@ -4,6 +4,7 @@ use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, HeaderMap, Request, Response};
 use std::net::SocketAddr;
+use tokio::time::Duration;
 
 impl<T> Proxy<T>
 where
@@ -57,7 +58,7 @@ where
         //   .await
         //   .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
         while let Some((req, stream)) = match tokio::time::timeout(
-          tokio::time::Duration::from_millis(H3_CONN_TIMEOUT_MILLIS),
+          Duration::from_millis(H3_CONN_TIMEOUT_MILLIS),
           h3_conn.accept(),
         )
         .await
