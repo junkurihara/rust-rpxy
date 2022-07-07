@@ -212,6 +212,7 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   remove_hop_header(headers);
   // X-Forwarded-For
   add_forwarding_header(headers, client_addr)?;
+  println!("{:?}", headers);
 
   // Add te: trailer if te_trailer
   if te_trailers {
@@ -285,7 +286,7 @@ fn add_forwarding_header(headers: &mut HeaderMap, client_addr: SocketAddr) -> Re
     hyper::header::Entry::Vacant(entry) => {
       entry.insert(client_ip.to_string().parse()?);
     }
-    hyper::header::Entry::Occupied(entry) => {
+    hyper::header::Entry::Occupied(mut entry) => {
       let client_ip_str = client_ip.to_string();
       let mut addr = String::with_capacity(entry.get().as_bytes().len() + 2 + client_ip_str.len());
 
@@ -293,6 +294,7 @@ fn add_forwarding_header(headers: &mut HeaderMap, client_addr: SocketAddr) -> Re
       addr.push(',');
       addr.push(' ');
       addr.push_str(&client_ip_str);
+      entry.insert(addr.to_owned().parse()?);
     }
   }
   Ok(())

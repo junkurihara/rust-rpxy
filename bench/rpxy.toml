@@ -16,7 +16,7 @@ reverse_proxy = [
   # Array for load balancing
   { upstream = [
     { location = 'backend-nginx', tls = false, upstream_options = [
-      "override_host",
+      # "override_host",
     ] },
   ] },
   # { upstream = [{ location = '192.168.100.100', tls = false }] },
