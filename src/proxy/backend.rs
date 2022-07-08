@@ -99,8 +99,15 @@ impl Backend {
   }
   pub async fn update_server_config(&self) -> io::Result<()> {
     debug!("Update TLS server config");
-    let certs_path = self.tls_cert_path.as_ref().unwrap();
-    let certs_keys_path = self.tls_cert_key_path.as_ref().unwrap();
+    let (certs_path, certs_keys_path) =
+      if let (Some(c), Some(k)) = (self.tls_cert_path.as_ref(), self.tls_cert_key_path.as_ref()) {
+        (c, k)
+      } else {
+        return Err(io::Error::new(
+          io::ErrorKind::Other,
+          "Invalid certs and keys paths",
+        ));
+      };
     let certs: Vec<_> = {
       let certs_path_str = certs_path.display().to_string();
       let mut reader = BufReader::new(File::open(certs_path).map_err(|e| {

@@ -34,18 +34,18 @@ where
     loop {
       select! {
         tcp_cnx = tcp_listener.accept().fuse() => {
-          if tcp_cnx.is_err() {
+          // First check SNI
+          let rustls_acceptor = rustls::server::Acceptor::new();
+          if tcp_cnx.is_err() || rustls_acceptor.is_err() {
             continue;
           }
           let (raw_stream, _client_addr) = tcp_cnx.unwrap();
-
-          // First check SNI
-          let rustls_acceptor = rustls::server::Acceptor::new().unwrap();
-          let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls_acceptor, raw_stream).await;
+          let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls_acceptor.unwrap(), raw_stream).await;
           if acceptor.is_err() {
             continue;
           }
           let start = acceptor.unwrap();
+
           let client_hello = start.client_hello();
           debug!("SNI in ClientHello: {:?}", client_hello.server_name());
           // Find server config for given SNI
