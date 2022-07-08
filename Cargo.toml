@@ -48,7 +48,6 @@ hyper-rustls = { version = "0.23.0", default-features = false, features = [
   "http1",
   "http2",
 ] }
-parking_lot = "0.12.1"
 quinn = { version = "0.8.3", optional = true }
 h3 = { git = "https://github.com/hyperium/h3.git" }
 h3-quinn = { git = "https://github.com/hyperium/h3.git" }

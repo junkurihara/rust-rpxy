@@ -7,7 +7,6 @@ use crate::{
   proxy::{Backend, Backends, ReverseProxy, Upstream, UpstreamOption},
 };
 use clap::Arg;
-use parking_lot::Mutex;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::net::SocketAddr;
 
@@ -132,7 +131,6 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
         tls_cert_path,
         tls_cert_key_path,
         https_redirection,
-        server_config: Mutex::new(None),
       },
     );
     info!("Registering application: {} ({})", app_name, server_name);

@@ -1,6 +1,5 @@
 use super::UpstreamOption;
 use crate::log::*;
-use parking_lot::Mutex;
 use rand::Rng;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
@@ -28,7 +27,6 @@ pub struct Backend {
   pub tls_cert_path: Option<PathBuf>,
   pub tls_cert_key_path: Option<PathBuf>,
   pub https_redirection: Option<bool>,
-  pub server_config: Mutex<Option<ServerConfig>>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,15 +87,7 @@ impl Upstream {
 }
 
 impl Backend {
-  pub fn get_tls_server_config(&self) -> Option<ServerConfig> {
-    let lock = self.server_config.lock();
-    let opt_clone = lock.clone();
-    if let Some(sc) = opt_clone {
-      return Some(sc);
-    }
-    None
-  }
-  pub async fn update_server_config(&self) -> io::Result<()> {
+  pub async fn update_server_config(&self) -> io::Result<ServerConfig> {
     debug!("Update TLS server config");
     let (certs_path, certs_keys_path) =
       if let (Some(c), Some(k)) = (self.tls_cert_path.as_ref(), self.tls_cert_key_path.as_ref()) {
@@ -204,10 +194,7 @@ impl Backend {
       server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     }
 
-    let mut config_store = self.server_config.lock();
-    *config_store = Some(server_config);
-
     // server_config;
-    Ok(())
+    Ok(server_config)
   }
 }

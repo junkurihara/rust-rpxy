@@ -218,7 +218,7 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   remove_hop_header(headers);
   // X-Forwarded-For
   add_forwarding_header(headers, client_addr)?;
-  println!("{:?}", headers);
+  // println!("{:?}", headers);
 
   // Add te: trailer if te_trailer
   if te_trailers {
