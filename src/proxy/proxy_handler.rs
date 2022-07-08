@@ -1,26 +1,14 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
-use super::{Proxy, Upstream, UpstreamOption};
+use super::{utils_headers::*, utils_request::*, utils_synth_response::*, Proxy, Upstream};
 use crate::{constants::*, error::*, log::*};
 use hyper::{
   client::connect::Connect,
-  header::{HeaderMap, HeaderValue},
+  header::{self, HeaderValue},
   http::uri::Scheme,
   Body, Request, Response, StatusCode, Uri, Version,
 };
 use std::net::SocketAddr;
 use tokio::io::copy_bidirectional;
-
-const HOP_HEADERS: &[&str] = &[
-  "connection",
-  "te",
-  "trailer",
-  "keep-alive",
-  "proxy-connection",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "transfer-encoding",
-  "upgrade",
-];
 
 impl<T> Proxy<T>
 where
@@ -31,42 +19,34 @@ where
     mut req: Request<Body>,
     client_addr: SocketAddr, // アクセス制御用
   ) -> Result<Response<Body>> {
-    info!(
-      "Handling {:?} request from {}: {} {:?} {} {:?}",
-      req.version(),
-      client_addr,
-      req.method(),
-      req.headers().get("host").map_or_else(
-        || req.uri().host().unwrap_or("<none>"),
-        |h| h.to_str().unwrap()
-      ),
-      req.uri(),
-      req
-        .headers()
-        .get("user-agent")
-        .map_or_else(|| "<none>", |ua| ua.to_str().unwrap())
-    );
+    let request_log = log_request_msg(&req, client_addr);
+
     // Here we start to handle with server_name
     // Find backend application for given server_name
-    let (server_name, _port) = if let Ok(v) = parse_host_port(&req, self.tls_enabled) {
+    let (server_name, _port) = if let Ok(v) = parse_host_port(&req) {
       v
     } else {
-      return http_error(StatusCode::SERVICE_UNAVAILABLE);
-    };
-    let backend = if let Some(be) = self.backends.apps.get(server_name.as_str()) {
-      be
-    } else if let Some(default_be) = &self.backends.default_app {
-      debug!("Serving by default app: {}", default_be);
-      self.backends.apps.get(default_be).unwrap()
-    } else {
-      return http_error(StatusCode::SERVICE_UNAVAILABLE);
+      info!("{} => {}", request_log, StatusCode::BAD_REQUEST);
+      return http_error(StatusCode::BAD_REQUEST);
     };
 
-    // Redirect to https if tls_enabled is false and redirect_to_https is true
-    let path_and_query = req.uri().path_and_query().unwrap().as_str().to_owned();
+    if !self.backends.apps.contains_key(&server_name) && self.backends.default_app.is_none() {
+      info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
+      return http_error(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let backend = if let Some(be) = self.backends.apps.get(&server_name) {
+      be
+    } else {
+      let default_be = self.backends.default_app.as_ref().unwrap();
+      debug!("Serving by default app: {}", default_be);
+      self.backends.apps.get(default_be).unwrap()
+    };
+
+    // Redirect to https if !tls_enabled and redirect_to_https is true
     if !self.tls_enabled && backend.https_redirection.unwrap_or(false) {
       debug!("Redirect to secure connection: {}", server_name);
-      return secure_redirection(&server_name, self.globals.https_port, &path_and_query);
+      info!("{} => {}", request_log, StatusCode::PERMANENT_REDIRECT);
+      return secure_redirection(&server_name, self.globals.https_port, &req);
     }
 
     // Find reverse proxy for given path and choose one of upstream host
@@ -94,7 +74,6 @@ where
       client_addr,
       req,
       upstream_scheme_host,
-      path_and_query,
       &upgrade_in_request,
       upstream,
     ) {
@@ -117,19 +96,19 @@ where
     {
       if self.globals.http3 {
         if let Some(port) = self.globals.https_port {
-          res_backend.headers_mut().insert(
-            hyper::header::ALT_SVC,
-            format!(
-              "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
-              port, H3_ALT_SVC_MAX_AGE, port, H3_ALT_SVC_MAX_AGE
-            )
-            .parse()
-            .unwrap(),
-          );
+          let alt_svc_value = HeaderValue::from_str(&format!(
+            "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
+            port, H3_ALT_SVC_MAX_AGE, port, H3_ALT_SVC_MAX_AGE
+          ))
+          .unwrap();
+          res_backend
+            .headers_mut()
+            .insert(header::ALT_SVC, alt_svc_value);
         }
       }
     }
     debug!("Response from backend: {:?}", res_backend.status());
+    let response_log = res_backend.status().to_string();
 
     if res_backend.status() == StatusCode::SWITCHING_PROTOCOLS {
       // Handle StatusCode::SWITCHING_PROTOCOLS in response
@@ -153,28 +132,36 @@ where
               .map_err(|e| anyhow!("Coping between upgraded connections failed: {}", e))?; // TODO: any response code?
             Ok(()) as Result<()>
           });
+          info!("{} => {}", request_log, response_log);
           Ok(res_backend)
         } else {
           error!("Request does not have an upgrade extension");
-          http_error(StatusCode::BAD_GATEWAY)
+          info!("{} => {}", request_log, StatusCode::BAD_REQUEST);
+          http_error(StatusCode::BAD_REQUEST)
         }
       } else {
         error!(
           "Backend tried to switch to protocol {:?} when {:?} was requested",
           upgrade_in_response, upgrade_in_request
         );
-        http_error(StatusCode::BAD_GATEWAY)
+        info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
+        http_error(StatusCode::SERVICE_UNAVAILABLE)
       }
     } else {
       // Generate response to client
       if generate_response_forwarded(&mut res_backend).is_ok() {
+        info!("{} => {}", request_log, response_log);
         Ok(res_backend)
       } else {
+        info!("{} => {}", request_log, StatusCode::BAD_GATEWAY);
         http_error(StatusCode::BAD_GATEWAY)
       }
     }
   }
 }
+
+////////////////////////////////////////////////////
+// Functions to generate messages
 
 fn generate_response_forwarded<B: core::fmt::Debug>(response: &mut Response<B>) -> Result<()> {
   let headers = response.headers_mut();
@@ -193,7 +180,6 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   client_addr: SocketAddr,
   mut req: Request<B>,
   upstream_scheme_host: &Uri,
-  path_and_query: String,
   upgrade: &Option<String>,
   upstream: &Upstream,
 ) -> Result<Request<B>> {
@@ -201,11 +187,8 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
 
   // Add te: trailer if contained in original request
   let te_trailers = {
-    if let Some(te) = req.headers().get("te") {
-      te.to_str()
-        .unwrap()
-        .split(',')
-        .any(|x| x.trim() == "trailers")
+    if let Some(te) = req.headers().get(header::TE) {
+      te.to_str()?.split(',').any(|x| x.trim() == "trailers")
     } else {
       false
     }
@@ -222,16 +205,15 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
 
   // Add te: trailer if te_trailer
   if te_trailers {
-    headers.insert("te", "trailer".parse().unwrap());
+    headers.insert(header::TE, "trailer".parse()?);
   }
 
   // add "host" header of original server_name if not exist (default)
-  if req.headers().get(hyper::header::HOST).is_none() {
+  if req.headers().get(header::HOST).is_none() {
     let org_host = req.uri().host().unwrap_or("none").to_owned();
-    req.headers_mut().insert(
-      hyper::header::HOST,
-      HeaderValue::from_str(org_host.as_str()).unwrap(),
-    );
+    req
+      .headers_mut()
+      .insert(header::HOST, HeaderValue::from_str(org_host.as_str())?);
   };
 
   // apply upstream-specific headers given in upstream_option
@@ -239,18 +221,23 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   apply_upstream_options_to_header(headers, client_addr, upstream_scheme_host, upstream)?;
 
   // update uri in request
-  *req.uri_mut() = Uri::builder()
+  ensure!(upstream_scheme_host.authority().is_some() && upstream_scheme_host.scheme().is_some());
+  let new_uri = Uri::builder()
     .scheme(upstream_scheme_host.scheme().unwrap().as_str())
-    .authority(upstream_scheme_host.authority().unwrap().as_str())
-    .path_and_query(&path_and_query)
-    .build()?;
+    .authority(upstream_scheme_host.authority().unwrap().as_str());
+  let pq = req.uri().path_and_query();
+  *req.uri_mut() = match pq {
+    None => new_uri,
+    Some(x) => new_uri.path_and_query(x.to_owned()),
+  }
+  .build()?;
 
   // upgrade
   if let Some(v) = upgrade {
-    req.headers_mut().insert("upgrade", v.parse().unwrap());
+    req.headers_mut().insert("upgrade", v.parse()?);
     req
       .headers_mut()
-      .insert(hyper::header::CONNECTION, HeaderValue::from_str("upgrade")?);
+      .insert(header::CONNECTION, HeaderValue::from_str("upgrade")?);
   }
 
   // Change version to http/1.1 when destination scheme is http
@@ -262,156 +249,4 @@ fn generate_request_forwarded<B: core::fmt::Debug>(
   }
 
   Ok(req)
-}
-
-fn apply_upstream_options_to_header(
-  headers: &mut HeaderMap,
-  _client_addr: SocketAddr,
-  upstream_scheme_host: &Uri,
-  upstream: &Upstream,
-) -> Result<()> {
-  upstream.opts.iter().for_each(|opt| match opt {
-    UpstreamOption::OverrideHost => {
-      let upstream_host = upstream_scheme_host.host().unwrap();
-      headers
-        .insert(
-          hyper::header::HOST,
-          HeaderValue::from_str(upstream_host).unwrap(),
-        )
-        .unwrap();
-    }
-  });
-  Ok(())
-}
-
-fn append_header_entry(headers: &mut HeaderMap, key: &'static str, value: &str) -> Result<()> {
-  match headers.entry(key) {
-    hyper::header::Entry::Vacant(entry) => {
-      entry.insert(value.parse::<HeaderValue>()?);
-    }
-    hyper::header::Entry::Occupied(mut entry) => {
-      entry.append(value.parse::<HeaderValue>()?);
-    }
-  }
-
-  Ok(())
-}
-
-fn add_forwarding_header(headers: &mut HeaderMap, client_addr: SocketAddr) -> Result<()> {
-  // default process
-  // optional process defined by upstream_option is applied in fn apply_upstream_options
-  append_header_entry(headers, "x-forwarded-for", &client_addr.ip().to_string())?;
-
-  Ok(())
-}
-
-fn remove_connection_header(headers: &mut HeaderMap) {
-  if headers.get("connection").is_some() {
-    let v = headers.get("connection").cloned().unwrap();
-    for m in v.to_str().unwrap().split(',') {
-      if !m.is_empty() {
-        headers.remove(m.trim());
-      }
-    }
-  }
-}
-
-fn remove_hop_header(headers: &mut HeaderMap) {
-  HOP_HEADERS.iter().for_each(|key| {
-    headers.remove(*key);
-  });
-}
-
-fn http_error(status_code: StatusCode) -> Result<Response<Body>> {
-  let response = Response::builder()
-    .status(status_code)
-    .body(Body::empty())
-    .unwrap();
-  Ok(response)
-}
-
-fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
-  if let Some(c) = headers.get("connection") {
-    if c
-      .to_str()
-      .unwrap_or("")
-      .split(',')
-      .into_iter()
-      .any(|w| w.trim().to_ascii_lowercase() == "upgrade")
-    {
-      if let Some(u) = headers.get("upgrade") {
-        let m = u.to_str().unwrap().to_string();
-        debug!("Upgrade in request header: {}", m);
-        return Some(m);
-      }
-    }
-  }
-  None
-}
-
-fn secure_redirection(
-  server_name: &str,
-  tls_port: Option<u16>,
-  path_and_query: &str,
-) -> Result<Response<Body>> {
-  let dest_uri: String = if let Some(tls_port) = tls_port {
-    if tls_port == 443 {
-      format!("https://{}{}", server_name, path_and_query)
-    } else {
-      format!("https://{}:{}{}", server_name, tls_port, path_and_query)
-    }
-  } else {
-    bail!("Internal error! TLS port is not set internally.");
-  };
-  let response = Response::builder()
-    .status(StatusCode::MOVED_PERMANENTLY)
-    .header("Location", dest_uri)
-    .body(Body::empty())
-    .unwrap();
-  Ok(response)
-}
-
-fn parse_host_port<B: core::fmt::Debug>(
-  req: &Request<B>,
-  tls_enabled: bool,
-) -> Result<(String, u16)> {
-  let host_port_headers = req.headers().get("host");
-  let host_uri = req.uri().host();
-  let port_uri = req.uri().port_u16();
-
-  if host_port_headers.is_none() && host_uri.is_none() {
-    bail!("No host in request header");
-  }
-
-  let (host, port) = match (host_uri, host_port_headers) {
-    (Some(x), _) => {
-      let port = if let Some(p) = port_uri {
-        p
-      } else if tls_enabled {
-        443
-      } else {
-        80
-      };
-      (x.to_string(), port)
-    }
-    (None, Some(x)) => {
-      let hp_as_uri = x.to_str().unwrap().parse::<Uri>().unwrap();
-      let host = hp_as_uri
-        .host()
-        .ok_or_else(|| anyhow!("Failed to parse host"))?;
-      let port = if let Some(p) = hp_as_uri.port() {
-        p.as_u16()
-      } else if tls_enabled {
-        443
-      } else {
-        80
-      };
-      (host.to_string(), port)
-    }
-    (None, None) => {
-      bail!("Host unspecified in request")
-    }
-  };
-
-  Ok((host, port))
 }

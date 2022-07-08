@@ -8,6 +8,7 @@ mod error;
 mod globals;
 mod log;
 mod proxy;
+mod utils;
 
 use crate::{
   config::parse_opts,

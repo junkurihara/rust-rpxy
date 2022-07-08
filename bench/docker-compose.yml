@@ -25,10 +25,12 @@ services:
     build:
       context: ../
     restart: unless-stopped
+    environment:
+      - LOG_LEVEL=debug
+      - LOG_TO_FILE=false
     ports:
       - 127.0.0.1:8080:8080
     tty: false
-    privileged: true
     volumes:
       - ./rpxy.toml:/etc/rpxy.toml:ro
     networks:
