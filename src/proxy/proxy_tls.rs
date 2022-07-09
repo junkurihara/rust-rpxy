@@ -1,4 +1,7 @@
-use super::proxy_main::{LocalExecutor, Proxy};
+use super::{
+  proxy_main::{LocalExecutor, Proxy},
+  ServerNameLC,
+};
 use crate::{constants::*, error::*, log::*};
 #[cfg(feature = "h3")]
 use futures::StreamExt;
@@ -9,7 +12,7 @@ use rustls::ServerConfig;
 use std::sync::Arc;
 use tokio::{net::TcpListener, sync::watch, time::Duration};
 
-type ServerCryptoMap = HashMap<String, ServerConfig>;
+type ServerCryptoMap = HashMap<ServerNameLC, Arc<ServerConfig>>;
 
 impl<T> Proxy<T>
 where
@@ -18,16 +21,19 @@ where
   async fn cert_service(&self, server_crypto_tx: watch::Sender<Option<ServerCryptoMap>>) {
     info!("Start cert watch service");
     loop {
-      let mut hm_server_config = HashMap::<String, ServerConfig>::default();
-      for (server_name, backend) in self.backends.apps.iter() {
+      let mut hm_server_config = HashMap::<ServerNameLC, Arc<ServerConfig>>::default();
+      for (server_name_bytes, backend) in self.backends.apps.iter() {
         if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
           match backend.update_server_config().await {
             Err(_e) => {
-              error!("Failed to update certs for {}: {}", server_name, _e);
+              error!(
+                "Failed to update certs for {}: {}",
+                &backend.server_name, _e
+              );
               break;
             }
             Ok(server_config) => {
-              hm_server_config.insert(server_name.to_owned(), server_config);
+              hm_server_config.insert(server_name_bytes.to_vec(), Arc::new(server_config));
             }
           }
         }
@@ -66,21 +72,20 @@ where
           let start = acceptor.unwrap();
 
           let client_hello = start.client_hello();
-          debug!("SNI in ClientHello: {:?}", client_hello.server_name());
           // Find server config for given SNI
-          let svn = if let Some(svn) = client_hello.server_name() {
-            svn
-          } else {
+          if client_hello.server_name().is_none(){
             info!("No SNI in ClientHello");
             continue;
-          };
-          let server_crypto = if let Some(p) = server_crypto_map.as_ref().unwrap().get(svn) {
-            p.to_owned()
-          } else {
+          }
+          let server_name = client_hello.server_name().unwrap().to_ascii_lowercase();
+          debug!("SNI in ClientHello: {:?}", server_name);
+          let server_crypto = server_crypto_map.as_ref().unwrap().get(server_name.as_bytes());
+          if server_crypto.is_none() {
+            debug!("No TLS serving app for {}", server_name);
             continue;
           };
           // Finally serve the TLS connection
-          if let Ok(stream) = start.into_stream(Arc::new(server_crypto)).await {
+          if let Ok(stream) = start.into_stream(server_crypto.unwrap().clone()).await {
             self.clone().client_serve(stream, server.clone(), _client_addr).await
           }
         }
@@ -101,7 +106,7 @@ where
     &self,
     peeked_conn: &mut quinn::Connecting,
     server_crypto_map: &ServerCryptoMap,
-  ) -> Option<ServerConfig> {
+  ) -> Option<Arc<ServerConfig>> {
     let hsd = if let Ok(h) = peeked_conn.handshake_data().await {
       h
     } else {
@@ -112,12 +117,14 @@ where
     } else {
       return None;
     };
-    let server_name = hsd_downcast.server_name?;
+    let server_name = hsd_downcast.server_name?.to_ascii_lowercase();
     info!(
       "HTTP/3 connection incoming (SNI {:?}): Overwrite ServerConfig",
       server_name
     );
-    server_crypto_map.get(&server_name).cloned()
+    server_crypto_map
+      .get(&server_name.as_bytes().to_vec())
+      .cloned()
   }
 
   #[cfg(feature = "h3")]
@@ -127,20 +134,20 @@ where
   ) -> Result<()> {
     // TODO: Work around to initially serve incoming connection
     // かなり適当。エラーが出たり出なかったり。原因がわからない…
-    let tls_app_names: Vec<String> = self
+    let next = self
       .backends
       .apps
       .iter()
       .filter(|&(_, backend)| {
         backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some()
       })
-      .map(|(name, _)| name.to_string())
-      .collect();
-    ensure!(!tls_app_names.is_empty(), "No TLS supported app");
-    let initial_app_name = tls_app_names.get(0).ok_or_else(|| anyhow!(""))?.as_str();
+      .map(|(name, _)| name)
+      .next();
+    ensure!(next.is_some(), "No TLS supported app");
+    let initial_app_name = next.ok_or_else(|| anyhow!(""))?;
     debug!(
-      "HTTP/3 SNI multiplexer initial app_name: {}",
-      initial_app_name
+      "HTTP/3 SNI multiplexer initial app_name: {:?}",
+      String::from_utf8(initial_app_name.to_vec())
     );
     let backend_serve = self
       .backends
@@ -168,7 +175,7 @@ where
           let is_acceptable =
             if let Some(new_server_crypto) = self.parse_sni_and_get_crypto_h3(peeked_conn, server_crypto_map.as_ref().unwrap()).await {
               // Set ServerConfig::set_server_config for given SNI
-              endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(Arc::new(new_server_crypto))));
+              endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(new_server_crypto)));
               true
             } else {
               false

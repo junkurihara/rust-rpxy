@@ -91,7 +91,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
   // each app
   for (app_name, app) in apps.0.iter() {
     ensure!(app.server_name.is_some(), "Missing server_name");
-    let server_name = app.server_name.as_ref().unwrap();
+    let server_name = app.server_name.as_ref().unwrap().to_ascii_lowercase();
 
     // TLS settings
     let (tls_cert_path, tls_cert_key_path, https_redirection) = if app.tls.is_none() {
@@ -122,7 +122,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
     let reverse_proxy = get_reverse_proxy(app.reverse_proxy.as_ref().unwrap())?;
 
     backends.apps.insert(
-      server_name.to_owned(),
+      server_name.as_bytes().to_vec(),
       Backend {
         app_name: app_name.to_owned(),
         server_name: server_name.to_owned(),
@@ -149,7 +149,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
         "Serving plaintext http for requests to unconfigured server_name by app {} (server_name: {}).",
         d, d_sn[0]
       );
-      backends.default_app = Some(d_sn[0].to_owned());
+      backends.default_server_name = Some(d_sn[0].as_bytes().to_vec());
     }
   }
 

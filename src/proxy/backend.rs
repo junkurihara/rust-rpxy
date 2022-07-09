@@ -13,9 +13,12 @@ use std::{
 };
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
+// server name (hostname or ip address) in ascii lower case
+pub type ServerNameLC = Vec<u8>;
+
 pub struct Backends {
-  pub apps: HashMap<String, Backend>, // TODO: hyper::uriで抜いたhostで引っ掛ける。Stringでいいのか？
-  pub default_app: Option<String>,    // for plaintext http
+  pub apps: HashMap<ServerNameLC, Backend>, // TODO: hyper::uriで抜いたhostで引っ掛ける。Stringでいいのか？
+  pub default_server_name: Option<ServerNameLC>, // for plaintext http
 }
 
 pub struct Backend {

@@ -23,27 +23,27 @@ where
 
     // Here we start to handle with server_name
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
-    let (server_name, _port) = parse_host_port(&req)?;
+    // let (server_name, _port) = parse_host_port(&req)?;
+    let server_name_bytes = req.parse_host()?.to_ascii_lowercase();
 
-    if !self.backends.apps.contains_key(&server_name) && self.backends.default_app.is_none() {
+    let backend = if let Some(be) = self.backends.apps.get(&server_name_bytes) {
+      be
+    } else if let Some(default_server_name) = &self.backends.default_server_name {
+      debug!("Serving by default app");
+      self.backends.apps.get(default_server_name).unwrap()
+    } else {
       // info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
-    }
-    let backend = if let Some(be) = self.backends.apps.get(&server_name) {
-      be
-    } else {
-      let default_be = self.backends.default_app.as_ref().unwrap();
-      debug!("Serving by default app: {}", default_be);
-      self.backends.apps.get(default_be).unwrap()
     };
 
     // Redirect to https if !tls_enabled and redirect_to_https is true
     if !self.tls_enabled && backend.https_redirection.unwrap_or(false) {
-      debug!("Redirect to secure connection: {}", server_name);
+      debug!("Redirect to secure connection: {}", &backend.server_name);
       // info!("{} => {}", request_log, StatusCode::PERMANENT_REDIRECT);
-      return secure_redirection(&server_name, self.globals.https_port, &req);
+      return secure_redirection(&backend.server_name, self.globals.https_port, &req);
     }
 
+    ///////////////////////
     // Find reverse proxy for given path and choose one of upstream host
     // TODO: More flexible path matcher
     let path = req.uri().path();
@@ -59,6 +59,7 @@ where
     } else {
       return http_error(StatusCode::INTERNAL_SERVER_ERROR);
     };
+    ///////////////////////
 
     // Upgrade in request header
     let upgrade_in_request = extract_upgrade(req.headers());
@@ -77,7 +78,8 @@ where
       error!("Failed to generate destination uri for reverse proxy");
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     };
-    debug!("Request to be forwarded: {:?}", req_forwarded);
+    // debug!("Request to be forwarded: {:?}", req_forwarded);
+    req_forwarded.log(&client_addr, Some("Forwarding"));
 
     // Forward request to
     let mut res_backend = match self.forwarder.request(req_forwarded).await {
@@ -87,21 +89,6 @@ where
         return http_error(StatusCode::BAD_REQUEST);
       }
     };
-    #[cfg(feature = "h3")]
-    {
-      if self.globals.http3 {
-        if let Some(port) = self.globals.https_port {
-          let alt_svc_value = HeaderValue::from_str(&format!(
-            "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
-            port, H3_ALT_SVC_MAX_AGE, port, H3_ALT_SVC_MAX_AGE
-          ))
-          .unwrap();
-          res_backend
-            .headers_mut()
-            .insert(header::ALT_SVC, alt_svc_value);
-        }
-      }
-    }
     debug!("Response from backend: {:?}", res_backend.status());
     // let response_log = res_backend.status().to_string();
 
@@ -175,6 +162,21 @@ where
       "server",
       &format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
     )?;
+    #[cfg(feature = "h3")]
+    {
+      if self.globals.http3 {
+        if let Some(port) = self.globals.https_port {
+          append_header_entry(
+            headers,
+            header::ALT_SVC.as_str(),
+            &format!(
+              "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
+              port, H3_ALT_SVC_MAX_AGE, port, H3_ALT_SVC_MAX_AGE
+            ),
+          )?;
+        }
+      }
+    }
 
     Ok(())
   }
@@ -192,7 +194,9 @@ where
     // Add te: trailer if contained in original request
     let te_trailers = {
       if let Some(te) = req.headers().get(header::TE) {
-        te.to_str()?.split(',').any(|x| x.trim() == "trailers")
+        te.as_bytes()
+          .split(|v| v == &b',' || v == &b' ')
+          .any(|x| x == "trailers".as_bytes())
       } else {
         false
       }
@@ -205,7 +209,6 @@ where
     remove_hop_header(headers);
     // X-Forwarded-For
     add_forwarding_header(headers, client_addr, self.tls_enabled)?;
-    // println!("{:?}", headers);
 
     // Add te: trailer if te_trailer
     if te_trailers {
@@ -214,10 +217,14 @@ where
 
     // add "host" header of original server_name if not exist (default)
     if req.headers().get(header::HOST).is_none() {
-      let org_host = req.uri().host().unwrap_or("none").to_owned();
+      let org_host = req
+        .uri()
+        .host()
+        .ok_or_else(|| anyhow!("Invalid request"))?
+        .to_owned();
       req
         .headers_mut()
-        .insert(header::HOST, HeaderValue::from_str(org_host.as_str())?);
+        .insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
 
     // apply upstream-specific headers given in upstream_option

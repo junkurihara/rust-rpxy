@@ -16,7 +16,7 @@ use crate::{
   error::*,
   globals::*,
   log::*,
-  proxy::{Backend, Backends, Proxy},
+  proxy::{Backend, Backends, Proxy, ServerNameLC},
 };
 use futures::future::select_all;
 use hyper::Client;
@@ -64,8 +64,8 @@ fn main() {
     };
 
     let mut backends = Backends {
-      default_app: None,
-      apps: HashMap::<String, Backend>::default(),
+      default_server_name: None,
+      apps: HashMap::<ServerNameLC, Backend>::default(),
     };
 
     parse_opts(&mut globals, &mut backends).expect("Invalid configuration");
