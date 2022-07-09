@@ -92,7 +92,7 @@ where
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     };
     // debug!("Request to be forwarded: {:?}", req_forwarded);
-    req_forwarded.log(&client_addr, Some("Forwarding"));
+    req_forwarded.log(&client_addr, Some("(Forwarding)"));
 
     // Forward request to
     let mut res_backend = match self.forwarder.request(req_forwarded).await {

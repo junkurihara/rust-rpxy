@@ -5,12 +5,12 @@ services:
     container_name: backend-nginx
     restart: unless-stopped
     environment:
-      - VIRTUAL_HOST="127.0.0.1"
+      - VIRTUAL_HOST=localhost
       - VIRTUAL_PORT=80
     expose:
       - 80
-    ports:
-      - 127.0.0.1:8888:80
+    # ports:
+      # - 127.0.0.1:8888:80
     logging:
       options:
         max-size: "10m"
@@ -45,6 +45,8 @@ services:
     tty: false
     privileged: true
     volumes:
+      - ./nginx_data/vhost:/etc/nginx/vhost.d
+      - ./nginx_data/conf:/etc/nginx/conf.d/
       - /var/run/docker.sock:/tmp/docker.sock:ro
     logging:
       options:

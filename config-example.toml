@@ -45,6 +45,7 @@ reverse_proxy = [
     { location = 'www.bing.co.jp', tls = true },
   ], upstream_options = [
     "override_host",
+    "upgrade_insecure_requests",
   ] },
 ]
 # Optional: TLS setting. if https_port is specified and tls is true above, this must be given.

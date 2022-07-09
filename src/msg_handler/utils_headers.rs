@@ -16,12 +16,20 @@ pub(super) fn apply_upstream_options_to_header(
   upstream: &Upstream,
 ) -> Result<()> {
   for opt in upstream.opts.iter() {
+    println!("{:?}", opt);
     match opt {
       UpstreamOption::OverrideHost => {
+        // overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
         let upstream_host = upstream_scheme_host.host().ok_or_else(|| anyhow!("none"))?;
         headers
           .insert(header::HOST, HeaderValue::from_str(upstream_host)?)
           .ok_or_else(|| anyhow!("none"))?;
+      }
+      UpstreamOption::UpgradeInsecureRequests => {
+        // add upgrade-insecure-requests in request header if not exist
+        headers
+          .entry(header::UPGRADE_INSECURE_REQUESTS)
+          .or_insert(HeaderValue::from_bytes(&[b'1']).unwrap());
       }
     }
   }
