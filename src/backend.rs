@@ -1,4 +1,4 @@
-use super::UpstreamOption;
+use crate::backend_opt::UpstreamOption;
 use crate::log::*;
 use rand::Rng;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};

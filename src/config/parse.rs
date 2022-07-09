@@ -1,10 +1,11 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
 use crate::{
+  backend::{Backend, ReverseProxy, Upstream},
+  backend_opt::UpstreamOption,
   constants::*,
   error::*,
   globals::*,
   log::*,
-  proxy::{Backend, Backends, ReverseProxy, Upstream, UpstreamOption},
 };
 use clap::Arg;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -13,7 +14,7 @@ use std::net::SocketAddr;
 // #[cfg(feature = "tls")]
 use std::path::PathBuf;
 
-pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> {
+pub fn parse_opts(globals: &mut Globals) -> Result<()> {
   let _ = include_str!("../../Cargo.toml");
   let options = clap::command!().arg(
     Arg::new("config_file")
@@ -121,7 +122,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
     ensure!(app.reverse_proxy.is_some(), "Missing reverse_proxy");
     let reverse_proxy = get_reverse_proxy(app.reverse_proxy.as_ref().unwrap())?;
 
-    backends.apps.insert(
+    globals.backends.apps.insert(
       server_name.as_bytes().to_vec(),
       Backend {
         app_name: app_name.to_owned(),
@@ -138,7 +139,8 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
 
   // default backend application for plaintext http requests
   if let Some(d) = config.default_app {
-    let d_sn: Vec<&str> = backends
+    let d_sn: Vec<&str> = globals
+      .backends
       .apps
       .iter()
       .filter(|(_k, v)| v.app_name == d)
@@ -149,7 +151,7 @@ pub fn parse_opts(globals: &mut Globals, backends: &mut Backends) -> Result<()> 
         "Serving plaintext http for requests to unconfigured server_name by app {} (server_name: {}).",
         d, d_sn[0]
       );
-      backends.default_server_name = Some(d_sn[0].as_bytes().to_vec());
+      globals.backends.default_server_name = Some(d_sn[0].as_bytes().to_vec());
     }
   }
 

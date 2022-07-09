@@ -1,9 +1,6 @@
 // use super::proxy_handler::handle_request;
-use super::Backends;
-use crate::{error::*, globals::Globals, log::*};
-use hyper::{
-  client::connect::Connect, server::conn::Http, service::service_fn, Body, Client, Request,
-};
+use crate::{error::*, globals::Globals, log::*, msg_handler::HttpMessageHandler};
+use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, Body, Request};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
   io::{AsyncRead, AsyncWrite},
@@ -40,8 +37,7 @@ where
 {
   pub listening_on: SocketAddr,
   pub tls_enabled: bool, // TCP待受がTLSかどうか
-  pub backends: Arc<Backends>,
-  pub forwarder: Arc<Client<T>>,
+  pub msg_handler: HttpMessageHandler<T>,
   pub globals: Arc<Globals>,
 }
 
@@ -59,13 +55,21 @@ where
       return;
     }
 
+    // let handler_inner = self.msg_handler.clone();
     self.globals.runtime_handle.clone().spawn(async move {
       tokio::time::timeout(
         self.globals.timeout + Duration::from_secs(1),
         server
           .serve_connection(
             stream,
-            service_fn(move |req: Request<Body>| self.clone().handle_request(req, peer_addr)),
+            service_fn(move |req: Request<Body>| {
+              self.msg_handler.clone().handle_request(
+                req,
+                peer_addr,
+                self.listening_on,
+                self.tls_enabled,
+              )
+            }),
           )
           .with_upgrades(),
       )

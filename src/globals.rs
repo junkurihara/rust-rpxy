@@ -1,3 +1,4 @@
+use crate::backend::Backends;
 use std::net::SocketAddr;
 use std::sync::{
   atomic::{AtomicUsize, Ordering},
@@ -5,7 +6,6 @@ use std::sync::{
 };
 use tokio::time::Duration;
 
-#[derive(Debug, Clone)]
 pub struct Globals {
   pub listen_sockets: Vec<SocketAddr>,
   pub http_port: Option<u16>,
@@ -19,6 +19,8 @@ pub struct Globals {
   pub http3: bool,
 
   pub runtime_handle: tokio::runtime::Handle,
+
+  pub backends: Backends,
 }
 
 #[derive(Debug, Clone, Default)]

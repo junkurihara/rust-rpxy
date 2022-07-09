@@ -10,7 +10,7 @@ impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub async fn client_serve_h3(self, conn: quinn::Connecting) {
+  pub async fn client_serve_h3(&self, conn: quinn::Connecting) {
     let clients_count = self.globals.clients_count.clone();
     if clients_count.increment() > self.globals.max_clients {
       clients_count.decrement();
@@ -79,7 +79,7 @@ where
 
           let self_inner = self.clone();
           self.globals.runtime_handle.spawn(async move {
-            if let Err(e) = self_inner.handle_request_h3(req, stream, client_addr).await {
+            if let Err(e) = self_inner.handle_stream_h3(req, stream, client_addr).await {
               error!("HTTP/3 request failed: {}", e);
             }
             // // TODO: Work around for timeout
@@ -98,7 +98,7 @@ where
     Ok(())
   }
 
-  async fn handle_request_h3<S>(
+  async fn handle_stream_h3<S>(
     self,
     req: Request<()>,
     mut stream: RequestStream<S, Bytes>,
@@ -129,7 +129,11 @@ where
     };
 
     let new_req: Request<Body> = Request::from_parts(req_parts, body);
-    let res = self.handle_request(new_req, client_addr).await?;
+    let res = self
+      .msg_handler
+      .clone()
+      .handle_request(new_req, client_addr, self.listening_on, self.tls_enabled)
+      .await?;
 
     let (new_res_parts, new_body) = res.into_parts();
     let new_res = Response::from_parts(new_res_parts, ());

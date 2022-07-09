@@ -1,8 +1,5 @@
-use super::{
-  proxy_main::{LocalExecutor, Proxy},
-  ServerNameLC,
-};
-use crate::{constants::*, error::*, log::*};
+use super::proxy_main::{LocalExecutor, Proxy};
+use crate::{backend::ServerNameLC, constants::*, error::*, log::*};
 #[cfg(feature = "h3")]
 use futures::StreamExt;
 use futures::{future::FutureExt, select};
@@ -24,7 +21,7 @@ where
     info!("Start cert watch service");
     loop {
       let mut hm_server_config = HashMap::<ServerNameLC, Arc<ServerConfig>>::default();
-      for (server_name_bytes, backend) in self.backends.apps.iter() {
+      for (server_name_bytes, backend) in self.globals.backends.apps.iter() {
         if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
           match backend.update_server_config().await {
             Err(_e) => {
@@ -137,6 +134,7 @@ where
     // TODO: Work around to initially serve incoming connection
     // かなり適当。エラーが出たり出なかったり。原因がわからない…
     let next = self
+      .globals
       .backends
       .apps
       .iter()
@@ -152,6 +150,7 @@ where
       std::str::from_utf8(initial_app_name)
     );
     let backend_serve = self
+      .globals
       .backends
       .apps
       .get(initial_app_name)

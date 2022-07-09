@@ -1,11 +1,10 @@
-use super::{Upstream, UpstreamOption};
-use crate::{error::*, globals::Globals, log::*, utils::*};
+use crate::{backend::Upstream, backend_opt::UpstreamOption, error::*, log::*, utils::*};
 use bytes::BufMut;
 use hyper::{
   header::{self, HeaderMap, HeaderName, HeaderValue},
   Uri,
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 
 ////////////////////////////////////////////////////
 // Functions to manipulate headers
@@ -71,8 +70,8 @@ pub(super) fn add_header_entry_if_not_exist(
 pub(super) fn add_forwarding_header(
   headers: &mut HeaderMap,
   client_addr: &SocketAddr,
+  listen_addr: &SocketAddr,
   tls: bool,
-  globals: &Arc<Globals>, // TODO: Fix
 ) -> Result<()> {
   // default process
   // optional process defined by upstream_option is applied in fn apply_upstream_options
@@ -92,15 +91,7 @@ pub(super) fn add_forwarding_header(
   )?;
   // If we receive X-Forwarded-Port, pass it through; otherwise, pass along the
   // server port the client connected to
-  add_header_entry_if_not_exist(
-    headers,
-    "x-forwarded-port",
-    if tls {
-      globals.https_port.unwrap().to_string()
-    } else {
-      globals.http_port.unwrap().to_string()
-    },
-  )?;
+  add_header_entry_if_not_exist(headers, "x-forwarded-port", listen_addr.port().to_string())?;
 
   Ok(())
 }

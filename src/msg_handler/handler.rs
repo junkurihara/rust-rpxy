@@ -1,16 +1,25 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
-use super::{utils_headers::*, utils_request::*, utils_synth_response::*, Proxy, Upstream};
-use crate::{constants::*, error::*, log::*};
+use super::{utils_headers::*, utils_request::*, utils_synth_response::*};
+use crate::{backend::Upstream, constants::*, error::*, globals::Globals, log::*};
 use hyper::{
   client::connect::Connect,
   header::{self, HeaderValue},
   http::uri::Scheme,
-  Body, Request, Response, StatusCode, Uri, Version,
+  Body, Client, Request, Response, StatusCode, Uri, Version,
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
 
-impl<T> Proxy<T>
+#[derive(Clone)]
+pub struct HttpMessageHandler<T>
+where
+  T: Connect + Clone + Sync + Send + 'static,
+{
+  pub forwarder: Arc<Client<T>>,
+  pub globals: Arc<Globals>,
+}
+
+impl<T> HttpMessageHandler<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
@@ -18,6 +27,8 @@ where
     self,
     mut req: Request<Body>,
     client_addr: SocketAddr, // アクセス制御用
+    listen_addr: SocketAddr,
+    tls_enabled: bool,
   ) -> Result<Response<Body>> {
     req.log(&client_addr, Some("(Incoming)"));
 
@@ -26,18 +37,18 @@ where
     // let (server_name, _port) = parse_host_port(&req)?;
     let server_name_bytes = req.parse_host()?.to_ascii_lowercase();
 
-    let backend = if let Some(be) = self.backends.apps.get(&server_name_bytes) {
+    let backend = if let Some(be) = self.globals.backends.apps.get(&server_name_bytes) {
       be
-    } else if let Some(default_server_name) = &self.backends.default_server_name {
+    } else if let Some(default_server_name) = &self.globals.backends.default_server_name {
       debug!("Serving by default app");
-      self.backends.apps.get(default_server_name).unwrap()
+      self.globals.backends.apps.get(default_server_name).unwrap()
     } else {
       // info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     };
 
     // Redirect to https if !tls_enabled and redirect_to_https is true
-    if !self.tls_enabled && backend.https_redirection.unwrap_or(false) {
+    if !tls_enabled && backend.https_redirection.unwrap_or(false) {
       debug!("Redirect to secure connection: {}", &backend.server_name);
       // info!("{} => {}", request_log, StatusCode::PERMANENT_REDIRECT);
       return secure_redirection(&backend.server_name, self.globals.https_port, &req);
@@ -68,10 +79,12 @@ where
     // Build request from destination information
     let req_forwarded = if let Ok(req) = self.generate_request_forwarded(
       &client_addr,
+      &listen_addr,
       req,
       upstream_scheme_host,
       &upgrade_in_request,
       upstream,
+      tls_enabled,
     ) {
       req
     } else {
@@ -110,7 +123,7 @@ where
             .await?;
           // TODO: H3で死ぬことがある
           // thread 'rpxy' panicked at 'Failed to upgrade request: hyper::Error(User(ManualUpgrade))', src/proxy/proxy_handler.rs:124:63
-          tokio::spawn(async move {
+          self.globals.runtime_handle.spawn(async move {
             let mut request_upgraded = request_upgraded.await.map_err(|e| {
               error!("Failed to upgrade request: {}", e);
               anyhow!("Failed to upgrade request: {}", e)
@@ -181,13 +194,16 @@ where
     Ok(())
   }
 
+  #[allow(clippy::too_many_arguments)]
   fn generate_request_forwarded<B: core::fmt::Debug>(
     &self,
     client_addr: &SocketAddr,
+    listen_addr: &SocketAddr,
     mut req: Request<B>,
     upstream_scheme_host: &Uri,
     upgrade: &Option<String>,
     upstream: &Upstream,
+    tls_enabled: bool,
   ) -> Result<Request<B>> {
     debug!("Generate request to be forwarded");
 
@@ -208,7 +224,7 @@ where
     // delete hop headers including header.connection
     remove_hop_header(headers);
     // X-Forwarded-For
-    add_forwarding_header(headers, client_addr, self.tls_enabled, &self.globals)?;
+    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled)?;
 
     // Add te: trailer if te_trailer
     if te_trailers {
