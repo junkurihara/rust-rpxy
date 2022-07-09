@@ -70,7 +70,7 @@ where
     let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
 
     // Build request from destination information
-    let req_forwarded = if let Ok(req) = generate_request_forwarded(
+    let req_forwarded = if let Ok(req) = self.generate_request_forwarded(
       client_addr,
       req,
       upstream_scheme_host,
@@ -149,7 +149,7 @@ where
       }
     } else {
       // Generate response to client
-      if generate_response_forwarded(&mut res_backend).is_ok() {
+      if self.generate_response_forwarded(&mut res_backend).is_ok() {
         info!("{} => {}", request_log, response_log);
         Ok(res_backend)
       } else {
@@ -158,95 +158,99 @@ where
       }
     }
   }
-}
 
-////////////////////////////////////////////////////
-// Functions to generate messages
+  ////////////////////////////////////////////////////
+  // Functions to generate messages
 
-fn generate_response_forwarded<B: core::fmt::Debug>(response: &mut Response<B>) -> Result<()> {
-  let headers = response.headers_mut();
-  remove_hop_header(headers);
-  remove_connection_header(headers);
-  append_header_entry(
-    headers,
-    "server",
-    &format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
-  )?;
+  fn generate_response_forwarded<B: core::fmt::Debug>(
+    &self,
+    response: &mut Response<B>,
+  ) -> Result<()> {
+    let headers = response.headers_mut();
+    remove_hop_header(headers);
+    remove_connection_header(headers);
+    append_header_entry(
+      headers,
+      "server",
+      &format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
+    )?;
 
-  Ok(())
-}
+    Ok(())
+  }
 
-fn generate_request_forwarded<B: core::fmt::Debug>(
-  client_addr: SocketAddr,
-  mut req: Request<B>,
-  upstream_scheme_host: &Uri,
-  upgrade: &Option<String>,
-  upstream: &Upstream,
-) -> Result<Request<B>> {
-  debug!("Generate request to be forwarded");
+  fn generate_request_forwarded<B: core::fmt::Debug>(
+    &self,
+    client_addr: SocketAddr,
+    mut req: Request<B>,
+    upstream_scheme_host: &Uri,
+    upgrade: &Option<String>,
+    upstream: &Upstream,
+  ) -> Result<Request<B>> {
+    debug!("Generate request to be forwarded");
 
-  // Add te: trailer if contained in original request
-  let te_trailers = {
-    if let Some(te) = req.headers().get(header::TE) {
-      te.to_str()?.split(',').any(|x| x.trim() == "trailers")
-    } else {
-      false
+    // Add te: trailer if contained in original request
+    let te_trailers = {
+      if let Some(te) = req.headers().get(header::TE) {
+        te.to_str()?.split(',').any(|x| x.trim() == "trailers")
+      } else {
+        false
+      }
+    };
+
+    let headers = req.headers_mut();
+    // delete headers specified in header.connection
+    remove_connection_header(headers);
+    // delete hop headers including header.connection
+    remove_hop_header(headers);
+    // X-Forwarded-For
+    add_forwarding_header(headers, client_addr, self.tls_enabled)?;
+    // println!("{:?}", headers);
+
+    // Add te: trailer if te_trailer
+    if te_trailers {
+      headers.insert(header::TE, "trailer".parse()?);
     }
-  };
 
-  let headers = req.headers_mut();
-  // delete headers specified in header.connection
-  remove_connection_header(headers);
-  // delete hop headers including header.connection
-  remove_hop_header(headers);
-  // X-Forwarded-For
-  add_forwarding_header(headers, client_addr)?;
-  // println!("{:?}", headers);
+    // add "host" header of original server_name if not exist (default)
+    if req.headers().get(header::HOST).is_none() {
+      let org_host = req.uri().host().unwrap_or("none").to_owned();
+      req
+        .headers_mut()
+        .insert(header::HOST, HeaderValue::from_str(org_host.as_str())?);
+    };
 
-  // Add te: trailer if te_trailer
-  if te_trailers {
-    headers.insert(header::TE, "trailer".parse()?);
+    // apply upstream-specific headers given in upstream_option
+    let headers = req.headers_mut();
+    apply_upstream_options_to_header(headers, client_addr, upstream_scheme_host, upstream)?;
+
+    // update uri in request
+    ensure!(upstream_scheme_host.authority().is_some() && upstream_scheme_host.scheme().is_some());
+    let new_uri = Uri::builder()
+      .scheme(upstream_scheme_host.scheme().unwrap().as_str())
+      .authority(upstream_scheme_host.authority().unwrap().as_str());
+    let pq = req.uri().path_and_query();
+    *req.uri_mut() = match pq {
+      None => new_uri,
+      Some(x) => new_uri.path_and_query(x.to_owned()),
+    }
+    .build()?;
+
+    // upgrade
+    if let Some(v) = upgrade {
+      req.headers_mut().insert("upgrade", v.parse()?);
+      req
+        .headers_mut()
+        .insert(header::CONNECTION, HeaderValue::from_str("upgrade")?);
+    }
+
+    // Change version to http/1.1 when destination scheme is http
+    if req.version() != Version::HTTP_11 && upstream_scheme_host.scheme() == Some(&Scheme::HTTP) {
+      *req.version_mut() = Version::HTTP_11;
+    } else if req.version() == Version::HTTP_3 {
+      debug!("HTTP/3 is currently unsupported for request to upstream. Use HTTP/2.");
+      *req.version_mut() = Version::HTTP_2;
+    }
+
+    Ok(req)
   }
-
-  // add "host" header of original server_name if not exist (default)
-  if req.headers().get(header::HOST).is_none() {
-    let org_host = req.uri().host().unwrap_or("none").to_owned();
-    req
-      .headers_mut()
-      .insert(header::HOST, HeaderValue::from_str(org_host.as_str())?);
-  };
-
-  // apply upstream-specific headers given in upstream_option
-  let headers = req.headers_mut();
-  apply_upstream_options_to_header(headers, client_addr, upstream_scheme_host, upstream)?;
-
-  // update uri in request
-  ensure!(upstream_scheme_host.authority().is_some() && upstream_scheme_host.scheme().is_some());
-  let new_uri = Uri::builder()
-    .scheme(upstream_scheme_host.scheme().unwrap().as_str())
-    .authority(upstream_scheme_host.authority().unwrap().as_str());
-  let pq = req.uri().path_and_query();
-  *req.uri_mut() = match pq {
-    None => new_uri,
-    Some(x) => new_uri.path_and_query(x.to_owned()),
-  }
-  .build()?;
-
-  // upgrade
-  if let Some(v) = upgrade {
-    req.headers_mut().insert("upgrade", v.parse()?);
-    req
-      .headers_mut()
-      .insert(header::CONNECTION, HeaderValue::from_str("upgrade")?);
-  }
-
-  // Change version to http/1.1 when destination scheme is http
-  if req.version() != Version::HTTP_11 && upstream_scheme_host.scheme() == Some(&Scheme::HTTP) {
-    *req.version_mut() = Version::HTTP_11;
-  } else if req.version() == Version::HTTP_3 {
-    debug!("HTTP/3 is currently unsupported for request to upstream. Use HTTP/2.");
-    *req.version_mut() = Version::HTTP_2;
-  }
-
-  Ok(req)
 }

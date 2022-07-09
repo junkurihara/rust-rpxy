@@ -10,8 +10,8 @@ services:
     build:
       context: ./
     environment:
-      - LOG_LEVEL=info
-      - LOG_TO_FILE
+      - LOG_LEVEL=debug
+      - LOG_TO_FILE=false
     tty: false
     privileged: true
     volumes:

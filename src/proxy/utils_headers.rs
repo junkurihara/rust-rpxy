@@ -49,6 +49,7 @@ pub(super) fn append_header_entry(
 pub(super) fn add_forwarding_header(
   headers: &mut HeaderMap,
   client_addr: SocketAddr,
+  tls: bool,
 ) -> Result<()> {
   // default process
   // optional process defined by upstream_option is applied in fn apply_upstream_options
@@ -56,6 +57,11 @@ pub(super) fn add_forwarding_header(
     headers,
     "x-forwarded-for",
     &client_addr.to_canonical().ip().to_string(),
+  )?;
+  append_header_entry(
+    headers,
+    "x-forwarded-proto",
+    if tls { "https" } else { "http" },
   )?;
 
   Ok(())
