@@ -113,7 +113,13 @@ where
     if res_backend.status() == StatusCode::SWITCHING_PROTOCOLS {
       // Handle StatusCode::SWITCHING_PROTOCOLS in response
       let upgrade_in_response = extract_upgrade(res_backend.headers());
-      if upgrade_in_request == upgrade_in_response {
+      if if let (Some(u_req), Some(u_res)) =
+        (upgrade_in_request.as_ref(), upgrade_in_response.as_ref())
+      {
+        u_req.to_ascii_lowercase() == u_res.to_ascii_lowercase()
+      } else {
+        false
+      } {
         if let Some(request_upgraded) = request_upgraded {
           let mut response_upgraded = res_backend
             .extensions_mut()
