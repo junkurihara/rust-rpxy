@@ -1,10 +1,11 @@
 use super::{Upstream, UpstreamOption};
-use crate::{error::*, log::*, utils::*};
+use crate::{error::*, globals::Globals, log::*, utils::*};
+use bytes::BufMut;
 use hyper::{
   header::{self, HeaderMap, HeaderName, HeaderValue},
   Uri,
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 ////////////////////////////////////////////////////
 // Functions to manipulate headers
@@ -29,15 +30,40 @@ pub(super) fn apply_upstream_options_to_header(
   Ok(())
 }
 
-pub(super) fn append_header_entry(headers: &mut HeaderMap, key: &str, value: &str) -> Result<()> {
+// https://datatracker.ietf.org/doc/html/rfc9110
+pub(super) fn append_header_entry_with_comma(
+  headers: &mut HeaderMap,
+  key: &str,
+  value: &str,
+) -> Result<()> {
   match headers.entry(HeaderName::from_bytes(key.as_bytes())?) {
     header::Entry::Vacant(entry) => {
       entry.insert(value.parse::<HeaderValue>()?);
     }
     header::Entry::Occupied(mut entry) => {
-      entry.append(value.parse::<HeaderValue>()?);
+      // entry.append(value.parse::<HeaderValue>()?);
+      let mut new_value = Vec::<u8>::with_capacity(entry.get().as_bytes().len() + 2 + value.len());
+      new_value.put_slice(entry.get().as_bytes());
+      new_value.put_slice(&[b',', b' ']);
+      new_value.put_slice(value.as_bytes());
+      entry.insert(HeaderValue::from_bytes(&new_value)?);
     }
   }
+
+  Ok(())
+}
+
+pub(super) fn add_header_entry_if_not_exist(
+  headers: &mut HeaderMap,
+  key: impl Into<std::borrow::Cow<'static, str>>,
+  value: impl Into<std::borrow::Cow<'static, str>>,
+) -> Result<()> {
+  match headers.entry(HeaderName::from_bytes(key.into().as_bytes())?) {
+    header::Entry::Vacant(entry) => {
+      entry.insert(value.into().parse::<HeaderValue>()?);
+    }
+    header::Entry::Occupied(_) => (),
+  };
 
   Ok(())
 }
@@ -46,18 +72,34 @@ pub(super) fn add_forwarding_header(
   headers: &mut HeaderMap,
   client_addr: &SocketAddr,
   tls: bool,
+  globals: &Arc<Globals>, // TODO: Fix
 ) -> Result<()> {
   // default process
   // optional process defined by upstream_option is applied in fn apply_upstream_options
-  append_header_entry(
+  append_header_entry_with_comma(
     headers,
     "x-forwarded-for",
     &client_addr.to_canonical().ip().to_string(),
   )?;
-  append_header_entry(
+
+  /////////// As Nginx
+  // If we receive X-Forwarded-Proto, pass it through; otherwise, pass along the
+  // scheme used to connect to this server
+  add_header_entry_if_not_exist(
     headers,
     "x-forwarded-proto",
     if tls { "https" } else { "http" },
+  )?;
+  // If we receive X-Forwarded-Port, pass it through; otherwise, pass along the
+  // server port the client connected to
+  add_header_entry_if_not_exist(
+    headers,
+    "x-forwarded-port",
+    if tls {
+      globals.https_port.unwrap().to_string()
+    } else {
+      globals.http_port.unwrap().to_string()
+    },
   )?;
 
   Ok(())

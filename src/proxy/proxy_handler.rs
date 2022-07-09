@@ -157,7 +157,7 @@ where
     let headers = response.headers_mut();
     remove_hop_header(headers);
     remove_connection_header(headers);
-    append_header_entry(
+    append_header_entry_with_comma(
       headers,
       "server",
       &format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
@@ -166,7 +166,7 @@ where
     {
       if self.globals.http3 {
         if let Some(port) = self.globals.https_port {
-          append_header_entry(
+          append_header_entry_with_comma(
             headers,
             header::ALT_SVC.as_str(),
             &format!(
@@ -208,7 +208,7 @@ where
     // delete hop headers including header.connection
     remove_hop_header(headers);
     // X-Forwarded-For
-    add_forwarding_header(headers, client_addr, self.tls_enabled)?;
+    add_forwarding_header(headers, client_addr, self.tls_enabled, &self.globals)?;
 
     // Add te: trailer if te_trailer
     if te_trailers {

@@ -76,30 +76,3 @@ impl<B> ParseHost for Request<B> {
     )
   }
 }
-
-// pub(super) fn parse_host_port<B: core::fmt::Debug>(
-//   req: &Request<B>,
-// ) -> Result<(String, Option<u16>)> {
-//   let headers_host = req.headers().get("host");
-//   let uri_host = req.uri().host();
-//   let uri_port = req.uri().port_u16();
-
-//   ensure!(
-//     !(headers_host.is_none() && uri_host.is_none()),
-//     "No host in request header"
-//   );
-
-//   // prioritize server_name in uri
-//   if let Some(v) = uri_host {
-//     Ok((v.to_string(), uri_port))
-//   } else {
-//     let uri_from_host = headers_host.unwrap().to_str()?.parse::<Uri>()?;
-//     Ok((
-//       uri_from_host
-//         .host()
-//         .ok_or_else(|| anyhow!("Failed to parse host"))?
-//         .to_string(),
-//       uri_from_host.port_u16(),
-//     ))
-//   }
-// }

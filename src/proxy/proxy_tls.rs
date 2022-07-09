@@ -9,6 +9,8 @@ use futures::{future::FutureExt, select};
 use hyper::{client::connect::Connect, server::conn::Http};
 use rustc_hash::FxHashMap as HashMap;
 use rustls::ServerConfig;
+#[cfg(feature = "h3")]
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::{net::TcpListener, sync::watch, time::Duration};
 
@@ -147,7 +149,7 @@ where
     let initial_app_name = next.ok_or_else(|| anyhow!(""))?;
     debug!(
       "HTTP/3 SNI multiplexer initial app_name: {:?}",
-      String::from_utf8(initial_app_name.to_vec())
+      std::str::from_utf8(initial_app_name)
     );
     let backend_serve = self
       .backends
@@ -167,7 +169,7 @@ where
       select! {
         // TODO: Not sure if this properly works to handle multiple "server_name"s to host multiple hosts.
         // peek() should work for that.
-        peeked_conn = std::pin::Pin::new(&mut p).peek_mut().fuse() => {
+        peeked_conn = Pin::new(&mut p).peek_mut().fuse() => {
           if server_crypto_map.is_none() || peeked_conn.is_none() {
             continue;
           }
@@ -181,7 +183,7 @@ where
               false
             };
           // Then acquire actual connection
-          let peekable_incoming = std::pin::Pin::new(&mut p);
+          let peekable_incoming = Pin::new(&mut p);
           if let Some(conn) = peekable_incoming.get_mut().next().await {
             if is_acceptable {
               self.clone().client_serve_h3(conn).await;
