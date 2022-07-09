@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 ////////////////////////////////////////////////////
 // Functions of utils for request messages
 
-pub(super) fn log_request_msg<B>(req: &Request<B>, client_addr: SocketAddr) -> String {
+pub(super) fn log_request_msg<B>(req: &Request<B>, client_addr: &SocketAddr) -> String {
   let server_name = req.headers().get(header::HOST).map_or_else(
     || {
       req

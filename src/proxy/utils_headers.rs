@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 
 pub(super) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
-  _client_addr: SocketAddr,
+  _client_addr: &SocketAddr,
   upstream_scheme_host: &Uri,
   upstream: &Upstream,
 ) -> Result<()> {
@@ -48,7 +48,7 @@ pub(super) fn append_header_entry(
 
 pub(super) fn add_forwarding_header(
   headers: &mut HeaderMap,
-  client_addr: SocketAddr,
+  client_addr: &SocketAddr,
   tls: bool,
 ) -> Result<()> {
   // default process

@@ -19,7 +19,7 @@ where
     mut req: Request<Body>,
     client_addr: SocketAddr, // アクセス制御用
   ) -> Result<Response<Body>> {
-    let request_log = log_request_msg(&req, client_addr);
+    let request_log = log_request_msg(&req, &client_addr);
 
     // Here we start to handle with server_name
     // Find backend application for given server_name
@@ -71,7 +71,7 @@ where
 
     // Build request from destination information
     let req_forwarded = if let Ok(req) = self.generate_request_forwarded(
-      client_addr,
+      &client_addr,
       req,
       upstream_scheme_host,
       &upgrade_in_request,
@@ -186,7 +186,7 @@ where
 
   fn generate_request_forwarded<B: core::fmt::Debug>(
     &self,
-    client_addr: SocketAddr,
+    client_addr: &SocketAddr,
     mut req: Request<B>,
     upstream_scheme_host: &Uri,
     upgrade: &Option<String>,
