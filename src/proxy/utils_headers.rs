@@ -1,7 +1,7 @@
 use super::{Upstream, UpstreamOption};
 use crate::{error::*, log::*, utils::*};
 use hyper::{
-  header::{self, HeaderMap, HeaderValue},
+  header::{self, HeaderMap, HeaderName, HeaderValue},
   Uri,
 };
 use std::net::SocketAddr;
@@ -29,12 +29,8 @@ pub(super) fn apply_upstream_options_to_header(
   Ok(())
 }
 
-pub(super) fn append_header_entry(
-  headers: &mut HeaderMap,
-  key: &'static str,
-  value: &str,
-) -> Result<()> {
-  match headers.entry(key) {
+pub(super) fn append_header_entry(headers: &mut HeaderMap, key: &str, value: &str) -> Result<()> {
+  match headers.entry(HeaderName::from_bytes(key.as_bytes())?) {
     header::Entry::Vacant(entry) => {
       entry.insert(value.parse::<HeaderValue>()?);
     }

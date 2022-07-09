@@ -1,33 +1,39 @@
-use crate::{error::*, utils::*};
+use crate::{error::*, log::*, utils::*};
 use hyper::{header, Request, Uri};
-use std::net::SocketAddr;
+use std::fmt::Display;
 
 ////////////////////////////////////////////////////
 // Functions of utils for request messages
+pub trait MsgLog {
+  fn log<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>);
+}
+impl<B> MsgLog for &Request<B> {
+  fn log<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) {
+    let canonical_src = src.to_canonical();
 
-pub(super) fn log_request_msg<B>(req: &Request<B>, client_addr: &SocketAddr) -> String {
-  let server_name = req.headers().get(header::HOST).map_or_else(
-    || {
-      req
+    let server_name = self.headers().get(header::HOST).map_or_else(
+      || {
+        self
+          .uri()
+          .authority()
+          .map_or_else(|| "<none>", |au| au.as_str())
+      },
+      |h| h.to_str().unwrap_or("<none>"),
+    );
+    info!(
+      "{} <- {} -- {} {:?} {:?} {:?} {}",
+      server_name,
+      canonical_src,
+      self.method(),
+      self.version(),
+      self
         .uri()
-        .authority()
-        .map_or_else(|| "<none>", |au| au.as_str())
-    },
-    |h| h.to_str().unwrap_or("<none>"),
-  );
-
-  return format!(
-    "{} <- {} -- {} {:?} {:?} ({:?})",
-    server_name,
-    client_addr.to_canonical(),
-    req.method(),
-    req.version(),
-    req
-      .uri()
-      .path_and_query()
-      .map_or_else(|| "", |v| v.as_str()),
-    req.headers()
-  );
+        .path_and_query()
+        .map_or_else(|| "", |v| v.as_str()),
+      self.headers(),
+      extra.map_or_else(|| "", |v| v)
+    );
+  }
 }
 
 pub(super) fn parse_host_port<B: core::fmt::Debug>(

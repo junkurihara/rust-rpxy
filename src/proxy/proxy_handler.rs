@@ -19,19 +19,14 @@ where
     mut req: Request<Body>,
     client_addr: SocketAddr, // アクセス制御用
   ) -> Result<Response<Body>> {
-    let request_log = log_request_msg(&req, &client_addr);
+    req.log(&client_addr, Some("(Incoming)"));
 
     // Here we start to handle with server_name
-    // Find backend application for given server_name
-    let (server_name, _port) = if let Ok(v) = parse_host_port(&req) {
-      v
-    } else {
-      info!("{} => {}", request_log, StatusCode::BAD_REQUEST);
-      return http_error(StatusCode::BAD_REQUEST);
-    };
+    // Find backend application for given server_name, and drop if incoming request is invalid as request.
+    let (server_name, _port) = parse_host_port(&req)?;
 
     if !self.backends.apps.contains_key(&server_name) && self.backends.default_app.is_none() {
-      info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
+      // info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     }
     let backend = if let Some(be) = self.backends.apps.get(&server_name) {
@@ -45,7 +40,7 @@ where
     // Redirect to https if !tls_enabled and redirect_to_https is true
     if !self.tls_enabled && backend.https_redirection.unwrap_or(false) {
       debug!("Redirect to secure connection: {}", server_name);
-      info!("{} => {}", request_log, StatusCode::PERMANENT_REDIRECT);
+      // info!("{} => {}", request_log, StatusCode::PERMANENT_REDIRECT);
       return secure_redirection(&server_name, self.globals.https_port, &req);
     }
 
@@ -108,7 +103,7 @@ where
       }
     }
     debug!("Response from backend: {:?}", res_backend.status());
-    let response_log = res_backend.status().to_string();
+    // let response_log = res_backend.status().to_string();
 
     if res_backend.status() == StatusCode::SWITCHING_PROTOCOLS {
       // Handle StatusCode::SWITCHING_PROTOCOLS in response
@@ -138,11 +133,11 @@ where
               .map_err(|e| anyhow!("Coping between upgraded connections failed: {}", e))?; // TODO: any response code?
             Ok(()) as Result<()>
           });
-          info!("{} => {}", request_log, response_log);
+          // info!("{} => {}", request_log, response_log);
           Ok(res_backend)
         } else {
           error!("Request does not have an upgrade extension");
-          info!("{} => {}", request_log, StatusCode::BAD_REQUEST);
+          // info!("{} => {}", request_log, StatusCode::BAD_REQUEST);
           http_error(StatusCode::BAD_REQUEST)
         }
       } else {
@@ -150,16 +145,16 @@ where
           "Backend tried to switch to protocol {:?} when {:?} was requested",
           upgrade_in_response, upgrade_in_request
         );
-        info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
+        // info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
         http_error(StatusCode::SERVICE_UNAVAILABLE)
       }
     } else {
       // Generate response to client
       if self.generate_response_forwarded(&mut res_backend).is_ok() {
-        info!("{} => {}", request_log, response_log);
+        // info!("{} => {}", request_log, response_log);
         Ok(res_backend)
       } else {
-        info!("{} => {}", request_log, StatusCode::BAD_GATEWAY);
+        // info!("{} => {}", request_log, StatusCode::BAD_GATEWAY);
         http_error(StatusCode::BAD_GATEWAY)
       }
     }
