@@ -1,5 +1,5 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
-use super::{utils_headers::*, utils_request::*, utils_synth_response::*};
+use super::{utils_headers::*, utils_request::*, utils_response::ResLog, utils_synth_response::*};
 use crate::{backend::Upstream, constants::*, error::*, globals::Globals, log::*};
 use hyper::{
   client::connect::Connect,
@@ -30,7 +30,7 @@ where
     listen_addr: SocketAddr,
     tls_enabled: bool,
   ) -> Result<Response<Body>> {
-    req.log(&client_addr, Some("(Incoming)"));
+    req.log(&client_addr, Some("(Request from Client)"));
 
     // Here we start to handle with server_name
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
@@ -92,7 +92,7 @@ where
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     };
     // debug!("Request to be forwarded: {:?}", req_forwarded);
-    req_forwarded.log(&client_addr, Some("(Forwarding)"));
+    req_forwarded.log(&client_addr, Some("(Request to Backend)"));
 
     // Forward request to
     let mut res_backend = match self.forwarder.request(req_forwarded).await {
@@ -102,7 +102,11 @@ where
         return http_error(StatusCode::BAD_REQUEST);
       }
     };
-    debug!("Response from backend: {:?}", res_backend.status());
+    res_backend.log(
+      &backend.server_name,
+      &client_addr,
+      Some("(Response from Backend)"),
+    );
     // let response_log = res_backend.status().to_string();
 
     if res_backend.status() == StatusCode::SWITCHING_PROTOCOLS {
@@ -152,6 +156,11 @@ where
       // Generate response to client
       if self.generate_response_forwarded(&mut res_backend).is_ok() {
         // info!("{} => {}", request_log, response_log);
+        res_backend.log(
+          &backend.server_name,
+          &client_addr,
+          Some("(Response to Client)"),
+        );
         Ok(res_backend)
       } else {
         // info!("{} => {}", request_log, StatusCode::BAD_GATEWAY);
@@ -168,8 +177,8 @@ where
     response: &mut Response<B>,
   ) -> Result<()> {
     let headers = response.headers_mut();
-    remove_hop_header(headers);
     remove_connection_header(headers);
+    remove_hop_header(headers);
     append_header_entry_with_comma(
       headers,
       "server",

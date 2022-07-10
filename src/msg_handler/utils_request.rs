@@ -4,10 +4,10 @@ use std::fmt::Display;
 
 ////////////////////////////////////////////////////
 // Functions of utils for request messages
-pub trait MsgLog {
+pub trait ReqLog {
   fn log<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>);
 }
-impl<B> MsgLog for &Request<B> {
+impl<B> ReqLog for &Request<B> {
   fn log<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) {
     let canonical_src = src.to_canonical();
 
