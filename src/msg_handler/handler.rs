@@ -179,16 +179,16 @@ where
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
-    overwrite_header_entry(headers, "server", env!("CARGO_PKG_NAME"))?;
+    add_header_entry_overwrite_if_exist(headers, "server", env!("CARGO_PKG_NAME"))?;
 
     #[cfg(feature = "h3")]
     {
       if self.globals.http3 {
         if let Some(port) = self.globals.https_port {
-          overwrite_header_entry(
+          add_header_entry_overwrite_if_exist(
             headers,
             header::ALT_SVC.as_str(),
-            &format!(
+            format!(
               "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
               port, H3_ALT_SVC_MAX_AGE, port, H3_ALT_SVC_MAX_AGE
             ),
@@ -270,7 +270,7 @@ where
 
     // upgrade
     if let Some(v) = upgrade {
-      req.headers_mut().insert("upgrade", v.parse()?);
+      req.headers_mut().insert(header::UPGRADE, v.parse()?);
       req
         .headers_mut()
         .insert(header::CONNECTION, HeaderValue::from_str("upgrade")?);

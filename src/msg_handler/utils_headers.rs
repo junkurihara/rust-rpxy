@@ -74,17 +74,17 @@ pub(super) fn add_header_entry_if_not_exist(
   Ok(())
 }
 
-pub(super) fn overwrite_header_entry(
+pub(super) fn add_header_entry_overwrite_if_exist(
   headers: &mut HeaderMap,
-  key: &str,
-  value: &str,
+  key: impl Into<std::borrow::Cow<'static, str>>,
+  value: impl Into<std::borrow::Cow<'static, str>>,
 ) -> Result<()> {
-  match headers.entry(HeaderName::from_bytes(key.as_bytes())?) {
+  match headers.entry(HeaderName::from_bytes(key.into().as_bytes())?) {
     header::Entry::Vacant(entry) => {
-      entry.insert(value.parse::<HeaderValue>()?);
+      entry.insert(value.into().parse::<HeaderValue>()?);
     }
     header::Entry::Occupied(mut entry) => {
-      entry.insert(HeaderValue::from_bytes(value.as_bytes())?);
+      entry.insert(HeaderValue::from_bytes(value.into().as_bytes())?);
     }
   }
 
