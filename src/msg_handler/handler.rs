@@ -217,7 +217,7 @@ where
     debug!("Generate request to be forwarded");
 
     // Add te: trailer if contained in original request
-    let te_trailers = {
+    let contains_te_trailers = {
       if let Some(te) = req.headers().get(header::TE) {
         te.as_bytes()
           .split(|v| v == &b',' || v == &b' ')
@@ -236,8 +236,11 @@ where
     add_forwarding_header(headers, client_addr, listen_addr, tls_enabled)?;
 
     // Add te: trailer if te_trailer
-    if te_trailers {
-      headers.insert(header::TE, "trailer".parse()?);
+    if contains_te_trailers {
+      headers.insert(
+        header::TE,
+        HeaderValue::from_bytes("trailers".as_bytes()).unwrap(),
+      );
     }
 
     // add "host" header of original server_name if not exist (default)
