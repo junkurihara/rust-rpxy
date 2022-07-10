@@ -185,7 +185,7 @@ where
     {
       if self.globals.http3 {
         if let Some(port) = self.globals.https_port {
-          append_header_entry_with_comma(
+          overwrite_header_entry(
             headers,
             header::ALT_SVC.as_str(),
             &format!(
