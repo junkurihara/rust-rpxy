@@ -16,7 +16,6 @@ pub(super) fn apply_upstream_options_to_header(
   upstream: &Upstream,
 ) -> Result<()> {
   for opt in upstream.opts.iter() {
-    println!("{:?}", opt);
     match opt {
       UpstreamOption::OverrideHost => {
         // overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
@@ -71,6 +70,23 @@ pub(super) fn add_header_entry_if_not_exist(
     }
     header::Entry::Occupied(_) => (),
   };
+
+  Ok(())
+}
+
+pub(super) fn overwrite_header_entry(
+  headers: &mut HeaderMap,
+  key: &str,
+  value: &str,
+) -> Result<()> {
+  match headers.entry(HeaderName::from_bytes(key.as_bytes())?) {
+    header::Entry::Vacant(entry) => {
+      entry.insert(value.parse::<HeaderValue>()?);
+    }
+    header::Entry::Occupied(mut entry) => {
+      entry.insert(HeaderValue::from_bytes(value.as_bytes())?);
+    }
+  }
 
   Ok(())
 }

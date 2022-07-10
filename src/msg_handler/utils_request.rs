@@ -55,13 +55,11 @@ impl<B> ParseHost for Request<B> {
       || {
         let m = headers_host.unwrap().as_bytes();
         if m.starts_with(&[b'[']) {
-          println!("v6 bracket");
           // v6 address with bracket case. if port is specified, always it is in this case.
           let mut iter = m.split(|ptr| ptr == &b'[' || ptr == &b']');
           iter.next().ok_or_else(|| anyhow!("Invalid Host"))?; // first item is always blank
           iter.next().ok_or_else(|| anyhow!("Invalid Host"))
         } else if m.len() - m.split(|v| v == &b':').fold(0, |acc, s| acc + s.len()) >= 2 {
-          println!("v6 non-bracket");
           // v6 address case, if 2 or more ':' is contained
           Ok(m)
         } else {

@@ -179,11 +179,8 @@ where
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
-    append_header_entry_with_comma(
-      headers,
-      "server",
-      &format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
-    )?;
+    overwrite_header_entry(headers, "server", env!("CARGO_PKG_NAME"))?;
+
     #[cfg(feature = "h3")]
     {
       if self.globals.http3 {
