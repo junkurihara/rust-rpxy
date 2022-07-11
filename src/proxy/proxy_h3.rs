@@ -17,8 +17,10 @@ where
       return;
     }
     let fut = self.clone().handle_connection_h3(conn);
+    let timeout_sec = self.globals.timeout;
     self.globals.runtime_handle.spawn(async move {
-      if let Err(e) = fut.await {
+      if let Err(e) = tokio::time::timeout(timeout_sec + Duration::from_secs(1), fut).await {
+        // TODO: ここのtimeoutはどの値を使うべき？
         warn!("QUIC or HTTP/3 connection failed: {}", e)
       }
       clients_count.decrement();
@@ -79,7 +81,12 @@ where
 
           let self_inner = self.clone();
           self.globals.runtime_handle.spawn(async move {
-            if let Err(e) = self_inner.handle_stream_h3(req, stream, client_addr).await {
+            if let Err(e) = tokio::time::timeout(
+              self_inner.globals.timeout + Duration::from_secs(1), // timeout per stream
+              self_inner.handle_stream_h3(req, stream, client_addr),
+            )
+            .await
+            {
               error!("HTTP/3 request failed: {}", e);
             }
             // // TODO: Work around for timeout

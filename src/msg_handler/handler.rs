@@ -91,13 +91,22 @@ where
     req_forwarded.log(&client_addr, Some("(Request to Backend)"));
 
     // Forward request to
-    let mut res_backend = match self.forwarder.request(req_forwarded).await {
-      Ok(res) => res,
-      Err(e) => {
-        error!("Failed to get response from backend: {}", e);
-        return http_error(StatusCode::BAD_REQUEST);
+    let mut res_backend = {
+      match tokio::time::timeout(self.globals.timeout, self.forwarder.request(req_forwarded)).await
+      {
+        Err(_) => {
+          return http_error(StatusCode::GATEWAY_TIMEOUT);
+        }
+        Ok(x) => match x {
+          Ok(res) => res,
+          Err(e) => {
+            error!("Failed to get response from backend: {}", e);
+            return http_error(StatusCode::BAD_REQUEST);
+          }
+        },
       }
     };
+
     res_backend.log_debug(
       &backend.server_name,
       &client_addr,
