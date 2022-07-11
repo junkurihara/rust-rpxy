@@ -26,7 +26,7 @@ services:
       context: ../
     restart: unless-stopped
     environment:
-      - LOG_LEVEL=debug
+      - LOG_LEVEL=info
       - LOG_TO_FILE=false
     ports:
       - 127.0.0.1:8080:8080

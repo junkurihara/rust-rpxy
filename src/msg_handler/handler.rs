@@ -30,7 +30,7 @@ where
     listen_addr: SocketAddr,
     tls_enabled: bool,
   ) -> Result<Response<Body>> {
-    req.log(&client_addr, Some("(Request from Client)"));
+    req.log_debug(&client_addr, Some("(Request from Client)"));
 
     // Here we start to handle with server_name
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
@@ -98,7 +98,7 @@ where
         return http_error(StatusCode::BAD_REQUEST);
       }
     };
-    res_backend.log(
+    res_backend.log_debug(
       &backend.server_name,
       &client_addr,
       Some("(Response from Backend)"),

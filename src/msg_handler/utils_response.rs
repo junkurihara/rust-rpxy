@@ -11,6 +11,18 @@ pub trait ResLog {
     client_addr: &T2,
     extra: Option<&str>,
   );
+  fn log_debug<T1: Display, T2: Display + ToCanonical>(
+    self,
+    server_name: &T1,
+    client_addr: &T2,
+    extra: Option<&str>,
+  );
+  fn build_message<T1: Display, T2: Display + ToCanonical>(
+    self,
+    server_name: &T1,
+    client_addr: &T2,
+    extra: Option<&str>,
+  ) -> String;
 }
 impl<B> ResLog for &Response<B> {
   fn log<T1: Display, T2: Display + ToCanonical>(
@@ -19,8 +31,24 @@ impl<B> ResLog for &Response<B> {
     client_addr: &T2,
     extra: Option<&str>,
   ) {
+    info!("{}", &self.build_message(server_name, client_addr, extra));
+  }
+  fn log_debug<T1: Display, T2: Display + ToCanonical>(
+    self,
+    server_name: &T1,
+    client_addr: &T2,
+    extra: Option<&str>,
+  ) {
+    debug!("{}", &self.build_message(server_name, client_addr, extra));
+  }
+  fn build_message<T1: Display, T2: Display + ToCanonical>(
+    self,
+    server_name: &T1,
+    client_addr: &T2,
+    extra: Option<&str>,
+  ) -> String {
     let canonical_client_addr = client_addr.to_canonical();
-    info!(
+    format!(
       "{} <- {} -- {} {:?} {:?} {}",
       canonical_client_addr,
       server_name,
@@ -28,6 +56,6 @@ impl<B> ResLog for &Response<B> {
       self.version(),
       self.headers(),
       extra.map_or_else(|| "", |v| v)
-    );
+    )
   }
 }

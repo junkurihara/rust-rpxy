@@ -6,9 +6,17 @@ use std::fmt::Display;
 // Functions of utils for request messages
 pub trait ReqLog {
   fn log<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>);
+  fn log_debug<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>);
+  fn build_message<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) -> String;
 }
 impl<B> ReqLog for &Request<B> {
   fn log<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) {
+    info!("{}", &self.build_message(src, extra));
+  }
+  fn log_debug<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) {
+    debug!("{}", &self.build_message(src, extra));
+  }
+  fn build_message<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) -> String {
     let canonical_src = src.to_canonical();
 
     let server_name = self.headers().get(header::HOST).map_or_else(
@@ -20,7 +28,7 @@ impl<B> ReqLog for &Request<B> {
       },
       |h| h.to_str().unwrap_or("<none>"),
     );
-    info!(
+    format!(
       "{} <- {} -- {} {:?} {:?} {:?} {}",
       server_name,
       canonical_src,
@@ -32,7 +40,7 @@ impl<B> ReqLog for &Request<B> {
         .map_or_else(|| "", |v| v.as_str()),
       self.headers(),
       extra.map_or_else(|| "", |v| v)
-    );
+    )
   }
 }
 
