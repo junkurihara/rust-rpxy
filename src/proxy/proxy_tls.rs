@@ -209,39 +209,50 @@ where
     #[cfg(not(feature = "h3"))]
     {
       select! {
-        _= self.cert_service(tx) => {
+        _= self.cert_service(tx).fuse() => {
           error!("Cert service for TLS exited");
         },
-        _ = self.listener_service(server, rx) => {
+        _ = self.listener_service(server, rx).fuse() => {
           error!("TCP proxy service for TLS exited");
         },
+        complete => {
+          error!("Something went wrong");
+          return Ok(())
+        }
       };
       Ok(())
     }
     #[cfg(feature = "h3")]
     {
       if self.globals.http3 {
-        tokio::select! {
-          _= self.cert_service(tx) => {
+        select! {
+          _= self.cert_service(tx).fuse() => {
             error!("Cert service for TLS exited");
           },
-          _ = self.listener_service(server, rx.clone()) => {
+          _ = self.listener_service(server, rx.clone()).fuse() => {
             error!("TCP proxy service for TLS exited");
           },
-          _= self.listener_service_h3(rx) => {
+          _= self.listener_service_h3(rx).fuse() => {
             error!("UDP proxy service for QUIC exited");
           },
+          complete => {
+            error!("Something went wrong");
+            return Ok(())
+          }
         };
         Ok(())
       } else {
-        tokio::select! {
-          _= self.cert_service(tx) => {
+        select! {
+          _= self.cert_service(tx).fuse() => {
             error!("Cert service for TLS exited");
           },
-          _ = self.listener_service(server, rx) => {
+          _ = self.listener_service(server, rx).fuse() => {
             error!("TCP proxy service for TLS exited");
           },
-
+          complete => {
+            error!("Something went wrong");
+            return Ok(())
+          }
         };
         Ok(())
       }

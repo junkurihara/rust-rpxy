@@ -17,10 +17,10 @@ h3 = ["quinn"]
 
 [dependencies]
 anyhow = "1.0.58"
-clap = { version = "3.2.6", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "3.2.8", features = ["std", "cargo", "wrap_help"] }
 env_logger = "0.9.0"
 futures = "0.3.21"
-hyper = { version = "0.14.19", default-features = false, features = [
+hyper = { version = "0.14.20", default-features = false, features = [
   "server",
   "http1",
   "http2",
@@ -41,7 +41,7 @@ rustls = "0.20.6"
 rand = "0.8.5"
 toml = "0.5.9"
 rustc-hash = "1.1.0"
-serde = { version = "1.0.137", features = ["derive"] }
+serde = { version = "1.0.139", features = ["derive"] }
 hyper-rustls = { version = "0.23.0", default-features = false, features = [
   "tokio-runtime",
   "webpki-tokio",
@@ -52,9 +52,7 @@ quinn = { version = "0.8.3", optional = true }
 h3 = { git = "https://github.com/hyperium/h3.git" }
 h3-quinn = { git = "https://github.com/hyperium/h3.git" }
 bytes = "1.1.0"
-
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.5.0"
+mimalloc-rust = "0.2.0"
 
 
 [dev-dependencies]
@@ -66,3 +64,4 @@ incremental = false
 lto = "fat"
 opt-level = 3
 panic = "abort"
+strip = true

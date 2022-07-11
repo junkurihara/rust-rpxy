@@ -1,6 +1,6 @@
-#[cfg(not(target_env = "msvc"))]
+use mimalloc_rust::*;
 #[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+static GLOBAL_MIMALLOC: GlobalMiMalloc = GlobalMiMalloc;
 
 mod backend;
 mod backend_opt;
