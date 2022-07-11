@@ -54,14 +54,11 @@ where
       return secure_redirection(&backend.server_name, self.globals.https_port, &req);
     }
 
-    ///////////////////////
     // Find reverse proxy for given path and choose one of upstream host
-    // TODO: More flexible path matcher
+    // Longest prefix match
     let path = req.uri().path();
-    let upstream = if let Some(upstream) = backend.reverse_proxy.upstream.get(path) {
+    let upstream = if let Some(upstream) = backend.reverse_proxy.get(path) {
       upstream
-    } else if let Some(default_upstream) = &backend.reverse_proxy.default_upstream {
-      default_upstream
     } else {
       return http_error(StatusCode::NOT_FOUND);
     };
@@ -70,7 +67,6 @@ where
     } else {
       return http_error(StatusCode::INTERNAL_SERVER_ERROR);
     };
-    ///////////////////////
 
     // Upgrade in request header
     let upgrade_in_request = extract_upgrade(req.headers());

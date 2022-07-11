@@ -1,6 +1,6 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
 use crate::{
-  backend::{Backend, ReverseProxy, Upstream},
+  backend::{Backend, PathNameLC, ReverseProxy, Upstream},
   backend_opt::UpstreamOption,
   constants::*,
   error::*,
@@ -169,8 +169,7 @@ pub fn parse_opts(globals: &mut Globals) -> Result<()> {
 }
 
 fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> Result<ReverseProxy> {
-  let mut upstream: HashMap<String, Upstream> = HashMap::default();
-  let mut default_upstream: Option<Upstream> = None;
+  let mut upstream: HashMap<PathNameLC, Upstream> = HashMap::default();
   rp_settings.iter().for_each(|rpo| {
     let elem = Upstream {
       uri: rpo.upstream.iter().map(|x| x.to_uri().unwrap()).collect(),
@@ -189,17 +188,17 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> Result<ReverseProxy>
     };
 
     if rpo.path.is_some() {
-      upstream.insert(rpo.path.as_ref().unwrap().to_owned(), elem);
+      upstream.insert(
+        rpo.path.as_ref().unwrap().as_bytes().to_ascii_lowercase(),
+        elem,
+      );
     } else {
-      default_upstream = Some(elem)
+      upstream.insert("/".as_bytes().to_ascii_lowercase(), elem);
     }
   });
   ensure!(
     rp_settings.iter().filter(|rpo| rpo.path.is_none()).count() < 2,
     "Multiple default reverse proxy setting"
   );
-  Ok(ReverseProxy {
-    default_upstream,
-    upstream,
-  })
+  Ok(ReverseProxy { upstream })
 }
