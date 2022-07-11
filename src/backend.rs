@@ -18,7 +18,7 @@ pub type ServerNameLC = Vec<u8>;
 pub type PathNameLC = Vec<u8>;
 
 pub struct Backends {
-  pub apps: HashMap<ServerNameLC, Backend>, // TODO: hyper::uriで抜いたhostで引っ掛ける。Stringでいいのか？
+  pub apps: HashMap<ServerNameLC, Backend>, // hyper::uriで抜いたhostで引っ掛ける
   pub default_server_name: Option<ServerNameLC>, // for plaintext http
 }
 
@@ -35,7 +35,7 @@ pub struct Backend {
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxy {
-  pub upstream: HashMap<PathNameLC, Upstream>,
+  pub upstream: HashMap<PathNameLC, Upstream>, // TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
 }
 
 impl ReverseProxy {
@@ -182,12 +182,7 @@ impl Backend {
         )
       })?;
       reader.set_position(0);
-      let mut rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader).map_err(|_| {
-        io::Error::new(
-          io::ErrorKind::InvalidInput,
-          "Unable to parse the certificates private keys (RSA)",
-        )
-      })?;
+      let mut rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader)?;
       let mut keys = pkcs8_keys;
       keys.append(&mut rsa_keys);
       if keys.is_empty() {

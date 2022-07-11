@@ -64,13 +64,8 @@ impl UpstreamParams {
 
 impl ConfigToml {
   pub fn new(config_file: &str) -> Result<Self> {
-    let config_str = if let Ok(s) = fs::read_to_string(config_file) {
-      s
-    } else {
-      bail!("Failed to read config file");
-    };
-    let parsed: Result<ConfigToml> = toml::from_str(&config_str)
-      .map_err(|e: toml::de::Error| anyhow!("Failed to parse toml config: {:?}", e));
-    parsed
+    let config_str = fs::read_to_string(config_file).context("Failed to read config file")?;
+
+    toml::from_str(&config_str).context("Failed to parse toml config")
   }
 }
