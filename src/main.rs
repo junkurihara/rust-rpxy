@@ -60,7 +60,11 @@ fn main() {
       http_port: None,
       https_port: None,
       http3: false,
-      timeout: Duration::from_secs(TIMEOUT_SEC),
+
+      // TODO: Reconsider each timeout values
+      proxy_timeout: Duration::from_secs(PROXY_TIMEOUT_SEC),
+      upstream_timeout: Duration::from_secs(UPSTREAM_TIMEOUT_SEC),
+
       max_clients: MAX_CLIENTS,
       clients_count: Default::default(),
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,

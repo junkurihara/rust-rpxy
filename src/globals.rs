@@ -11,7 +11,9 @@ pub struct Globals {
   pub http_port: Option<u16>,
   pub https_port: Option<u16>,
 
-  pub timeout: Duration,
+  pub proxy_timeout: Duration,
+  pub upstream_timeout: Duration,
+
   pub max_clients: usize,
   pub clients_count: ClientsCount,
   pub max_concurrent_streams: u32,

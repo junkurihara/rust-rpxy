@@ -8,7 +8,10 @@ use hyper::{
   Body, Client, Request, Response, StatusCode, Uri, Version,
 };
 use std::{net::SocketAddr, sync::Arc};
-use tokio::io::copy_bidirectional;
+use tokio::{
+  io::copy_bidirectional,
+  time::{timeout, Duration},
+};
 
 #[derive(Clone)]
 pub struct HttpMessageHandler<T>
@@ -92,7 +95,11 @@ where
 
     // Forward request to
     let mut res_backend = {
-      match tokio::time::timeout(self.globals.timeout, self.forwarder.request(req_forwarded)).await
+      match timeout(
+        self.globals.upstream_timeout + Duration::from_secs(1),
+        self.forwarder.request(req_forwarded),
+      )
+      .await
       {
         Err(_) => {
           return http_error(StatusCode::GATEWAY_TIMEOUT);

@@ -1,10 +1,10 @@
 use super::Proxy;
-use crate::{constants::*, error::*, log::*};
+use crate::{error::*, log::*};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, HeaderMap, Request, Response};
 use std::net::SocketAddr;
-use tokio::time::Duration;
+use tokio::time::{timeout, Duration};
 
 impl<T> Proxy<T>
 where
@@ -17,10 +17,9 @@ where
       return;
     }
     let fut = self.clone().handle_connection_h3(conn);
-    let timeout_sec = self.globals.timeout;
     self.globals.runtime_handle.spawn(async move {
-      if let Err(e) = tokio::time::timeout(timeout_sec + Duration::from_secs(1), fut).await {
-        // TODO: ここのtimeoutはどの値を使うべき？
+      // Timeout is based on underlying quic
+      if let Err(e) = fut.await {
         warn!("QUIC or HTTP/3 connection failed: {}", e)
       }
       clients_count.decrement();
@@ -54,22 +53,16 @@ where
             .await?;
         info!("HTTP/3 connection established");
 
-        // TODO: Work around for timeout...
+        // Does this work enough?
         // while let Some((req, stream)) = h3_conn
         //   .accept()
         //   .await
         //   .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
-        while let Some((req, stream)) = match tokio::time::timeout(
-          Duration::from_millis(H3_CONN_TIMEOUT_MILLIS),
-          h3_conn.accept(),
-        )
-        .await
-        {
-          Ok(r) => r.map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?,
+        while let Some((req, stream)) = match h3_conn.accept().await {
+          Ok(opt_req) => opt_req,
           Err(_) => {
-            warn!("No incoming stream after connection establishment / previous use");
-            h3_conn.shutdown(0).await?;
-            return Ok(());
+            warn!("HTTP/3 failed to accept incoming connection (likely timeout)");
+            return Ok(h3_conn.shutdown(0).await?);
           }
         } {
           debug!(
@@ -81,24 +74,20 @@ where
 
           let self_inner = self.clone();
           self.globals.runtime_handle.spawn(async move {
-            if let Err(e) = tokio::time::timeout(
-              self_inner.globals.timeout + Duration::from_secs(1), // timeout per stream
+            if let Err(e) = timeout(
+              self_inner.globals.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
               self_inner.handle_stream_h3(req, stream, client_addr),
             )
             .await
             {
-              error!("HTTP/3 request failed: {}", e);
+              error!("HTTP/3 failed to process stream: {}", e);
             }
-            // // TODO: Work around for timeout
-            // if let Err(e) = h3_conn.shutdown(0).await {
-            //   error!("HTTP/3 connection shutdown failed: {}", e);
-            // }
-            // debug!("HTTP/3 connection shutdown (currently shutdown each time as work around for timeout)");
           });
         }
       }
       Err(err) => {
         warn!("QUIC accepting connection failed: {:?}", err);
+        return Err(anyhow!("{}", err));
       }
     }
 

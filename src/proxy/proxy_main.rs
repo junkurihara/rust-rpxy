@@ -6,7 +6,7 @@ use tokio::{
   io::{AsyncRead, AsyncWrite},
   net::TcpListener,
   runtime::Handle,
-  time::Duration,
+  time::{timeout, Duration},
 };
 
 #[derive(Clone, Debug)]
@@ -57,8 +57,8 @@ where
 
     // let handler_inner = self.msg_handler.clone();
     self.globals.runtime_handle.clone().spawn(async move {
-      tokio::time::timeout(
-        self.globals.timeout + Duration::from_secs(1),
+      timeout(
+        self.globals.proxy_timeout + Duration::from_secs(1),
         server
           .serve_connection(
             stream,
@@ -106,7 +106,6 @@ where
     let server = server.with_executor(executor);
 
     if self.tls_enabled {
-      // #[cfg(feature = "tls")]
       self.start_with_tls(server).await?;
     } else {
       self.start_without_tls(server).await?;
