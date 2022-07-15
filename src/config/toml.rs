@@ -18,6 +18,7 @@ pub struct ConfigToml {
 #[derive(Deserialize, Debug, Default)]
 pub struct Experimental {
   pub h3: Option<bool>,
+  pub ignore_sni_consistency: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Default)]

@@ -163,6 +163,12 @@ pub fn parse_opts(globals: &mut Globals) -> Result<()> {
         info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.")
       }
     }
+    if let Some(b) = exp.ignore_sni_consistency {
+      globals.sni_consistency = !b;
+      if b {
+        info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.")
+      }
+    }
   }
 
   Ok(())

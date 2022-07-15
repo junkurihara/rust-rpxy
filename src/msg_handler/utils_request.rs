@@ -19,27 +19,40 @@ impl<B> ReqLog for &Request<B> {
   fn build_message<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) -> String {
     let canonical_src = src.to_canonical();
 
-    let server_name = self.headers().get(header::HOST).map_or_else(
-      || {
-        self
-          .uri()
-          .authority()
-          .map_or_else(|| "<none>", |au| au.as_str())
-      },
-      |h| h.to_str().unwrap_or("<none>"),
-    );
+    let host = self
+      .headers()
+      .get(header::HOST)
+      .map_or_else(|| "", |v| v.to_str().unwrap_or(""));
+    let uri_scheme = self
+      .uri()
+      .scheme_str()
+      .map_or_else(|| "".to_string(), |v| format!("{}://", v));
+    let uri_host = self.uri().host().unwrap_or("");
+    let uri_pq = self
+      .uri()
+      .path_and_query()
+      .map_or_else(|| "", |v| v.as_str());
+    let ua = self
+      .headers()
+      .get(header::USER_AGENT)
+      .map_or_else(|| "", |v| v.to_str().unwrap_or(""));
+    let xff = self
+      .headers()
+      .get("x-forwarded-for")
+      .map_or_else(|| "", |v| v.to_str().unwrap_or(""));
+
     format!(
-      "{} <- {} -- {} {:?} {:?} {:?} {}",
-      server_name,
+      "{} <- {} -- {} {} {:?} -- ({}{}) \"{}\" \"{}\" {}",
+      host,
       canonical_src,
       self.method(),
+      uri_pq,
       self.version(),
-      self
-        .uri()
-        .path_and_query()
-        .map_or_else(|| "", |v| v.as_str()),
-      self.headers(),
-      extra.map_or_else(|| "", |v| v)
+      uri_scheme,
+      uri_host,
+      ua,
+      xff,
+      extra.unwrap_or("")
     )
   }
 }

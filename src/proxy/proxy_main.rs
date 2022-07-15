@@ -45,8 +45,13 @@ impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub async fn client_serve<I>(self, stream: I, server: Http<LocalExecutor>, peer_addr: SocketAddr)
-  where
+  pub async fn client_serve<I>(
+    self,
+    stream: I,
+    server: Http<LocalExecutor>,
+    peer_addr: SocketAddr,
+    tls_server_name: Option<&[u8]>,
+  ) where
     I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
   {
     let clients_count = self.globals.clients_count.clone();
@@ -55,7 +60,7 @@ where
       return;
     }
 
-    // let handler_inner = self.msg_handler.clone();
+    let inner = tls_server_name.map_or_else(|| None, |v| Some(v.to_vec()));
     self.globals.runtime_handle.clone().spawn(async move {
       timeout(
         self.globals.proxy_timeout + Duration::from_secs(1),
@@ -68,6 +73,7 @@ where
                 peer_addr,
                 self.listening_on,
                 self.tls_enabled,
+                inner.clone(),
               )
             }),
           )
@@ -88,7 +94,7 @@ where
       while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
         self
           .clone()
-          .client_serve(stream, server.clone(), _client_addr)
+          .client_serve(stream, server.clone(), _client_addr, None)
           .await;
       }
       Ok(()) as Result<()>

@@ -1,13 +1,19 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
 use super::{utils_headers::*, utils_request::*, utils_response::ResLog, utils_synth_response::*};
-use crate::{backend::Upstream, constants::*, error::*, globals::Globals, log::*};
+use crate::{
+  backend::{ServerNameLC, Upstream},
+  constants::*,
+  error::*,
+  globals::Globals,
+  log::*,
+};
 use hyper::{
   client::connect::Connect,
   header::{self, HeaderValue},
   http::uri::Scheme,
   Body, Client, Request, Response, StatusCode, Uri, Version,
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 use tokio::{
   io::copy_bidirectional,
   time::{timeout, Duration},
@@ -32,14 +38,19 @@ where
     client_addr: SocketAddr, // アクセス制御用
     listen_addr: SocketAddr,
     tls_enabled: bool,
+    tls_server_name: Option<ServerNameLC>,
   ) -> Result<Response<Body>> {
     req.log_debug(&client_addr, Some("(Request from Client)"));
 
     // Here we start to handle with server_name
-    // Find backend application for given server_name, and drop if incoming request is invalid as request.
-    // let (server_name, _port) = parse_host_port(&req)?;
     let server_name_bytes = req.parse_host()?.to_ascii_lowercase();
-
+    // check consistency of between TLS SNI and HOST/Request URI Line.
+    if self.globals.sni_consistency
+      && !server_name_bytes.eq_ignore_ascii_case(&tls_server_name.unwrap())
+    {
+      return http_error(StatusCode::MISDIRECTED_REQUEST);
+    }
+    // Find backend application for given server_name, and drop if incoming request is invalid as request.
     let backend = if let Some(be) = self.globals.backends.apps.get(&server_name_bytes) {
       be
     } else if let Some(default_server_name) = &self.globals.backends.default_server_name {
@@ -91,7 +102,7 @@ where
       return http_error(StatusCode::SERVICE_UNAVAILABLE);
     };
     // debug!("Request to be forwarded: {:?}", req_forwarded);
-    req_forwarded.log(&client_addr, Some("(Request to Backend)"));
+    req_forwarded.log_debug(&client_addr, Some("(Request to Backend)"));
 
     // Forward request to
     let mut res_backend = {
@@ -168,7 +179,7 @@ where
       // Generate response to client
       if self.generate_response_forwarded(&mut res_backend).is_ok() {
         // info!("{} => {}", request_log, response_log);
-        res_backend.log(
+        res_backend.log_debug(
           &backend.server_name,
           &client_addr,
           Some("(Response to Client)"),

@@ -60,6 +60,7 @@ fn main() {
       http_port: None,
       https_port: None,
       http3: false,
+      sni_consistency: true,
 
       // TODO: Reconsider each timeout values
       proxy_timeout: Duration::from_secs(PROXY_TIMEOUT_SEC),

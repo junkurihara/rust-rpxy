@@ -49,12 +49,12 @@ impl<B> ResLog for &Response<B> {
   ) -> String {
     let canonical_client_addr = client_addr.to_canonical();
     format!(
-      "{} <- {} -- {} {:?} {:?} {}",
+      "{} <- {} -- {} {:?} {}",
       canonical_client_addr,
       server_name,
       self.status(),
       self.version(),
-      self.headers(),
+      // self.headers(),
       extra.map_or_else(|| "", |v| v)
     )
   }

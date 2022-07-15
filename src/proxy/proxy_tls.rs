@@ -85,7 +85,7 @@ where
           };
           // Finally serve the TLS connection
           if let Ok(stream) = start.into_stream(server_crypto.unwrap().clone()).await {
-            self.clone().client_serve(stream, server.clone(), _client_addr).await
+            self.clone().client_serve(stream, server.clone(), _client_addr, Some(server_name.as_bytes())).await
           }
         }
         _ = server_crypto_rx.changed().fuse() => {
@@ -101,11 +101,11 @@ where
   }
 
   #[cfg(feature = "h3")]
-  async fn parse_sni_and_get_crypto_h3(
+  async fn parse_sni_and_get_crypto_h3<'a>(
     &self,
     peeked_conn: &mut quinn::Connecting,
-    server_crypto_map: &ServerCryptoMap,
-  ) -> Option<Arc<ServerConfig>> {
+    server_crypto_map: &'a ServerCryptoMap,
+  ) -> Option<(&'a ServerNameLC, &'a Arc<ServerConfig>)> {
     let hsd = if let Ok(h) = peeked_conn.handshake_data().await {
       h
     } else {
@@ -121,9 +121,8 @@ where
       "HTTP/3 connection incoming (SNI {:?}): Overwrite ServerConfig",
       server_name
     );
-    server_crypto_map
-      .get(&server_name.as_bytes().to_vec())
-      .cloned()
+    server_crypto_map.get_key_value(&server_name.into_bytes())
+    // .map_or_else(|| None, |(k, v)| Some((k.clone(), v.clone())));
   }
 
   #[cfg(feature = "h3")]
@@ -173,19 +172,21 @@ where
             continue;
           }
           let peeked_conn = peeked_conn.unwrap();
-          let is_acceptable =
-            if let Some(new_server_crypto) = self.parse_sni_and_get_crypto_h3(peeked_conn, server_crypto_map.as_ref().unwrap()).await {
+
+          let new_server_name = match self.parse_sni_and_get_crypto_h3(peeked_conn, server_crypto_map.as_ref().unwrap()).await {
+            Some((new_server_name, new_server_crypto)) => {
               // Set ServerConfig::set_server_config for given SNI
-              endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(new_server_crypto)));
-              true
-            } else {
-              false
-            };
+              endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(new_server_crypto.clone())));
+              Some(new_server_name)
+            },
+            None => None
+          };
+
           // Then acquire actual connection
           let peekable_incoming = Pin::new(&mut p);
           if let Some(conn) = peekable_incoming.get_mut().next().await {
-            if is_acceptable {
-              self.clone().client_serve_h3(conn).await;
+            if let Some(new_server_name) = new_server_name {
+              self.clone().client_serve_h3(conn, new_server_name).await;
             }
           } else {
             continue;

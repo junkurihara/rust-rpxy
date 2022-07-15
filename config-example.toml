@@ -66,3 +66,4 @@ reverse_proxy = [{ upstream = [{ location = 'www.google.com', tls = true }] }]
 ###################################
 [experimental]
 h3 = true
+ignore_sni_consistency = false # Higly recommend not to be true. If true, you ignore RFC.
