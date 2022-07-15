@@ -32,6 +32,15 @@ impl<T> HttpMessageHandler<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
+  fn return_with_error_log(
+    &self,
+    status_code: StatusCode,
+    log_data: &mut MessageLog,
+  ) -> Result<Response<Body>> {
+    log_data.status_code(&status_code).output();
+    http_error(status_code)
+  }
+
   pub async fn handle_request(
     self,
     mut req: Request<Body>,
@@ -40,15 +49,24 @@ where
     tls_enabled: bool,
     tls_server_name: Option<ServerNameLC>,
   ) -> Result<Response<Body>> {
-    req.log_debug(&client_addr, Some("(Request from Client)"));
+    req.log_debug(&client_addr, Some("(from Client)"));
+    ////////
+    let mut log_data = MessageLog::from(&req);
+    log_data.client_addr(&client_addr);
+    //////
 
     // Here we start to handle with server_name
-    let server_name_bytes = req.parse_host()?.to_ascii_lowercase();
+    let server_name_bytes = if let Ok(v) = req.parse_host() {
+      v.to_ascii_lowercase()
+    } else {
+      return self.return_with_error_log(StatusCode::BAD_REQUEST, &mut log_data);
+    };
     // check consistency of between TLS SNI and HOST/Request URI Line.
-    if self.globals.sni_consistency
-      && !server_name_bytes.eq_ignore_ascii_case(&tls_server_name.unwrap())
-    {
-      return http_error(StatusCode::MISDIRECTED_REQUEST);
+    #[allow(clippy::collapsible_if)]
+    if tls_enabled && self.globals.sni_consistency {
+      if !server_name_bytes.eq_ignore_ascii_case(&tls_server_name.unwrap_or_default()) {
+        return self.return_with_error_log(StatusCode::MISDIRECTED_REQUEST, &mut log_data);
+      }
     }
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
     let backend = if let Some(be) = self.globals.backends.apps.get(&server_name_bytes) {
@@ -57,14 +75,15 @@ where
       debug!("Serving by default app");
       self.globals.backends.apps.get(default_server_name).unwrap()
     } else {
-      // info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
-      return http_error(StatusCode::SERVICE_UNAVAILABLE);
+      return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
     };
 
     // Redirect to https if !tls_enabled and redirect_to_https is true
     if !tls_enabled && backend.https_redirection.unwrap_or(false) {
       debug!("Redirect to secure connection: {}", &backend.server_name);
-      // info!("{} => {}", request_log, StatusCode::PERMANENT_REDIRECT);
+      log_data
+        .status_code(&StatusCode::PERMANENT_REDIRECT)
+        .output();
       return secure_redirection(&backend.server_name, self.globals.https_port, &req);
     }
 
@@ -74,12 +93,12 @@ where
     let upstream = if let Some(upstream) = backend.reverse_proxy.get(path) {
       upstream
     } else {
-      return http_error(StatusCode::NOT_FOUND);
+      return self.return_with_error_log(StatusCode::NOT_FOUND, &mut log_data);
     };
     let upstream_scheme_host = if let Some(u) = upstream.get() {
       u
     } else {
-      return http_error(StatusCode::INTERNAL_SERVER_ERROR);
+      return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
     };
 
     // Upgrade in request header
@@ -99,10 +118,13 @@ where
       req
     } else {
       error!("Failed to generate destination uri for reverse proxy");
-      return http_error(StatusCode::SERVICE_UNAVAILABLE);
+      return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
     };
     // debug!("Request to be forwarded: {:?}", req_forwarded);
-    req_forwarded.log_debug(&client_addr, Some("(Request to Backend)"));
+    req_forwarded.log_debug(&client_addr, Some("(to Backend)"));
+    log_data.xff(&req_forwarded.headers().get("x-forwarded-for"));
+    log_data.upstream(&upstream_scheme_host.to_string());
+    //////
 
     // Forward request to
     let mut res_backend = {
@@ -113,23 +135,19 @@ where
       .await
       {
         Err(_) => {
-          return http_error(StatusCode::GATEWAY_TIMEOUT);
+          return self.return_with_error_log(StatusCode::GATEWAY_TIMEOUT, &mut log_data);
         }
         Ok(x) => match x {
           Ok(res) => res,
           Err(e) => {
             error!("Failed to get response from backend: {}", e);
-            return http_error(StatusCode::BAD_REQUEST);
+            return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
           }
         },
       }
     };
 
-    res_backend.log_debug(
-      &backend.server_name,
-      &client_addr,
-      Some("(Response from Backend)"),
-    );
+    res_backend.log_debug(&backend.server_name, &client_addr, Some("(from Backend)"));
     // let response_log = res_backend.status().to_string();
 
     if res_backend.status() == StatusCode::SWITCHING_PROTOCOLS {
@@ -143,51 +161,54 @@ where
         false
       } {
         if let Some(request_upgraded) = request_upgraded {
-          let mut response_upgraded = res_backend
+          let onupgrade = if let Some(onupgrade) = res_backend
             .extensions_mut()
             .remove::<hyper::upgrade::OnUpgrade>()
-            .ok_or_else(|| anyhow!("Response does not have an upgrade extension"))? // TODO: any response code?
-            .await?;
-          // TODO: H3で死ぬことがある
-          // thread 'rpxy' panicked at 'Failed to upgrade request: hyper::Error(User(ManualUpgrade))', src/proxy/proxy_handler.rs:124:63
+          {
+            onupgrade
+          } else {
+            error!("Response does not have an upgrade extension");
+            return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
+          };
+          let mut response_upgraded = if let Ok(res) = onupgrade.await {
+            res
+          } else {
+            error!("No upgrade is available");
+            return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
+          };
+
           self.globals.runtime_handle.spawn(async move {
             let mut request_upgraded = request_upgraded.await.map_err(|e| {
               error!("Failed to upgrade request: {}", e);
               anyhow!("Failed to upgrade request: {}", e)
-            })?; // TODO: any response code?
+            })?;
             copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
               .await
-              .map_err(|e| anyhow!("Coping between upgraded connections failed: {}", e))?; // TODO: any response code?
+              .map_err(|e| anyhow!("Coping between upgraded connections failed: {}", e))?;
             Ok(()) as Result<()>
           });
           // info!("{} => {}", request_log, response_log);
           Ok(res_backend)
         } else {
           error!("Request does not have an upgrade extension");
-          // info!("{} => {}", request_log, StatusCode::BAD_REQUEST);
-          http_error(StatusCode::BAD_REQUEST)
+          self.return_with_error_log(StatusCode::BAD_REQUEST, &mut log_data)
         }
       } else {
         error!(
           "Backend tried to switch to protocol {:?} when {:?} was requested",
           upgrade_in_response, upgrade_in_request
         );
-        // info!("{} => {}", request_log, StatusCode::SERVICE_UNAVAILABLE);
-        http_error(StatusCode::SERVICE_UNAVAILABLE)
+        self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data)
       }
     } else {
       // Generate response to client
       if self.generate_response_forwarded(&mut res_backend).is_ok() {
         // info!("{} => {}", request_log, response_log);
-        res_backend.log_debug(
-          &backend.server_name,
-          &client_addr,
-          Some("(Response to Client)"),
-        );
+        res_backend.log_debug(&backend.server_name, &client_addr, Some("(to Client)"));
+        log_data.status_code(&res_backend.status()).output();
         Ok(res_backend)
       } else {
-        // info!("{} => {}", request_log, StatusCode::BAD_GATEWAY);
-        http_error(StatusCode::BAD_GATEWAY)
+        self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data)
       }
     }
   }
