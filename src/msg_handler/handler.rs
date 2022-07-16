@@ -150,66 +150,64 @@ where
     res_backend.log_debug(&backend.server_name, &client_addr, Some("(from Backend)"));
     // let response_log = res_backend.status().to_string();
 
-    if res_backend.status() == StatusCode::SWITCHING_PROTOCOLS {
-      // Handle StatusCode::SWITCHING_PROTOCOLS in response
-      let upgrade_in_response = extract_upgrade(res_backend.headers());
-      if if let (Some(u_req), Some(u_res)) =
-        (upgrade_in_request.as_ref(), upgrade_in_response.as_ref())
-      {
-        u_req.to_ascii_lowercase() == u_res.to_ascii_lowercase()
-      } else {
-        false
-      } {
-        if let Some(request_upgraded) = request_upgraded {
-          let onupgrade = if let Some(onupgrade) = res_backend
-            .extensions_mut()
-            .remove::<hyper::upgrade::OnUpgrade>()
-          {
-            onupgrade
-          } else {
-            error!("Response does not have an upgrade extension");
-            return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
-          };
-          let mut response_upgraded = if let Ok(res) = onupgrade.await {
-            res
-          } else {
-            error!("No upgrade is available");
-            return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
-          };
-
-          self.globals.runtime_handle.spawn(async move {
-            let mut request_upgraded = request_upgraded.await.map_err(|e| {
-              error!("Failed to upgrade request: {}", e);
-              anyhow!("Failed to upgrade request: {}", e)
-            })?;
-            copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
-              .await
-              .map_err(|e| anyhow!("Coping between upgraded connections failed: {}", e))?;
-            Ok(()) as Result<()>
-          });
-          // info!("{} => {}", request_log, response_log);
-          Ok(res_backend)
-        } else {
-          error!("Request does not have an upgrade extension");
-          self.return_with_error_log(StatusCode::BAD_REQUEST, &mut log_data)
-        }
-      } else {
-        error!(
-          "Backend tried to switch to protocol {:?} when {:?} was requested",
-          upgrade_in_response, upgrade_in_request
-        );
-        self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data)
-      }
-    } else {
+    if res_backend.status() != StatusCode::SWITCHING_PROTOCOLS {
       // Generate response to client
       if self.generate_response_forwarded(&mut res_backend).is_ok() {
         // info!("{} => {}", request_log, response_log);
         res_backend.log_debug(&backend.server_name, &client_addr, Some("(to Client)"));
         log_data.status_code(&res_backend.status()).output();
+        return Ok(res_backend);
+      } else {
+        return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
+      }
+    }
+
+    // Handle StatusCode::SWITCHING_PROTOCOLS in response
+    let upgrade_in_response = extract_upgrade(res_backend.headers());
+    if if let (Some(u_req), Some(u_res)) =
+      (upgrade_in_request.as_ref(), upgrade_in_response.as_ref())
+    {
+      u_req.to_ascii_lowercase() == u_res.to_ascii_lowercase()
+    } else {
+      false
+    } {
+      if let Some(request_upgraded) = request_upgraded {
+        let onupgrade = if let Some(onupgrade) = res_backend
+          .extensions_mut()
+          .remove::<hyper::upgrade::OnUpgrade>()
+        {
+          onupgrade
+        } else {
+          error!("Response does not have an upgrade extension");
+          return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
+        };
+
+        self.globals.runtime_handle.spawn(async move {
+          let mut response_upgraded = onupgrade.await.map_err(|e| {
+            error!("Failed to upgrade response: {}", e);
+            anyhow!("Failed to upgrade response: {}", e)
+          })?;
+          let mut request_upgraded = request_upgraded.await.map_err(|e| {
+            error!("Failed to upgrade request: {}", e);
+            anyhow!("Failed to upgrade request: {}", e)
+          })?;
+          copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
+            .await
+            .map_err(|e| anyhow!("Coping between upgraded connections failed: {}", e))?;
+          Ok(()) as Result<()>
+        });
+        log_data.status_code(&res_backend.status()).output();
         Ok(res_backend)
       } else {
-        self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data)
+        error!("Request does not have an upgrade extension");
+        self.return_with_error_log(StatusCode::BAD_REQUEST, &mut log_data)
       }
+    } else {
+      error!(
+        "Backend tried to switch to protocol {:?} when {:?} was requested",
+        upgrade_in_response, upgrade_in_request
+      );
+      self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data)
     }
   }
 
