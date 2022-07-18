@@ -2,7 +2,7 @@ use super::Proxy;
 use crate::{backend::ServerNameLC, error::*, log::*};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
-use hyper::{client::connect::Connect, Body, HeaderMap, Request, Response};
+use hyper::{client::connect::Connect, Body, Request, Response};
 use std::net::SocketAddr;
 use tokio::time::{timeout, Duration};
 

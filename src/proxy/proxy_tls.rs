@@ -101,7 +101,7 @@ where
   }
 
   #[cfg(feature = "h3")]
-  async fn parse_sni_and_get_crypto_h3<'a, 'b>(
+  async fn parse_sni_and_get_crypto_h3<'a>(
     &self,
     peeked_conn: &mut quinn::Connecting,
     server_crypto_map: &'a ServerCryptoMap,
