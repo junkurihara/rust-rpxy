@@ -14,10 +14,7 @@ use hyper::{
   Body, Client, Request, Response, StatusCode, Uri, Version,
 };
 use std::{env, net::SocketAddr, sync::Arc};
-use tokio::{
-  io::copy_bidirectional,
-  time::{timeout, Duration},
-};
+use tokio::{io::copy_bidirectional, time::timeout};
 
 #[derive(Clone)]
 pub struct HttpMessageHandler<T>
@@ -129,7 +126,7 @@ where
     // Forward request to
     let mut res_backend = {
       match timeout(
-        self.globals.upstream_timeout + Duration::from_secs(1),
+        self.globals.upstream_timeout,
         self.forwarder.request(req_forwarded),
       )
       .await

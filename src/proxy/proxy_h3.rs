@@ -53,8 +53,11 @@ where
         //   .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
         while let Some((req, stream)) = match h3_conn.accept().await {
           Ok(opt_req) => opt_req,
-          Err(_) => {
-            warn!("HTTP/3 failed to accept incoming connection (likely timeout)");
+          Err(e) => {
+            warn!(
+              "HTTP/3 failed to accept incoming connection (likely timeout): {}",
+              e
+            );
             return Ok(h3_conn.shutdown(0).await?);
           }
         } {
@@ -96,30 +99,32 @@ where
     tls_server_name: ServerNameLC,
   ) -> Result<()>
   where
-    S: BidiStream<Bytes>,
+    S: BidiStream<Bytes> + Send + 'static,
   {
     let (req_parts, _) = req.into_parts();
 
-    // TODO: h3 -> h2/http1.1などのプロトコル変換がなければ、bodyはBytes単位で直でsend_dataして転送した方がいい。やむなし。
+    // TODO: h3 -> h2/http1.1等のプロトコル変換のため、一旦バッファリング。
+    // 本来はbodyは直でstreamでcopy_bidirectionalしてして転送した方がいい。やむなし。
     let mut body_chunk: Vec<u8> = Vec::new();
     while let Some(request_body) = stream.recv_data().await? {
+      debug!("HTTP/3 request body");
       body_chunk.extend_from_slice(request_body.chunk());
     }
-    let body = if body_chunk.is_empty() {
-      Body::default()
-    } else {
-      debug!("HTTP/3 request with non-empty body");
-      Body::from(body_chunk)
-    };
     // trailers
-    let trailers = if let Some(trailers) = stream.recv_trailers().await? {
-      debug!("HTTP/3 request with trailers");
-      trailers
-    } else {
-      HeaderMap::new()
-    };
+    let trailers = stream.recv_trailers().await?;
+    // generate streamed body with trailers using channel
+    let (body_sender, req_body) = Body::channel();
+    self.globals.runtime_handle.spawn(async move {
+      let mut sender = body_sender;
+      sender.send_data(Bytes::from(body_chunk)).await?;
+      if trailers.is_some() {
+        debug!("HTTP/3 request with trailers");
+        sender.send_trailers(trailers.unwrap()).await?;
+      }
+      Ok(()) as Result<()>
+    });
 
-    let new_req: Request<Body> = Request::from_parts(req_parts, body);
+    let new_req: Request<Body> = Request::from_parts(req_parts, req_body);
     let res = self
       .msg_handler
       .clone()
@@ -138,10 +143,15 @@ where
     match stream.send_response(new_res).await {
       Ok(_) => {
         debug!("HTTP/3 response to connection successful");
+        // loop {
+        //   let mut buf = BytesMut::with_capacity(4096 * 10);
+        //   if file.read_buf(&mut buf).await? == 0 {
+        //     break;
+        //   }
+        //   stream.send_data(buf.freeze()).await?;
+        // }
         let data = hyper::body::to_bytes(new_body).await?;
         stream.send_data(data).await?;
-        stream.send_trailers(trailers).await?;
-        return Ok(stream.finish().await?);
       }
       Err(err) => {
         error!("Unable to send response to connection peer: {:?}", err);
