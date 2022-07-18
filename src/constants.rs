@@ -10,4 +10,4 @@ pub const MAX_CONCURRENT_STREAMS: u32 = 32;
 pub const CERTS_WATCH_DELAY_SECS: u32 = 30;
 
 #[cfg(feature = "h3")]
-pub const H3_ALT_SVC_MAX_AGE: u32 = 120;
+pub const H3_ALT_SVC_MAX_AGE: u32 = 3600;

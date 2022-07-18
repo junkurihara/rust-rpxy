@@ -16,14 +16,14 @@
 echo "----------------------------"
 echo "Benchmark on rpxy"
 #wrk -t8 -c100 -d30s http://127.0.0.1:8080/index.html
-rewrk -c 512 -t 4 -d 10s -h http://localhost:8080 --pct
+rewrk -c 256 -t 4 -d 10s -h http://localhost:8080 --pct
 
 echo "----------------------------"
 echo "Benchmark on nginx"
 # wrk -t8 -c100 -d30s http://127.0.0.1:8090/index.html
-rewrk -c 512 -t 4 -d 10s -h http://localhost:8090 --pct
+rewrk -c 256 -t 4 -d 10s -h http://localhost:8090 --pct
 
 echo "----------------------------"
 echo "Benchmark on caddy"
 # wrk -t8 -c100 -d30s http://127.0.0.1:8100/index.html
-rewrk -c 512 -t 4 -d 10s -h http://localhost:8100 --pct
+rewrk -c 256 -t 4 -d 10s -h http://localhost:8100 --pct
