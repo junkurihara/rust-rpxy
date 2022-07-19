@@ -78,7 +78,10 @@ fn main() {
       },
     };
 
-    parse_opts(&mut globals).expect("Invalid configuration");
+    if let Err(e) = parse_opts(&mut globals) {
+      error!("Invalid configuration: {}", e);
+      std::process::exit(1);
+    };
 
     entrypoint(Arc::new(globals)).await.unwrap()
   });

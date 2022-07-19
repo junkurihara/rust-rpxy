@@ -32,7 +32,7 @@ pub fn parse_opts(globals: &mut Globals) -> Result<()> {
     ConfigToml::default()
   };
 
-  // listen port and scket
+  // listen port and socket
   globals.http_port = config.listen_port;
   globals.https_port = config.listen_port_tls;
   ensure!(
