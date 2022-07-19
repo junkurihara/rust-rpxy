@@ -10,7 +10,7 @@ impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub async fn client_serve_h3(&self, conn: quinn::Connecting, tls_server_name: &[u8]) {
+  pub(super) fn client_serve_h3(&self, conn: quinn::Connecting, tls_server_name: &[u8]) {
     let clients_count = self.globals.clients_count.clone();
     if clients_count.increment() > self.globals.max_clients {
       clients_count.decrement();
@@ -29,7 +29,7 @@ where
     });
   }
 
-  pub async fn handle_connection_h3(
+  async fn handle_connection_h3(
     self,
     conn: quinn::Connecting,
     tls_server_name: ServerNameLC,

@@ -1,45 +1,32 @@
 use super::proxy_main::{LocalExecutor, Proxy};
-use crate::{backend::ServerNameLC, constants::*, error::*, log::*};
+use crate::{constants::*, error::*, log::*};
 #[cfg(feature = "h3")]
 use futures::StreamExt;
 use futures::{future::FutureExt, select};
 use hyper::{client::connect::Connect, server::conn::Http};
-use rustc_hash::FxHashMap as HashMap;
 use rustls::ServerConfig;
-#[cfg(feature = "h3")]
-use std::pin::Pin;
 use std::sync::Arc;
 use tokio::{net::TcpListener, sync::watch, time::Duration};
-
-type ServerCryptoMap = HashMap<ServerNameLC, Arc<ServerConfig>>;
 
 impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  async fn cert_service(&self, server_crypto_tx: watch::Sender<Option<ServerCryptoMap>>) {
+  async fn cert_service(&self, server_crypto_tx: watch::Sender<Option<Arc<ServerConfig>>>) {
     info!("Start cert watch service");
     loop {
-      let mut hm_server_config = HashMap::<ServerNameLC, Arc<ServerConfig>>::default();
-      for (server_name_bytes, backend) in self.globals.backends.apps.iter() {
-        if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
-          match backend.update_server_config().await {
-            Err(_e) => {
-              error!(
-                "Failed to update certs for {}: {}",
-                &backend.server_name, _e
-              );
-              break;
-            }
-            Ok(server_config) => {
-              hm_server_config.insert(server_name_bytes.to_vec(), Arc::new(server_config));
-            }
-          }
+      if let Ok(server_crypto) = self
+        .globals
+        .backends
+        .generate_server_crypto_with_cert_resolver()
+        .await
+      {
+        if let Err(_e) = server_crypto_tx.send(Some(Arc::new(server_crypto))) {
+          error!("Failed to populate server crypto");
+          break;
         }
-      }
-      if let Err(_e) = server_crypto_tx.send(Some(hm_server_config)) {
-        error!("Failed to populate server crypto");
-        break;
+      } else {
+        error!("Failed to update certs");
       }
       tokio::time::sleep(Duration::from_secs(CERTS_WATCH_DELAY_SECS.into())).await;
     }
@@ -49,18 +36,18 @@ where
   async fn listener_service(
     &self,
     server: Http<LocalExecutor>,
-    mut server_crypto_rx: watch::Receiver<Option<ServerCryptoMap>>,
+    mut server_crypto_rx: watch::Receiver<Option<Arc<ServerConfig>>>,
   ) -> Result<()> {
     let tcp_listener = TcpListener::bind(&self.listening_on).await?;
     info!("Start TCP proxy serving with HTTPS request for configured host names");
 
-    let mut server_crypto_map: Option<ServerCryptoMap> = None;
+    let mut server_crypto: Option<Arc<ServerConfig>> = None;
     loop {
       select! {
         tcp_cnx = tcp_listener.accept().fuse() => {
           // First check SNI
           let rustls_acceptor = rustls::server::Acceptor::new();
-          if server_crypto_map.is_none() || tcp_cnx.is_err() || rustls_acceptor.is_err() {
+          if server_crypto.is_none() || tcp_cnx.is_err() || rustls_acceptor.is_err() {
             continue;
           }
           let (raw_stream, _client_addr) = tcp_cnx.unwrap();
@@ -78,21 +65,16 @@ where
           }
           let server_name = client_hello.server_name().unwrap().to_ascii_lowercase();
           debug!("SNI in ClientHello: {:?}", server_name);
-          let server_crypto = server_crypto_map.as_ref().unwrap().get(server_name.as_bytes());
-          if server_crypto.is_none() {
-            debug!("No TLS serving app for {}", server_name);
-            continue;
-          };
           // Finally serve the TLS connection
-          if let Ok(stream) = start.into_stream(server_crypto.unwrap().clone()).await {
-            self.clone().client_serve(stream, server.clone(), _client_addr, Some(server_name.as_bytes())).await
+          if let Ok(stream) = start.into_stream(server_crypto.clone().unwrap()).await {
+            self.clone().client_serve(stream, server.clone(), _client_addr, Some(server_name.as_bytes()))
           }
         }
         _ = server_crypto_rx.changed().fuse() => {
           if server_crypto_rx.borrow().is_none() {
             break;
           }
-          server_crypto_map = server_crypto_rx.borrow().clone();
+          server_crypto = server_crypto_rx.borrow().clone();
         }
         complete => break
       }
@@ -101,109 +83,59 @@ where
   }
 
   #[cfg(feature = "h3")]
-  async fn parse_sni_and_get_crypto_h3<'a, 'b>(
-    &self,
-    peeked_conn: &mut quinn::Connecting,
-    server_crypto_map: &'a ServerCryptoMap,
-  ) -> Option<(&'a ServerNameLC, &'a Arc<ServerConfig>)> {
-    let hsd = if let Ok(h) = peeked_conn.handshake_data().await {
-      h
-    } else {
-      return None;
-    };
-    let hsd_downcast = if let Ok(d) = hsd.downcast::<quinn::crypto::rustls::HandshakeData>() {
-      d
-    } else {
-      return None;
-    };
-    let server_name = hsd_downcast.server_name?.to_ascii_lowercase();
-    info!(
-      "HTTP/3 connection incoming (SNI {:?}): Overwrite ServerConfig",
-      server_name
-    );
-    server_crypto_map.get_key_value(&server_name.into_bytes())
-    // .map_or_else(|| None, |(k, v)| Some((k.clone(), v.clone())));
-  }
-
-  #[cfg(feature = "h3")]
   async fn listener_service_h3(
     &self,
-    mut server_crypto_rx: watch::Receiver<Option<ServerCryptoMap>>,
+    mut server_crypto_rx: watch::Receiver<Option<Arc<ServerConfig>>>,
   ) -> Result<()> {
-    // TODO: Work around to initially serve incoming connection
-    // かなり適当。エラーが出たり出なかったり。原因がわからない…
-    // let next = self
-    //   .globals
-    //   .backends
-    //   .apps
-    //   .iter()
-    //   .filter(|&(_, backend)| {
-    //     backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some()
-    //   })
-    //   .map(|(name, _)| name)
-    //   .next();
-    // ensure!(next.is_some(), "No TLS supported app");
-    // let initial_app_name = next.ok_or_else(|| anyhow!(""))?;
-    // debug!(
-    //   "HTTP/3 SNI multiplexer initial app_name: {:?}",
-    //   std::str::from_utf8(initial_app_name)
-    // );
-    // let backend_serve = self
-    //   .globals
-    //   .backends
-    //   .apps
-    //   .get(initial_app_name)
-    //   .ok_or_else(|| anyhow!(""))?;
-
-    // let initial_server_crypto = backend_serve.update_server_config().await?;
-    let initial_server_crypto = self
+    let server_crypto = self
       .globals
       .backends
       .generate_server_crypto_with_cert_resolver()
-      .await
-      .unwrap();
+      .await?;
 
-    let server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(initial_server_crypto));
-    let (endpoint, incoming) = quinn::Endpoint::server(server_config_h3, self.listening_on)?;
+    let server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
+    let (endpoint, mut incoming) = quinn::Endpoint::server(server_config_h3, self.listening_on)?;
     info!("Start UDP proxy serving with HTTP/3 request for configured host names");
 
-    let mut server_crypto_map: Option<ServerCryptoMap> = None;
-    let mut p = incoming.peekable();
+    let mut server_crypto: Option<Arc<ServerConfig>> = None;
     loop {
       select! {
-        // TODO: Not sure if this properly works to handle multiple "server_name"s to host multiple hosts.
-        // peek() should work for that.
-        peeked_conn = Pin::new(&mut p).peek_mut().fuse() => {
-          if server_crypto_map.is_none() || peeked_conn.is_none() {
+        new_conn = incoming.next().fuse() => {
+          if server_crypto.is_none() || new_conn.is_none() {
             continue;
           }
-          let peeked_conn = peeked_conn.unwrap();
-
-          let new_server_name = match self.parse_sni_and_get_crypto_h3(peeked_conn, server_crypto_map.as_ref().unwrap()).await {
-            Some((new_server_name, _new_server_crypto)) => {
-              debug!("omg");
-              // Set ServerConfig::set_server_config for given SNI
-              // endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(new_server_crypto.clone())));
-              Some(new_server_name)
-            },
-            None => None
+          let mut conn = new_conn.unwrap();
+          let hsd = if let Ok(h) = conn.handshake_data().await {
+            h
+          } else {
+            continue
           };
-
-          // Then acquire actual connection
-          let peekable_incoming = Pin::new(&mut p);
-          if let Some(conn) = peekable_incoming.get_mut().next().await {
-            if let Some(new_server_name) = new_server_name {
-              self.clone().client_serve_h3(conn, new_server_name).await;
-            }
+          let hsd_downcast = if let Ok(d) = hsd.downcast::<quinn::crypto::rustls::HandshakeData>() {
+            d
           } else {
             continue;
-          }
+          };
+          let new_server_name = if let Some(sn) = hsd_downcast.server_name {
+            sn.as_bytes().to_ascii_lowercase()
+          } else {
+            warn!("HTTP/3 no SNI is given");
+            continue;
+          };
+          debug!(
+            "HTTP/3 connection incoming (SNI {:?})",
+            new_server_name
+          );
+          self.clone().client_serve_h3(conn, new_server_name.as_ref());
         }
         _ = server_crypto_rx.changed().fuse() => {
           if server_crypto_rx.borrow().is_none() {
             break;
           }
-          server_crypto_map = server_crypto_rx.borrow().clone();
+          server_crypto = server_crypto_rx.borrow().clone();
+          if server_crypto.is_some(){
+            debug!("Reload server crypto");
+            endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(server_crypto.clone().unwrap())));
+          }
         }
         complete => break
       }
@@ -213,7 +145,7 @@ where
   }
 
   pub async fn start_with_tls(self, server: Http<LocalExecutor>) -> Result<()> {
-    let (tx, rx) = watch::channel::<Option<ServerCryptoMap>>(None);
+    let (tx, rx) = watch::channel::<Option<Arc<ServerConfig>>>(None);
     #[cfg(not(feature = "h3"))]
     {
       select! {

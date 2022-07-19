@@ -45,7 +45,7 @@ impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub async fn client_serve<I>(
+  pub(super) fn client_serve<I>(
     self,
     stream: I,
     server: Http<LocalExecutor>,
@@ -94,8 +94,7 @@ where
       while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
         self
           .clone()
-          .client_serve(stream, server.clone(), _client_addr, None)
-          .await;
+          .client_serve(stream, server.clone(), _client_addr, None);
       }
       Ok(()) as Result<()>
     };
