@@ -101,7 +101,7 @@ where
   }
 
   #[cfg(feature = "h3")]
-  async fn parse_sni_and_get_crypto_h3<'a>(
+  async fn parse_sni_and_get_crypto_h3<'a, 'b>(
     &self,
     peeked_conn: &mut quinn::Connecting,
     server_crypto_map: &'a ServerCryptoMap,
@@ -132,30 +132,36 @@ where
   ) -> Result<()> {
     // TODO: Work around to initially serve incoming connection
     // かなり適当。エラーが出たり出なかったり。原因がわからない…
-    let next = self
-      .globals
-      .backends
-      .apps
-      .iter()
-      .filter(|&(_, backend)| {
-        backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some()
-      })
-      .map(|(name, _)| name)
-      .next();
-    ensure!(next.is_some(), "No TLS supported app");
-    let initial_app_name = next.ok_or_else(|| anyhow!(""))?;
-    debug!(
-      "HTTP/3 SNI multiplexer initial app_name: {:?}",
-      std::str::from_utf8(initial_app_name)
-    );
-    let backend_serve = self
-      .globals
-      .backends
-      .apps
-      .get(initial_app_name)
-      .ok_or_else(|| anyhow!(""))?;
+    // let next = self
+    //   .globals
+    //   .backends
+    //   .apps
+    //   .iter()
+    //   .filter(|&(_, backend)| {
+    //     backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some()
+    //   })
+    //   .map(|(name, _)| name)
+    //   .next();
+    // ensure!(next.is_some(), "No TLS supported app");
+    // let initial_app_name = next.ok_or_else(|| anyhow!(""))?;
+    // debug!(
+    //   "HTTP/3 SNI multiplexer initial app_name: {:?}",
+    //   std::str::from_utf8(initial_app_name)
+    // );
+    // let backend_serve = self
+    //   .globals
+    //   .backends
+    //   .apps
+    //   .get(initial_app_name)
+    //   .ok_or_else(|| anyhow!(""))?;
 
-    let initial_server_crypto = backend_serve.update_server_config().await?;
+    // let initial_server_crypto = backend_serve.update_server_config().await?;
+    let initial_server_crypto = self
+      .globals
+      .backends
+      .generate_server_crypto_with_cert_resolver()
+      .await
+      .unwrap();
 
     let server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(initial_server_crypto));
     let (endpoint, incoming) = quinn::Endpoint::server(server_config_h3, self.listening_on)?;
@@ -174,9 +180,10 @@ where
           let peeked_conn = peeked_conn.unwrap();
 
           let new_server_name = match self.parse_sni_and_get_crypto_h3(peeked_conn, server_crypto_map.as_ref().unwrap()).await {
-            Some((new_server_name, new_server_crypto)) => {
+            Some((new_server_name, _new_server_crypto)) => {
+              debug!("omg");
               // Set ServerConfig::set_server_config for given SNI
-              endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(new_server_crypto.clone())));
+              // endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(new_server_crypto.clone())));
               Some(new_server_name)
             },
             None => None
