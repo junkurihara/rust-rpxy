@@ -22,6 +22,7 @@ services:
   rpxy-rp:
     image: jqtype/rpxy
     container_name: proxy-rpxy
+    pull_policy: never
     build:
       context: ../
     restart: unless-stopped
@@ -45,8 +46,8 @@ services:
     tty: false
     privileged: true
     volumes:
-      - ./nginx_data/vhost:/etc/nginx/vhost.d
-      - ./nginx_data/conf:/etc/nginx/conf.d/
+      - ./nginx_data/vhost:/etc/nginx/vhost.d:ro
+      - ./nginx_data/conf:/etc/nginx/conf.d/:ro
       - /var/run/docker.sock:/tmp/docker.sock:ro
     logging:
       options:

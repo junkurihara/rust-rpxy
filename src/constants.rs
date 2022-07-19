@@ -11,3 +11,9 @@ pub const CERTS_WATCH_DELAY_SECS: u32 = 30;
 
 #[cfg(feature = "h3")]
 pub const H3_ALT_SVC_MAX_AGE: u32 = 3600;
+
+#[cfg(feature = "h3")]
+pub const H3_RESPONSE_BUF_SIZE: usize = 65_536; // 64KB
+
+#[cfg(feature = "h3")]
+pub const H3_REQUEST_MAX_BODY_SIZE: usize = 268_435_456; // 256MB
