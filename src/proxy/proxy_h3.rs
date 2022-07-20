@@ -99,9 +99,10 @@ where
     tls_server_name: ServerNameLC,
   ) -> Result<()>
   where
-    S: BidiStream<Bytes> + Send + 'static,
+    S: BidiStream<Bytes>,
   {
     let (req_parts, _) = req.into_parts();
+    // let (mut send_stream, mut recv_stream) = stream.split(); // TODO: split stream and async body handling
 
     // TODO: h3 -> h2/http1.1等のプロトコル変換のため、一旦全部バッファリングしないと無理そう。H3->H3ならBytesを直に流し込めるのだが。
     let mut body_buf = BytesMut::new();
