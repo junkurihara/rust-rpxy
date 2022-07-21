@@ -1,5 +1,7 @@
 // use super::proxy_handler::handle_request;
-use crate::{error::*, globals::Globals, log::*, msg_handler::HttpMessageHandler};
+use crate::{
+  backend::ServerNameLC, error::*, globals::Globals, log::*, msg_handler::HttpMessageHandler,
+};
 use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, Body, Request};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
@@ -50,7 +52,7 @@ where
     stream: I,
     server: Http<LocalExecutor>,
     peer_addr: SocketAddr,
-    tls_server_name: Option<&[u8]>,
+    tls_server_name: Option<ServerNameLC>,
   ) where
     I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
   {
@@ -60,7 +62,7 @@ where
       return;
     }
 
-    let inner = tls_server_name.map_or_else(|| None, |v| Some(v.to_vec()));
+    // let inner = tls_server_name.map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase()));
     self.globals.runtime_handle.clone().spawn(async move {
       timeout(
         self.globals.proxy_timeout + Duration::from_secs(1),
@@ -73,7 +75,7 @@ where
                 peer_addr,
                 self.listening_on,
                 self.tls_enabled,
-                inner.clone(),
+                tls_server_name.clone(),
               )
             }),
           )

@@ -7,6 +7,7 @@ use hyper::{client::connect::Connect, server::conn::Http};
 use rustls::ServerConfig;
 use std::sync::Arc;
 use tokio::{net::TcpListener, sync::watch, time::Duration};
+use tokio_rustls::TlsAcceptor;
 
 impl<T> Proxy<T>
 where
@@ -41,40 +42,35 @@ where
     let tcp_listener = TcpListener::bind(&self.listening_on).await?;
     info!("Start TCP proxy serving with HTTPS request for configured host names");
 
-    let mut server_crypto: Option<Arc<ServerConfig>> = None;
+    // let mut server_crypto: Option<Arc<ServerConfig>> = None;
+    let mut tls_acceptor: Option<TlsAcceptor> = None;
     loop {
       select! {
         tcp_cnx = tcp_listener.accept().fuse() => {
-          // First check SNI
-          let rustls_acceptor = rustls::server::Acceptor::new();
-          if server_crypto.is_none() || tcp_cnx.is_err() || rustls_acceptor.is_err() {
+          if tls_acceptor.is_none() || tcp_cnx.is_err() {
             continue;
           }
-          let (raw_stream, _client_addr) = tcp_cnx.unwrap();
-          let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls_acceptor.unwrap(), raw_stream).await;
-          if acceptor.is_err() {
-            continue;
-          }
-          let start = acceptor.unwrap();
 
-          let client_hello = start.client_hello();
-          // Find server config for given SNI
-          if client_hello.server_name().is_none(){
-            info!("No SNI in ClientHello");
-            continue;
-          }
-          let server_name = client_hello.server_name().unwrap().to_ascii_lowercase();
-          debug!("SNI in ClientHello: {:?}", server_name);
-          // Finally serve the TLS connection
-          if let Ok(stream) = start.into_stream(server_crypto.clone().unwrap()).await {
-            self.clone().client_serve(stream, server.clone(), _client_addr, Some(server_name.as_bytes()))
+          let (raw_stream, _client_addr) = tcp_cnx.unwrap();
+
+          if let Ok(stream) = tls_acceptor.as_ref().unwrap().accept(raw_stream).await {
+            // Retrieve SNI
+            let (_, conn) = stream.get_ref();
+            let server_name = conn.sni_hostname();
+            debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", server_name);
+            let server_name = server_name.map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase()));
+            if server_name.is_none(){
+              continue;
+            }
+            self.clone().client_serve(stream, server.clone(), _client_addr, server_name); // TODO: don't want to pass copied value...
           }
         }
         _ = server_crypto_rx.changed().fuse() => {
           if server_crypto_rx.borrow().is_none() {
             break;
           }
-          server_crypto = server_crypto_rx.borrow().clone();
+          let server_crypto = server_crypto_rx.borrow().clone().unwrap();
+          tls_acceptor = Some(TlsAcceptor::from(server_crypto));
         }
         complete => break
       }
