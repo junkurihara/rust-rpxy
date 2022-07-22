@@ -77,11 +77,18 @@ fn main() {
       },
 
       sni_consistency: true,
+
+      #[cfg(feature = "http3")]
       http3: false,
+      #[cfg(feature = "http3")]
       h3_alt_svc_max_age: H3::ALT_SVC_MAX_AGE,
+      #[cfg(feature = "http3")]
       h3_request_max_body_size: H3::REQUEST_MAX_BODY_SIZE,
+      #[cfg(feature = "http3")]
       h3_max_concurrent_connections: H3::MAX_CONCURRENT_CONNECTIONS,
+      #[cfg(feature = "http3")]
       h3_max_concurrent_bidistream: H3::MAX_CONCURRENT_BIDISTREAM.into(),
+      #[cfg(feature = "http3")]
       h3_max_concurrent_unistream: H3::MAX_CONCURRENT_UNISTREAM.into(),
     };
 

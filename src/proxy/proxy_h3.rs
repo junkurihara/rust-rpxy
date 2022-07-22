@@ -10,17 +10,7 @@ impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub(super) fn connection_serve_h3(&self, conn: quinn::Connecting, tls_server_name: &[u8]) {
-    let fut = self.clone().handle_connection_h3(conn, tls_server_name.to_vec());
-    self.globals.runtime_handle.spawn(async move {
-      // Timeout is based on underlying quic
-      if let Err(e) = fut.await {
-        warn!("QUIC or HTTP/3 connection failed: {}", e)
-      }
-    });
-  }
-
-  async fn handle_connection_h3(self, conn: quinn::Connecting, tls_server_name: ServerNameLC) -> Result<()> {
+  pub(super) async fn connection_serve_h3(self, conn: quinn::Connecting, tls_server_name: ServerNameLC) -> Result<()> {
     let client_addr = conn.remote_address();
 
     match conn.await {

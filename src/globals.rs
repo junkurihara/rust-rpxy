@@ -24,11 +24,18 @@ pub struct Globals {
 
   // experimentals
   pub sni_consistency: bool,
+
+  #[cfg(feature = "http3")]
   pub http3: bool,
+  #[cfg(feature = "http3")]
   pub h3_alt_svc_max_age: u32,
+  #[cfg(feature = "http3")]
   pub h3_request_max_body_size: usize,
+  #[cfg(feature = "http3")]
   pub h3_max_concurrent_bidistream: quinn::VarInt,
+  #[cfg(feature = "http3")]
   pub h3_max_concurrent_unistream: quinn::VarInt,
+  #[cfg(feature = "http3")]
   pub h3_max_concurrent_connections: u32,
 }
 

@@ -236,16 +236,16 @@ impl Backends {
       .with_no_client_auth()
       .with_cert_resolver(Arc::new(resolver));
 
-    #[cfg(feature = "h3")]
+    #[cfg(feature = "http3")]
     {
       server_config.alpn_protocols = vec![
         b"h3".to_vec(),
-        b"hq-29".to_vec(), // quinn draft example TODO: remove later
+        b"hq-29".to_vec(), // TODO: remove later?
         b"h2".to_vec(),
         b"http/1.1".to_vec(),
       ];
     }
-    #[cfg(not(feature = "h3"))]
+    #[cfg(not(feature = "http3"))]
     {
       server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     }

@@ -15,6 +15,7 @@ pub struct ConfigToml {
   pub experimental: Option<Experimental>,
 }
 
+#[cfg(feature = "http3")]
 #[derive(Deserialize, Debug, Default)]
 pub struct Http3Option {
   pub alt_svc_max_age: Option<u32>,
@@ -26,6 +27,7 @@ pub struct Http3Option {
 
 #[derive(Deserialize, Debug, Default)]
 pub struct Experimental {
+  #[cfg(feature = "http3")]
   pub h3: Option<Http3Option>,
   pub ignore_sni_consistency: Option<bool>,
 }

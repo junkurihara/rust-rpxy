@@ -200,7 +200,7 @@ where
     remove_hop_header(headers);
     add_header_entry_overwrite_if_exist(headers, "server", env!("CARGO_PKG_NAME"))?;
 
-    #[cfg(feature = "h3")]
+    #[cfg(feature = "http3")]
     {
       if self.globals.http3 {
         if let Some(port) = self.globals.https_port {

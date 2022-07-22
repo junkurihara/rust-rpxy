@@ -1,7 +1,5 @@
 use super::proxy_main::{LocalExecutor, Proxy};
 use crate::{constants::*, error::*, log::*};
-#[cfg(feature = "h3")]
-use futures::StreamExt;
 use futures::{future::FutureExt, select};
 use hyper::{client::connect::Connect, server::conn::Http};
 use rustls::ServerConfig;
@@ -12,6 +10,11 @@ use tokio::{
   time::{sleep, Duration},
 };
 use tokio_rustls::TlsAcceptor;
+
+#[cfg(feature = "http3")]
+use futures::StreamExt;
+#[cfg(feature = "http3")]
+use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
 
 impl<T> Proxy<T>
 where
@@ -76,9 +79,9 @@ where
     Ok(()) as Result<()>
   }
 
-  #[cfg(feature = "h3")]
+  #[cfg(feature = "http3")]
   async fn listener_service_h3(&self, mut server_crypto_rx: watch::Receiver<Option<Arc<ServerConfig>>>) -> Result<()> {
-    let mut transport_config_quic = quinn::TransportConfig::default();
+    let mut transport_config_quic = TransportConfig::default();
     transport_config_quic
       .max_concurrent_bidi_streams(self.globals.h3_max_concurrent_bidistream)
       .max_concurrent_uni_streams(self.globals.h3_max_concurrent_unistream);
@@ -89,10 +92,10 @@ where
       .generate_server_crypto_with_cert_resolver()
       .await?;
 
-    let mut server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
+    let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(server_crypto));
     server_config_h3.transport = Arc::new(transport_config_quic);
     server_config_h3.concurrent_connections(self.globals.h3_max_concurrent_connections);
-    let (endpoint, mut incoming) = quinn::Endpoint::server(server_config_h3, self.listening_on)?;
+    let (endpoint, mut incoming) = Endpoint::server(server_config_h3, self.listening_on)?;
     info!("Start UDP proxy serving with HTTP/3 request for configured host names");
 
     let mut server_crypto: Option<Arc<ServerConfig>> = None;
@@ -103,15 +106,14 @@ where
             continue;
           }
           let mut conn = new_conn.unwrap();
-          let hsd = if let Ok(h) = conn.handshake_data().await {
-            h
-          } else {
-            continue
+          let hsd = match conn.handshake_data().await {
+            Ok(h) => h,
+            Err(_) => continue
           };
-          let hsd_downcast = if let Ok(d) = hsd.downcast::<quinn::crypto::rustls::HandshakeData>() {
-            d
-          } else {
-            continue;
+
+          let hsd_downcast = match hsd.downcast::<HandshakeData>() {
+            Ok(d) => d,
+            Err(_) => continue
           };
           let new_server_name = if let Some(sn) = hsd_downcast.server_name {
             sn.as_bytes().to_ascii_lowercase()
@@ -125,7 +127,13 @@ where
           );
           // TODO: server_nameをここで出してどんどん深く投げていくのは効率が悪い。connecting -> connectionsの後でいいのでは？
           // TODO: 通常のTLSと同じenumか何かにまとめたい
-          self.clone().connection_serve_h3(conn, new_server_name.as_ref());
+          let fut = self.clone().connection_serve_h3(conn, new_server_name);
+          self.globals.runtime_handle.spawn(async move {
+            // Timeout is based on underlying quic
+            if let Err(e) = fut.await {
+              warn!("QUIC or HTTP/3 connection failed: {}", e)
+            }
+          });
         }
         _ = server_crypto_rx.changed().fuse() => {
           if server_crypto_rx.borrow().is_none() {
@@ -134,7 +142,7 @@ where
           server_crypto = server_crypto_rx.borrow().clone();
           if server_crypto.is_some(){
             debug!("Reload server crypto");
-            endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(server_crypto.clone().unwrap())));
+            endpoint.set_server_config(Some(QuicServerConfig::with_crypto(server_crypto.clone().unwrap())));
           }
         }
         complete => break
@@ -146,7 +154,7 @@ where
 
   pub async fn start_with_tls(self, server: Http<LocalExecutor>) -> Result<()> {
     let (tx, rx) = watch::channel::<Option<Arc<ServerConfig>>>(None);
-    #[cfg(not(feature = "h3"))]
+    #[cfg(not(feature = "http3"))]
     {
       select! {
         _= self.cert_service(tx).fuse() => {
@@ -162,7 +170,7 @@ where
       };
       Ok(())
     }
-    #[cfg(feature = "h3")]
+    #[cfg(feature = "http3")]
     {
       if self.globals.http3 {
         select! {
