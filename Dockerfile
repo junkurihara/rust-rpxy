@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
   echo "Building rpxy from source" && \
   cargo build --release && \
   mkdir -p /opt/rpxy/sbin && \
-  mv /tmp/target/release/rust-rpxy /opt/rpxy/sbin/rpxy && \
+  mv /tmp/target/release/rpxy /opt/rpxy/sbin/rpxy && \
   strip --strip-all /opt/rpxy/sbin/rpxy && \
   apt-get -qy purge $BUILD_DEPS && apt-get -qy autoremove && \
   rm -fr ~/.cargo ~/.rustup && \
