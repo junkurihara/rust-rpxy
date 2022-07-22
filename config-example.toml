@@ -69,7 +69,7 @@ reverse_proxy = [{ upstream = [{ location = 'www.google.com', tls = true }] }]
 [experimental]
 ignore_sni_consistency = false # Higly recommend not to be true. If true, you ignore RFC. if not specified, it is always false.
 
-[experimenta.h3] # If this specified, h3 is enabled
+[experimental.h3] # If this specified, h3 is enabled
 alt_svc_max_age = 3600             # sec
 request_max_body_size = 65536      # bytes
 max_concurrent_connections = 10000

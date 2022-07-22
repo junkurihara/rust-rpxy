@@ -3,11 +3,11 @@ FROM ubuntu:22.04 AS base
 SHELL ["/bin/sh", "-x", "-c"]
 ENV SERIAL 2
 
-
+########################################
 FROM base as builder
 
 ENV CFLAGS=-Ofast
-ENV BUILD_DEPS   curl make build-essential libevent-dev libexpat1-dev autoconf file libssl-dev byacc pkg-config ca-certificates
+ENV BUILD_DEPS curl make ca-certificates build-essential
 
 WORKDIR /tmp
 
@@ -24,13 +24,15 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
   cargo build --release && \
   strip --strip-all /tmp/target/release/rpxy
 
+########################################
 FROM base AS runner
 LABEL maintainer="Jun Kurihara"
 
 ENV RUNTIME_DEPS bash logrotate
 
-RUN apt-get update; apt-get -qy dist-upgrade; apt-get -qy clean && \
+RUN apt-get update && \
   apt-get install -qy --no-install-recommends $RUNTIME_DEPS && \
+  apt-get -qy clean && \
   rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log &&\
   mkdir -p /opt/rpxy/sbin &&\
   mkdir -p /var/log/rpxy && \
