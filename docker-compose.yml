@@ -15,5 +15,6 @@ services:
     tty: false
     privileged: true
     volumes:
-      - ./localhost.pem:/certs/localhost.pem:ro
+      - ./localhost.crt:/certs/localhost.crt:ro
+      - ./localhost.key:/certs/localhost.key:ro
       - ./config-example.toml:/etc/rpxy.toml:ro

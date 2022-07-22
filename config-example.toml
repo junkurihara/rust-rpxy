@@ -37,8 +37,8 @@ reverse_proxy = [
   # default destination if path is not specified
   # Array for load balancing
   { upstream = [
-    { location = 'www.google.com', tls = true },
-    { location = 'www.google.co.jp', tls = true },
+    { location = 'www.yahoo.com', tls = true },
+    { location = 'www.yahoo.co.jp', tls = true },
   ], upstream_options = [
     "override_host",
   ] },
@@ -51,8 +51,8 @@ reverse_proxy = [
   ] },
 ]
 # Optional: TLS setting. if https_port is specified and tls is true above, this must be given.
-tls = { https_redirection = true, tls_cert_path = '/certs/localhost.pem', tls_cert_key_path = '/certs/localhost.pem' } # for docker volume mounted certs
-#tls = { https_redirection = true, tls_cert_path = './localhost.pem', tls_cert_key_path = './localhost.pem' }          # for local
+tls = { https_redirection = true, tls_cert_path = '/certs/localhost.crt', tls_cert_key_path = '/certs/localhost.key' } # for docker volume mounted certs
+#tls = { https_redirection = true, tls_cert_path = './localhost.crt', tls_cert_key_path = './localhost.key' }          # for local
 
 
 ## List of destinations to send data to.
