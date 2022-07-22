@@ -1,6 +1,9 @@
-use mimalloc_rust::*;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL_MIMALLOC: GlobalMiMalloc = GlobalMiMalloc;
+static GLOBAL: Jemalloc = Jemalloc;
 
 mod backend;
 mod backend_opt;
@@ -33,18 +36,16 @@ use tokio::time::Duration;
 fn main() {
   // env::set_var("RUST_LOG", "info");
   env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-    .format(|buf, record| {
+    .format(|buf, rec| {
       let ts = buf.timestamp();
-      writeln!(
-        buf,
-        "{} [{}] {}",
-        ts,
-        record.level(),
-        // record.target(),
-        record.args(),
-        // record.file().unwrap_or("unknown"),
-        // record.line().unwrap_or(0),
-      )
+      match rec.level() {
+        log::Level::Debug => {
+          writeln!(buf, "{} [{}] {} ({})", ts, rec.level(), rec.args(), rec.target(),)
+        }
+        _ => {
+          writeln!(buf, "{} [{}] {}", ts, rec.level(), rec.args(),)
+        }
+      }
     })
     .init();
   info!("Start http (reverse) proxy");
@@ -59,23 +60,29 @@ fn main() {
       listen_sockets: Vec::new(),
       http_port: None,
       https_port: None,
-      http3: false,
-      sni_consistency: true,
 
       // TODO: Reconsider each timeout values
       proxy_timeout: Duration::from_secs(PROXY_TIMEOUT_SEC),
       upstream_timeout: Duration::from_secs(UPSTREAM_TIMEOUT_SEC),
 
       max_clients: MAX_CLIENTS,
-      clients_count: Default::default(),
+      request_count: Default::default(),
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,
       keepalive: true,
-      runtime_handle: runtime.handle().clone(),
 
+      runtime_handle: runtime.handle().clone(),
       backends: Backends {
         default_server_name: None,
         apps: HashMap::<ServerNameLC, Backend>::default(),
       },
+
+      sni_consistency: true,
+      http3: false,
+      h3_alt_svc_max_age: H3::ALT_SVC_MAX_AGE,
+      h3_request_max_body_size: H3::REQUEST_MAX_BODY_SIZE,
+      h3_max_concurrent_connections: H3::MAX_CONCURRENT_CONNECTIONS,
+      h3_max_concurrent_bidistream: H3::MAX_CONCURRENT_BIDISTREAM.into(),
+      h3_max_concurrent_unistream: H3::MAX_CONCURRENT_UNISTREAM.into(),
     };
 
     if let Err(e) = parse_opts(&mut globals) {

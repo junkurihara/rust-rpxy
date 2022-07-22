@@ -2,7 +2,6 @@
 use super::{utils_headers::*, utils_request::*, utils_response::ResLog, utils_synth_response::*};
 use crate::{
   backend::{ServerNameLC, Upstream},
-  constants::*,
   error::*,
   globals::Globals,
   log::*,
@@ -229,7 +228,7 @@ where
             header::ALT_SVC.as_str(),
             format!(
               "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
-              port, H3_ALT_SVC_MAX_AGE, port, H3_ALT_SVC_MAX_AGE
+              port, self.globals.h3_alt_svc_max_age, port, self.globals.h3_alt_svc_max_age
             ),
           )?;
         }

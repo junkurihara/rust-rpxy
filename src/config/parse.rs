@@ -157,16 +157,29 @@ pub fn parse_opts(globals: &mut Globals) -> Result<()> {
 
   // experimental
   if let Some(exp) = config.experimental {
-    if let Some(b) = exp.h3 {
-      globals.http3 = b;
-      if b {
-        info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.")
+    if let Some(h3option) = exp.h3 {
+      globals.http3 = true;
+      info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
+      if let Some(x) = h3option.alt_svc_max_age {
+        globals.h3_alt_svc_max_age = x;
+      }
+      if let Some(x) = h3option.request_max_body_size {
+        globals.h3_request_max_body_size = x;
+      }
+      if let Some(x) = h3option.max_concurrent_connections {
+        globals.h3_max_concurrent_connections = x;
+      }
+      if let Some(x) = h3option.max_concurrent_bidistream {
+        globals.h3_max_concurrent_bidistream = x.into();
+      }
+      if let Some(x) = h3option.max_concurrent_unistream {
+        globals.h3_max_concurrent_unistream = x.into();
       }
     }
     if let Some(b) = exp.ignore_sni_consistency {
       globals.sni_consistency = !b;
       if b {
-        info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.")
+        info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
       }
     }
   }

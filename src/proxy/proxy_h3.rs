@@ -1,5 +1,5 @@
 use super::Proxy;
-use crate::{backend::ServerNameLC, constants::*, error::*, log::*};
+use crate::{backend::ServerNameLC, error::*, log::*};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, Request, Response};
@@ -10,12 +10,7 @@ impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub(super) fn client_serve_h3(&self, conn: quinn::Connecting, tls_server_name: &[u8]) {
-    let clients_count = self.globals.clients_count.clone();
-    if clients_count.increment() > self.globals.max_clients {
-      clients_count.decrement();
-      return;
-    }
+  pub(super) fn connection_serve_h3(&self, conn: quinn::Connecting, tls_server_name: &[u8]) {
     let fut = self
       .clone()
       .handle_connection_h3(conn, tls_server_name.to_vec());
@@ -24,8 +19,6 @@ where
       if let Err(e) = fut.await {
         warn!("QUIC or HTTP/3 connection failed: {}", e)
       }
-      clients_count.decrement();
-      debug!("Client #: {}", clients_count.current());
     });
   }
 
@@ -45,40 +38,37 @@ where
           "QUIC/HTTP3 connection established from {:?} {:?}",
           client_addr, tls_server_name
         );
-
-        // Does this work enough?
-        // while let Some((req, stream)) = h3_conn
-        //   .accept()
-        //   .await
-        //   .map_err(|e| anyhow!("HTTP/3 accept failed: {}", e))?
+        // TODO: Is here enough to fetch server_name from NewConnection?
+        // to avoid deep nested call from listener_service_h3
         while let Some((req, stream)) = match h3_conn.accept().await {
           Ok(opt_req) => opt_req,
           Err(e) => {
-            warn!(
-              "HTTP/3 failed to accept incoming connection (likely timeout): {}",
-              e
-            );
+            warn!("HTTP/3 failed to accept incoming connection: {}", e);
             return Ok(h3_conn.shutdown(0).await?);
           }
         } {
-          debug!(
-            "HTTP/3 new request from {}: {} {}",
-            client_addr,
-            req.method(),
-            req.uri()
-          );
+          // We consider the connection count separately from the stream count.
+          // Max clients for h1/h2 = max 'stream' for h3.
+          let request_count = self.globals.request_count.clone();
+          if request_count.increment() > self.globals.max_clients {
+            request_count.decrement();
+            return Ok(h3_conn.shutdown(0).await?);
+          }
+          debug!("Request incoming: current # {}", request_count.current());
 
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
           self.globals.runtime_handle.spawn(async move {
             if let Err(e) = timeout(
               self_inner.globals.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
-              self_inner.handle_stream_h3(req, stream, client_addr, tls_server_name_inner),
+              self_inner.stream_serve_h3(req, stream, client_addr, tls_server_name_inner),
             )
             .await
             {
               error!("HTTP/3 failed to process stream: {}", e);
             }
+            request_count.decrement();
+            debug!("Request processed: current # {}", request_count.current());
           });
         }
       }
@@ -91,7 +81,7 @@ where
     Ok(())
   }
 
-  async fn handle_stream_h3<S>(
+  async fn stream_serve_h3<S>(
     self,
     req: Request<()>,
     stream: RequestStream<S, Bytes>,
@@ -111,13 +101,14 @@ where
 
     // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
     // The underling buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
+    let max_body_size = self.globals.h3_request_max_body_size;
     self.globals.runtime_handle.spawn(async move {
       let mut sender = body_sender;
       let mut size = 0usize;
       while let Some(mut body) = recv_stream.recv_data().await? {
         debug!("HTTP/3 incoming request body");
         size += body.remaining();
-        if size > H3_REQUEST_MAX_BODY_SIZE {
+        if size > max_body_size {
           error!("Exceeds max request body size for HTTP/3");
           return Err(anyhow!("Exceeds max request body size for HTTP/3"));
         }

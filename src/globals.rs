@@ -15,21 +15,27 @@ pub struct Globals {
   pub upstream_timeout: Duration,
 
   pub max_clients: usize,
-  pub clients_count: ClientsCount,
+  pub request_count: RequestCount,
   pub max_concurrent_streams: u32,
   pub keepalive: bool,
-  pub http3: bool,
-  pub sni_consistency: bool,
 
   pub runtime_handle: tokio::runtime::Handle,
-
   pub backends: Backends,
+
+  // experimentals
+  pub sni_consistency: bool,
+  pub http3: bool,
+  pub h3_alt_svc_max_age: u32,
+  pub h3_request_max_body_size: usize,
+  pub h3_max_concurrent_bidistream: quinn::VarInt,
+  pub h3_max_concurrent_unistream: quinn::VarInt,
+  pub h3_max_concurrent_connections: u32,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ClientsCount(Arc<AtomicUsize>);
+pub struct RequestCount(Arc<AtomicUsize>);
 
-impl ClientsCount {
+impl RequestCount {
   pub fn current(&self) -> usize {
     self.0.load(Ordering::Relaxed)
   }

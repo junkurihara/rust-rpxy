@@ -10,8 +10,10 @@
 listen_port = 8080
 listen_port_tls = 8443
 
-# Optional
-max_concurrent_streams = 128
+# Optional for h2 and http1.1
+max_concurrent_streams = 100
+
+# Optional. Counted in total for http1.1, 2, 3
 max_clients = 512
 
 # Optional: Listen [::]
@@ -65,5 +67,11 @@ reverse_proxy = [{ upstream = [{ location = 'www.google.com', tls = true }] }]
 #      Experimantal settings      #
 ###################################
 [experimental]
-h3 = true
-ignore_sni_consistency = false # Higly recommend not to be true. If true, you ignore RFC.
+ignore_sni_consistency = false # Higly recommend not to be true. If true, you ignore RFC. if not specified, it is always false.
+
+[experimenta.h3] # If this specified, h3 is enabled
+alt_svc_max_age = 3600             # sec
+request_max_body_size = 65536      # bytes
+max_concurrent_connections = 10000
+max_concurrent_bidistream = 100
+max_concurrent_unistream = 100

@@ -1,8 +1,6 @@
-use std::net::SocketAddr;
-
-pub use log::{debug, error, info, warn};
-
 use crate::utils::ToCanonical;
+pub use log::{debug, error, info, warn, Level};
+use std::net::SocketAddr;
 
 #[derive(Debug, Clone)]
 pub struct MessageLog {

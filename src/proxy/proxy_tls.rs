@@ -6,7 +6,11 @@ use futures::{future::FutureExt, select};
 use hyper::{client::connect::Connect, server::conn::Http};
 use rustls::ServerConfig;
 use std::sync::Arc;
-use tokio::{net::TcpListener, sync::watch, time::Duration};
+use tokio::{
+  net::TcpListener,
+  sync::watch,
+  time::{sleep, Duration},
+};
 use tokio_rustls::TlsAcceptor;
 
 impl<T> Proxy<T>
@@ -29,7 +33,7 @@ where
       } else {
         error!("Failed to update certs");
       }
-      tokio::time::sleep(Duration::from_secs(CERTS_WATCH_DELAY_SECS.into())).await;
+      sleep(Duration::from_secs(CERTS_WATCH_DELAY_SECS.into())).await;
     }
   }
 
@@ -50,8 +54,7 @@ where
           if tls_acceptor.is_none() || tcp_cnx.is_err() {
             continue;
           }
-
-          let (raw_stream, _client_addr) = tcp_cnx.unwrap();
+          let (raw_stream, client_addr) = tcp_cnx.unwrap();
 
           if let Ok(stream) = tls_acceptor.as_ref().unwrap().accept(raw_stream).await {
             // Retrieve SNI
@@ -62,7 +65,7 @@ where
             if server_name.is_none(){
               continue;
             }
-            self.clone().client_serve(stream, server.clone(), _client_addr, server_name); // TODO: don't want to pass copied value...
+            self.clone().client_serve(stream, server.clone(), client_addr, server_name); // TODO: don't want to pass copied value...
           }
         }
         _ = server_crypto_rx.changed().fuse() => {
@@ -83,13 +86,20 @@ where
     &self,
     mut server_crypto_rx: watch::Receiver<Option<Arc<ServerConfig>>>,
   ) -> Result<()> {
+    let mut transport_config_quic = quinn::TransportConfig::default();
+    transport_config_quic
+      .max_concurrent_bidi_streams(self.globals.h3_max_concurrent_bidistream)
+      .max_concurrent_uni_streams(self.globals.h3_max_concurrent_unistream);
+
     let server_crypto = self
       .globals
       .backends
       .generate_server_crypto_with_cert_resolver()
       .await?;
 
-    let server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
+    let mut server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
+    server_config_h3.transport = Arc::new(transport_config_quic);
+    server_config_h3.concurrent_connections(self.globals.h3_max_concurrent_connections);
     let (endpoint, mut incoming) = quinn::Endpoint::server(server_config_h3, self.listening_on)?;
     info!("Start UDP proxy serving with HTTP/3 request for configured host names");
 
@@ -121,7 +131,9 @@ where
             "HTTP/3 connection incoming (SNI {:?})",
             new_server_name
           );
-          self.clone().client_serve_h3(conn, new_server_name.as_ref());
+          // TODO: server_nameをここで出してどんどん深く投げていくのは効率が悪い。connecting -> connectionsの後でいいのでは？
+          // TODO: 通常のTLSと同じenumか何かにまとめたい
+          self.clone().connection_serve_h3(conn, new_server_name.as_ref());
         }
         _ = server_crypto_rx.changed().fuse() => {
           if server_crypto_rx.borrow().is_none() {

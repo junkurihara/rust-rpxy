@@ -16,8 +16,17 @@ pub struct ConfigToml {
 }
 
 #[derive(Deserialize, Debug, Default)]
+pub struct Http3Option {
+  pub alt_svc_max_age: Option<u32>,
+  pub request_max_body_size: Option<usize>,
+  pub max_concurrent_connections: Option<u32>,
+  pub max_concurrent_bidistream: Option<u32>,
+  pub max_concurrent_unistream: Option<u32>,
+}
+
+#[derive(Deserialize, Debug, Default)]
 pub struct Experimental {
-  pub h3: Option<bool>,
+  pub h3: Option<Http3Option>,
   pub ignore_sni_consistency: Option<bool>,
 }
 

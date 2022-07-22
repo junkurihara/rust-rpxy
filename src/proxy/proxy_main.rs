@@ -56,11 +56,12 @@ where
   ) where
     I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
   {
-    let clients_count = self.globals.clients_count.clone();
-    if clients_count.increment() > self.globals.max_clients {
-      clients_count.decrement();
+    let request_count = self.globals.request_count.clone();
+    if request_count.increment() > self.globals.max_clients {
+      request_count.decrement();
       return;
     }
+    debug!("Request incoming: current # {}", request_count.current());
 
     // let inner = tls_server_name.map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase()));
     self.globals.runtime_handle.clone().spawn(async move {
@@ -84,8 +85,8 @@ where
       .await
       .ok();
 
-      clients_count.decrement();
-      debug!("Client #: {}", clients_count.current());
+      request_count.decrement();
+      debug!("Request processed: current # {}", request_count.current());
     });
   }
 
