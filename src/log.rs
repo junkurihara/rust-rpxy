@@ -62,9 +62,7 @@ impl MessageLog {
     self
   }
   pub fn xff(&mut self, xff: &Option<&hyper::header::HeaderValue>) -> &mut Self {
-    self.xff = xff
-      .map_or_else(|| "", |v| v.to_str().unwrap_or(""))
-      .to_string();
+    self.xff = xff.map_or_else(|| "", |v| v.to_str().unwrap_or("")).to_string();
     self
   }
   pub fn upstream(&mut self, upstream: &str) -> &mut Self {

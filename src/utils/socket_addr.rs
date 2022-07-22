@@ -51,10 +51,7 @@ mod tests {
   }
   #[test]
   fn ipv4_mapped_to_ipv6_to_canonical() {
-    let socket = SocketAddr::new(
-      IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc00a, 0x2ff)),
-      8080,
-    );
+    let socket = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc00a, 0x2ff)), 8080);
     assert_eq!(
       socket.to_canonical(),
       SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 10, 2, 255)), 8080)

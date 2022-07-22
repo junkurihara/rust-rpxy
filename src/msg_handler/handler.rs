@@ -28,11 +28,7 @@ impl<T> HttpMessageHandler<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  fn return_with_error_log(
-    &self,
-    status_code: StatusCode,
-    log_data: &mut MessageLog,
-  ) -> Result<Response<Body>> {
+  fn return_with_error_log(&self, status_code: StatusCode, log_data: &mut MessageLog) -> Result<Response<Body>> {
     log_data.status_code(&status_code).output();
     http_error(status_code)
   }
@@ -77,9 +73,7 @@ where
     // Redirect to https if !tls_enabled and redirect_to_https is true
     if !tls_enabled && backend.https_redirection.unwrap_or(false) {
       debug!("Redirect to secure connection: {}", &backend.server_name);
-      log_data
-        .status_code(&StatusCode::PERMANENT_REDIRECT)
-        .output();
+      log_data.status_code(&StatusCode::PERMANENT_REDIRECT).output();
       return secure_redirection(&backend.server_name, self.globals.https_port, &req);
     }
 
@@ -124,12 +118,7 @@ where
 
     // Forward request to
     let mut res_backend = {
-      match timeout(
-        self.globals.upstream_timeout,
-        self.forwarder.request(req_forwarded),
-      )
-      .await
-      {
+      match timeout(self.globals.upstream_timeout, self.forwarder.request(req_forwarded)).await {
         Err(_) => {
           return self.return_with_error_log(StatusCode::GATEWAY_TIMEOUT, &mut log_data);
         }
@@ -160,18 +149,13 @@ where
 
     // Handle StatusCode::SWITCHING_PROTOCOLS in response
     let upgrade_in_response = extract_upgrade(res_backend.headers());
-    if if let (Some(u_req), Some(u_res)) =
-      (upgrade_in_request.as_ref(), upgrade_in_response.as_ref())
-    {
+    if if let (Some(u_req), Some(u_res)) = (upgrade_in_request.as_ref(), upgrade_in_response.as_ref()) {
       u_req.to_ascii_lowercase() == u_res.to_ascii_lowercase()
     } else {
       false
     } {
       if let Some(request_upgraded) = request_upgraded {
-        let onupgrade = if let Some(onupgrade) = res_backend
-          .extensions_mut()
-          .remove::<hyper::upgrade::OnUpgrade>()
-        {
+        let onupgrade = if let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() {
           onupgrade
         } else {
           error!("Response does not have an upgrade extension");
@@ -210,10 +194,7 @@ where
   ////////////////////////////////////////////////////
   // Functions to generate messages
 
-  fn generate_response_forwarded<B: core::fmt::Debug>(
-    &self,
-    response: &mut Response<B>,
-  ) -> Result<()> {
+  fn generate_response_forwarded<B: core::fmt::Debug>(&self, response: &mut Response<B>) -> Result<()> {
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
@@ -272,19 +253,12 @@ where
 
     // Add te: trailer if te_trailer
     if contains_te_trailers {
-      headers.insert(
-        header::TE,
-        HeaderValue::from_bytes("trailers".as_bytes()).unwrap(),
-      );
+      headers.insert(header::TE, HeaderValue::from_bytes("trailers".as_bytes()).unwrap());
     }
 
     // add "host" header of original server_name if not exist (default)
     if req.headers().get(header::HOST).is_none() {
-      let org_host = req
-        .uri()
-        .host()
-        .ok_or_else(|| anyhow!("Invalid request"))?
-        .to_owned();
+      let org_host = req.uri().host().ok_or_else(|| anyhow!("Invalid request"))?.to_owned();
       req
         .headers_mut()
         .insert(header::HOST, HeaderValue::from_str(&org_host)?);

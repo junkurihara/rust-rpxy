@@ -37,11 +37,7 @@ pub(super) fn apply_upstream_options_to_header(
 }
 
 // https://datatracker.ietf.org/doc/html/rfc9110
-pub(super) fn append_header_entry_with_comma(
-  headers: &mut HeaderMap,
-  key: &str,
-  value: &str,
-) -> Result<()> {
+pub(super) fn append_header_entry_with_comma(headers: &mut HeaderMap, key: &str, value: &str) -> Result<()> {
   match headers.entry(HeaderName::from_bytes(key.as_bytes())?) {
     header::Entry::Vacant(entry) => {
       entry.insert(value.parse::<HeaderValue>()?);
@@ -99,20 +95,12 @@ pub(super) fn add_forwarding_header(
 ) -> Result<()> {
   // default process
   // optional process defined by upstream_option is applied in fn apply_upstream_options
-  append_header_entry_with_comma(
-    headers,
-    "x-forwarded-for",
-    &client_addr.to_canonical().ip().to_string(),
-  )?;
+  append_header_entry_with_comma(headers, "x-forwarded-for", &client_addr.to_canonical().ip().to_string())?;
 
   /////////// As Nginx
   // If we receive X-Forwarded-Proto, pass it through; otherwise, pass along the
   // scheme used to connect to this server
-  add_header_entry_if_not_exist(
-    headers,
-    "x-forwarded-proto",
-    if tls { "https" } else { "http" },
-  )?;
+  add_header_entry_if_not_exist(headers, "x-forwarded-proto", if tls { "https" } else { "http" })?;
   // If we receive X-Forwarded-Port, pass it through; otherwise, pass along the
   // server port the client connected to
   add_header_entry_if_not_exist(headers, "x-forwarded-port", listen_addr.port().to_string())?;

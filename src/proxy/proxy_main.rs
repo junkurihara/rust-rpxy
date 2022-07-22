@@ -1,7 +1,5 @@
 // use super::proxy_handler::handle_request;
-use crate::{
-  backend::ServerNameLC, error::*, globals::Globals, log::*, msg_handler::HttpMessageHandler,
-};
+use crate::{backend::ServerNameLC, error::*, globals::Globals, log::*, msg_handler::HttpMessageHandler};
 use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, Body, Request};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
@@ -95,9 +93,7 @@ where
       let tcp_listener = TcpListener::bind(&self.listening_on).await?;
       info!("Start TCP proxy serving with HTTP request for configured host names");
       while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
-        self
-          .clone()
-          .client_serve(stream, server.clone(), _client_addr, None);
+        self.clone().client_serve(stream, server.clone(), _client_addr, None);
       }
       Ok(()) as Result<()>
     };

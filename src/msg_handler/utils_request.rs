@@ -28,10 +28,7 @@ impl<B> ReqLog for &Request<B> {
       .scheme_str()
       .map_or_else(|| "".to_string(), |v| format!("{}://", v));
     let uri_host = self.uri().host().unwrap_or("");
-    let uri_pq = self
-      .uri()
-      .path_and_query()
-      .map_or_else(|| "", |v| v.as_str());
+    let uri_pq = self.uri().path_and_query().map_or_else(|| "", |v| v.as_str());
     let ua = self
       .headers()
       .get(header::USER_AGENT)

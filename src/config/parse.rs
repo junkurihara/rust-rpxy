@@ -207,10 +207,7 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> Result<ReverseProxy>
     };
 
     if rpo.path.is_some() {
-      upstream.insert(
-        rpo.path.as_ref().unwrap().as_bytes().to_ascii_lowercase(),
-        elem,
-      );
+      upstream.insert(rpo.path.as_ref().unwrap().as_bytes().to_ascii_lowercase(), elem);
     } else {
       upstream.insert("/".as_bytes().to_ascii_lowercase(), elem);
     }

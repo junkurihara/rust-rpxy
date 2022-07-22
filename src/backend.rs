@@ -135,28 +135,18 @@ impl Backend {
       if let (Some(c), Some(k)) = (self.tls_cert_path.as_ref(), self.tls_cert_key_path.as_ref()) {
         (c, k)
       } else {
-        return Err(io::Error::new(
-          io::ErrorKind::Other,
-          "Invalid certs and keys paths",
-        ));
+        return Err(io::Error::new(io::ErrorKind::Other, "Invalid certs and keys paths"));
       };
     let certs: Vec<_> = {
       let certs_path_str = certs_path.display().to_string();
       let mut reader = BufReader::new(File::open(certs_path).map_err(|e| {
         io::Error::new(
           e.kind(),
-          format!(
-            "Unable to load the certificates [{}]: {}",
-            certs_path_str, e
-          ),
+          format!("Unable to load the certificates [{}]: {}", certs_path_str, e),
         )
       })?);
-      rustls_pemfile::certs(&mut reader).map_err(|_| {
-        io::Error::new(
-          io::ErrorKind::InvalidInput,
-          "Unable to parse the certificates",
-        )
-      })?
+      rustls_pemfile::certs(&mut reader)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the certificates"))?
     }
     .drain(..)
     .map(Certificate)
@@ -169,10 +159,7 @@ impl Backend {
           .map_err(|e| {
             io::Error::new(
               e.kind(),
-              format!(
-                "Unable to load the certificate keys [{}]: {}",
-                certs_keys_path_str, e
-              ),
+              format!("Unable to load the certificate keys [{}]: {}", certs_keys_path_str, e),
             )
           })?
           .read_to_end(&mut encoded_keys)?;
@@ -217,9 +204,7 @@ impl Backend {
 }
 
 impl Backends {
-  pub async fn generate_server_crypto_with_cert_resolver(
-    &self,
-  ) -> Result<ServerConfig, anyhow::Error> {
+  pub async fn generate_server_crypto_with_cert_resolver(&self) -> Result<ServerConfig, anyhow::Error> {
     let mut resolver = ResolvesServerCertUsingSni::new();
 
     let mut cnt = 0;
@@ -234,19 +219,12 @@ impl Backends {
                 e
               )
             } else {
-              debug!(
-                "Add certificate for server_name: {}",
-                backend.server_name.as_str()
-              );
+              debug!("Add certificate for server_name: {}", backend.server_name.as_str());
               cnt += 1;
             }
           }
           Err(e) => {
-            warn!(
-              "Failed to add certificate for {}: {}",
-              backend.server_name.as_str(),
-              e
-            );
+            warn!("Failed to add certificate for {}: {}", backend.server_name.as_str(), e);
           }
         }
       }

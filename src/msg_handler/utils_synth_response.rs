@@ -6,9 +6,7 @@ use hyper::{Body, Request, Response, StatusCode, Uri};
 // Functions to create response (error or redirect)
 
 pub(super) fn http_error(status_code: StatusCode) -> Result<Response<Body>> {
-  let response = Response::builder()
-    .status(status_code)
-    .body(Body::empty())?;
+  let response = Response::builder().status(status_code).body(Body::empty())?;
   Ok(response)
 }
 

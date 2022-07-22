@@ -20,12 +20,7 @@ where
   async fn cert_service(&self, server_crypto_tx: watch::Sender<Option<Arc<ServerConfig>>>) {
     info!("Start cert watch service");
     loop {
-      if let Ok(server_crypto) = self
-        .globals
-        .backends
-        .generate_server_crypto_with_cert_resolver()
-        .await
-      {
+      if let Ok(server_crypto) = self.globals.backends.generate_server_crypto_with_cert_resolver().await {
         if let Err(_e) = server_crypto_tx.send(Some(Arc::new(server_crypto))) {
           error!("Failed to populate server crypto");
           break;
@@ -82,10 +77,7 @@ where
   }
 
   #[cfg(feature = "h3")]
-  async fn listener_service_h3(
-    &self,
-    mut server_crypto_rx: watch::Receiver<Option<Arc<ServerConfig>>>,
-  ) -> Result<()> {
+  async fn listener_service_h3(&self, mut server_crypto_rx: watch::Receiver<Option<Arc<ServerConfig>>>) -> Result<()> {
     let mut transport_config_quic = quinn::TransportConfig::default();
     transport_config_quic
       .max_concurrent_bidi_streams(self.globals.h3_max_concurrent_bidistream)

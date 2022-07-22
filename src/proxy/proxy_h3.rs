@@ -11,9 +11,7 @@ where
   T: Connect + Clone + Sync + Send + 'static,
 {
   pub(super) fn connection_serve_h3(&self, conn: quinn::Connecting, tls_server_name: &[u8]) {
-    let fut = self
-      .clone()
-      .handle_connection_h3(conn, tls_server_name.to_vec());
+    let fut = self.clone().handle_connection_h3(conn, tls_server_name.to_vec());
     self.globals.runtime_handle.spawn(async move {
       // Timeout is based on underlying quic
       if let Err(e) = fut.await {
@@ -22,18 +20,12 @@ where
     });
   }
 
-  async fn handle_connection_h3(
-    self,
-    conn: quinn::Connecting,
-    tls_server_name: ServerNameLC,
-  ) -> Result<()> {
+  async fn handle_connection_h3(self, conn: quinn::Connecting, tls_server_name: ServerNameLC) -> Result<()> {
     let client_addr = conn.remote_address();
 
     match conn.await {
       Ok(new_conn) => {
-        let mut h3_conn =
-          h3::server::Connection::<_, bytes::Bytes>::new(h3_quinn::Connection::new(new_conn))
-            .await?;
+        let mut h3_conn = h3::server::Connection::<_, bytes::Bytes>::new(h3_quinn::Connection::new(new_conn)).await?;
         info!(
           "QUIC/HTTP3 connection established from {:?} {:?}",
           client_addr, tls_server_name
@@ -113,9 +105,7 @@ where
           return Err(anyhow!("Exceeds max request body size for HTTP/3"));
         }
         // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
-        sender
-          .send_data(body.copy_to_bytes(body.remaining()))
-          .await?;
+        sender.send_data(body.copy_to_bytes(body.remaining())).await?;
       }
 
       // trailers: use inner for work around. (directly get trailer)
