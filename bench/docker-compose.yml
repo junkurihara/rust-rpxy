@@ -38,7 +38,7 @@ services:
       bench-nw:
 
   nginx-rp:
-    image: jwilder/nginx-proxy:alpine
+    image: nginx:alpine
     container_name: proxy-nginx
     ports:
       - 127.0.0.1:8090:80
@@ -46,8 +46,7 @@ services:
     tty: false
     privileged: true
     volumes:
-      - ./nginx_data/vhost:/etc/nginx/vhost.d:ro
-      - ./nginx_data/conf:/etc/nginx/conf.d/:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /var/run/docker.sock:/tmp/docker.sock:ro
     logging:
       options:

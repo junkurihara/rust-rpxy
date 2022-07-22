@@ -5,7 +5,7 @@ listen_port = 8080
 max_concurrent_streams = 128
 max_clients = 512
 
-default_app = 'localhost' # passing through 127.0.0.1
+# default_app = 'localhost' # passing through 127.0.0.1
 
 [apps]
 
@@ -20,4 +20,3 @@ reverse_proxy = [
 
 
 [experimental]
-h3 = false
