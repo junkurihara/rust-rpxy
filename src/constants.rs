@@ -4,9 +4,9 @@ pub const LISTEN_ADDRESSES_V6: &[&str] = &["[::]"];
 // pub const HTTPS_LISTEN_PORT: u16 = 8443;
 pub const PROXY_TIMEOUT_SEC: u64 = 60;
 pub const UPSTREAM_TIMEOUT_SEC: u64 = 60;
+pub const TLS_HANDSHAKE_TIMEOUT_SEC: u64 = 3;
 pub const MAX_CLIENTS: usize = 512;
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
-// #[cfg(feature = "tls")]
 pub const CERTS_WATCH_DELAY_SECS: u32 = 60;
 
 // #[cfg(feature = "http3")]
