@@ -207,7 +207,7 @@ impl Backends {
   pub async fn generate_server_crypto_with_cert_resolver(&self) -> Result<ServerConfig, anyhow::Error> {
     let mut resolver = ResolvesServerCertUsingSni::new();
 
-    let mut cnt = 0;
+    // let mut cnt = 0;
     for (_, backend) in self.apps.iter() {
       if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
         match backend.read_certs_and_key() {
@@ -219,8 +219,8 @@ impl Backends {
                 e
               )
             } else {
-              debug!("Add certificate for server_name: {}", backend.server_name.as_str());
-              cnt += 1;
+              // debug!("Add certificate for server_name: {}", backend.server_name.as_str());
+              // cnt += 1;
             }
           }
           Err(e) => {
@@ -229,7 +229,7 @@ impl Backends {
         }
       }
     }
-    debug!("Load certificate chain for {} server_name's", cnt);
+    // debug!("Load certificate chain for {} server_name's", cnt);
 
     let mut server_config = ServerConfig::builder()
       .with_safe_defaults()

@@ -7,7 +7,7 @@ pub const UPSTREAM_TIMEOUT_SEC: u64 = 60;
 pub const MAX_CLIENTS: usize = 512;
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 // #[cfg(feature = "tls")]
-pub const CERTS_WATCH_DELAY_SECS: u32 = 30;
+pub const CERTS_WATCH_DELAY_SECS: u32 = 60;
 
 // #[cfg(feature = "http3")]
 // pub const H3_RESPONSE_BUF_SIZE: usize = 65_536; // 64KB

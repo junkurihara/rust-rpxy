@@ -54,16 +54,22 @@ where
           }
           let (raw_stream, client_addr) = tcp_cnx.unwrap();
 
-          if let Ok(stream) = tls_acceptor.as_ref().unwrap().accept(raw_stream).await {
-            // Retrieve SNI
-            let (_, conn) = stream.get_ref();
-            let server_name = conn.sni_hostname();
-            debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", server_name);
-            let server_name = server_name.map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase()));
-            if server_name.is_none(){
+          match tls_acceptor.as_ref().unwrap().accept(raw_stream).await {
+            Ok(stream) => {
+              // Retrieve SNI
+              let (_, conn) = stream.get_ref();
+              let server_name = conn.sni_hostname();
+              debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", server_name);
+              let server_name = server_name.map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase()));
+              if server_name.is_none(){
+                continue;
+              }
+              self.clone().client_serve(stream, server.clone(), client_addr, server_name); // TODO: don't want to pass copied value...
+            },
+            Err(e) => {
+              error!("Failed to accept TLS stream {}", e);
               continue;
             }
-            self.clone().client_serve(stream, server.clone(), client_addr, server_name); // TODO: don't want to pass copied value...
           }
         }
         _ = server_crypto_rx.changed().fuse() => {
