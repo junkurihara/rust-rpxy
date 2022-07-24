@@ -92,10 +92,12 @@ pub(super) fn add_forwarding_header(
   client_addr: &SocketAddr,
   listen_addr: &SocketAddr,
   tls: bool,
+  uri_str: &str,
 ) -> Result<()> {
   // default process
   // optional process defined by upstream_option is applied in fn apply_upstream_options
-  append_header_entry_with_comma(headers, "x-forwarded-for", &client_addr.to_canonical().ip().to_string())?;
+  let canonical_client_addr = client_addr.to_canonical().ip().to_string();
+  append_header_entry_with_comma(headers, "x-forwarded-for", &canonical_client_addr)?;
 
   /////////// As Nginx
   // If we receive X-Forwarded-Proto, pass it through; otherwise, pass along the
@@ -104,6 +106,16 @@ pub(super) fn add_forwarding_header(
   // If we receive X-Forwarded-Port, pass it through; otherwise, pass along the
   // server port the client connected to
   add_header_entry_if_not_exist(headers, "x-forwarded-port", listen_addr.port().to_string())?;
+
+  /////////// As Nginx-Proxy
+  // x-real-ip
+  add_header_entry_overwrite_if_exist(headers, "x-real-ip", canonical_client_addr)?;
+  // x-forwarded-ssl
+  add_header_entry_overwrite_if_exist(headers, "x-forwarded-ssl", if tls { "on" } else { "off" })?;
+  // x-original-uri
+  add_header_entry_overwrite_if_exist(headers, "x-original-uri", uri_str.to_string())?;
+  // proxy
+  add_header_entry_overwrite_if_exist(headers, "proxy", "")?;
 
   Ok(())
 }

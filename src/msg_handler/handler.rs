@@ -96,29 +96,27 @@ where
     let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
 
     // Build request from destination information
-    let req_forwarded = if let Ok(req) = self.generate_request_forwarded(
+    if let Err(e) = self.generate_request_forwarded(
       &client_addr,
       &listen_addr,
-      req,
+      &mut req,
       upstream_scheme_host,
       &upgrade_in_request,
       upstream,
       tls_enabled,
     ) {
-      req
-    } else {
-      error!("Failed to generate destination uri for reverse proxy");
+      error!("Failed to generate destination uri for reverse proxy: {}", e);
       return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
     };
     // debug!("Request to be forwarded: {:?}", req_forwarded);
-    req_forwarded.log_debug(&client_addr, Some("(to Backend)"));
-    log_data.xff(&req_forwarded.headers().get("x-forwarded-for"));
+    req.log_debug(&client_addr, Some("(to Backend)"));
+    log_data.xff(&req.headers().get("x-forwarded-for"));
     log_data.upstream(&upstream_scheme_host.to_string());
     //////
 
     // Forward request to
     let mut res_backend = {
-      match timeout(self.globals.upstream_timeout, self.forwarder.request(req_forwarded)).await {
+      match timeout(self.globals.upstream_timeout, self.forwarder.request(req)).await {
         Err(_) => {
           return self.return_with_error_log(StatusCode::GATEWAY_TIMEOUT, &mut log_data);
         }
@@ -224,12 +222,12 @@ where
     &self,
     client_addr: &SocketAddr,
     listen_addr: &SocketAddr,
-    mut req: Request<B>,
+    req: &mut Request<B>,
     upstream_scheme_host: &Uri,
     upgrade: &Option<String>,
     upstream: &Upstream,
     tls_enabled: bool,
-  ) -> Result<Request<B>> {
+  ) -> Result<()> {
     debug!("Generate request to be forwarded");
 
     // Add te: trailer if contained in original request
@@ -243,13 +241,14 @@ where
       }
     };
 
+    let uri = req.uri().to_string();
     let headers = req.headers_mut();
     // delete headers specified in header.connection
     remove_connection_header(headers);
     // delete hop headers including header.connection
     remove_hop_header(headers);
     // X-Forwarded-For
-    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled)?;
+    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &uri)?;
 
     // Add te: trailer if te_trailer
     if contains_te_trailers {
@@ -296,6 +295,6 @@ where
       *req.version_mut() = Version::HTTP_2;
     }
 
-    Ok(req)
+    Ok(())
   }
 }
