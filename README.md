@@ -1,4 +1,4 @@
-# rpxy: A simple and fast reverse-proxy for multiple host names, written in pure Rust
+# rpxy: A simple and ultrafast reverse-proxy for multiple host names with TLS termination, written in pure Rust
 
 **WIP Project**
 
