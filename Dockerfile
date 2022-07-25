@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
 FROM base AS runner
 LABEL maintainer="Jun Kurihara"
 
-ENV RUNTIME_DEPS bash logrotate
+ENV RUNTIME_DEPS bash logrotate ca-certificates
 
 RUN apt-get update && \
   apt-get install -qy --no-install-recommends $RUNTIME_DEPS && \
