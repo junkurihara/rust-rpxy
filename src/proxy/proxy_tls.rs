@@ -105,22 +105,22 @@ where
 
   #[cfg(feature = "http3")]
   async fn listener_service_h3(&self, mut server_crypto_rx: watch::Receiver<Option<Arc<ServerConfig>>>) -> Result<()> {
+    info!("Start UDP proxy serving with HTTP/3 request for configured host names");
+    // first set as null config server
+    let server_crypto = ServerConfig::builder()
+      .with_safe_defaults()
+      .with_no_client_auth()
+      .with_cert_resolver(Arc::new(tokio_rustls::rustls::server::ResolvesServerCertUsingSni::new()));
+
     let mut transport_config_quic = TransportConfig::default();
     transport_config_quic
       .max_concurrent_bidi_streams(self.globals.h3_max_concurrent_bidistream)
       .max_concurrent_uni_streams(self.globals.h3_max_concurrent_unistream);
 
-    let server_crypto = self
-      .globals
-      .backends
-      .generate_server_crypto_with_cert_resolver()
-      .await?;
-
     let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(server_crypto));
     server_config_h3.transport = Arc::new(transport_config_quic);
     server_config_h3.concurrent_connections(self.globals.h3_max_concurrent_connections);
     let (endpoint, mut incoming) = Endpoint::server(server_config_h3, self.listening_on)?;
-    info!("Start UDP proxy serving with HTTP/3 request for configured host names");
 
     let mut server_crypto: Option<Arc<ServerConfig>> = None;
     loop {
@@ -166,7 +166,6 @@ where
           }
           server_crypto = server_crypto_rx.borrow().clone();
           if server_crypto.is_some(){
-            debug!("Reload server crypto");
             endpoint.set_server_config(Some(QuicServerConfig::with_crypto(server_crypto.clone().unwrap())));
           }
         }
