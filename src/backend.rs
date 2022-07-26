@@ -39,11 +39,11 @@ pub struct Backend {
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxy {
-  pub upstream: HashMap<PathNameLC, Upstream>, // TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
+  pub upstream: HashMap<PathNameLC, UpstreamGroup>, // TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
 }
 
 impl ReverseProxy {
-  pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&Upstream> {
+  pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamGroup> {
     // trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
     // コスト的にこの程度で十分
     let path_lc = path_str.into().to_ascii_lowercase();
@@ -91,7 +91,14 @@ impl Default for LoadBalance {
 
 #[derive(Debug, Clone)]
 pub struct Upstream {
-  pub uri: Vec<hyper::Uri>,
+  pub uri: hyper::Uri, // base uri without specific path
+}
+
+#[derive(Debug, Clone)]
+pub struct UpstreamGroup {
+  pub upstream: Vec<Upstream>,
+  pub path: PathNameLC,
+  pub replace_path: Option<PathNameLC>,
   pub lb: LoadBalance,
   pub cnt: UpstreamCount, // counter for load balancing
   pub opts: HashSet<UpstreamOption>,
@@ -100,17 +107,17 @@ pub struct Upstream {
 #[derive(Debug, Clone, Default)]
 pub struct UpstreamCount(Arc<AtomicUsize>);
 
-impl Upstream {
-  pub fn get(&self) -> Option<&hyper::Uri> {
+impl UpstreamGroup {
+  pub fn get(&self) -> Option<&Upstream> {
     match self.lb {
       LoadBalance::RoundRobin => {
         let idx = self.increment_cnt();
-        self.uri.get(idx)
+        self.upstream.get(idx)
       }
       LoadBalance::Random => {
         let mut rng = rand::thread_rng();
-        let max = self.uri.len() - 1;
-        self.uri.get(rng.gen_range(0..max))
+        let max = self.upstream.len() - 1;
+        self.upstream.get(rng.gen_range(0..max))
       }
     }
   }
@@ -120,7 +127,7 @@ impl Upstream {
   }
 
   fn increment_cnt(&self) -> usize {
-    if self.current_cnt() < self.uri.len() - 1 {
+    if self.current_cnt() < self.upstream.len() - 1 {
       self.cnt.0.fetch_add(1, Ordering::Relaxed)
     } else {
       self.cnt.0.fetch_and(0, Ordering::Relaxed)

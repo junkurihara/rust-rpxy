@@ -1,6 +1,6 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
 use crate::{
-  backend::{Backend, PathNameLC, ReverseProxy, Upstream},
+  backend::{Backend, PathNameLC, ReverseProxy, UpstreamGroup},
   backend_opt::UpstreamOption,
   constants::*,
   error::*,
@@ -192,10 +192,20 @@ pub fn parse_opts(globals: &mut Globals) -> Result<()> {
 }
 
 fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> Result<ReverseProxy> {
-  let mut upstream: HashMap<PathNameLC, Upstream> = HashMap::default();
+  let mut upstream: HashMap<PathNameLC, UpstreamGroup> = HashMap::default();
   rp_settings.iter().for_each(|rpo| {
-    let elem = Upstream {
-      uri: rpo.upstream.iter().map(|x| x.to_uri().unwrap()).collect(),
+    let path = match &rpo.path {
+      Some(p) => p.as_bytes().to_ascii_lowercase(),
+      None => "/".as_bytes().to_ascii_lowercase(),
+    };
+
+    let elem = UpstreamGroup {
+      upstream: rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect(),
+      path: path.clone(),
+      replace_path: rpo
+        .replace_path
+        .as_ref()
+        .map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase())),
       cnt: Default::default(),
       lb: Default::default(),
       opts: {
@@ -210,11 +220,7 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> Result<ReverseProxy>
       },
     };
 
-    if rpo.path.is_some() {
-      upstream.insert(rpo.path.as_ref().unwrap().as_bytes().to_ascii_lowercase(), elem);
-    } else {
-      upstream.insert("/".as_bytes().to_ascii_lowercase(), elem);
-    }
+    upstream.insert(path, elem);
   });
   ensure!(
     rp_settings.iter().filter(|rpo| rpo.path.is_none()).count() < 2,

@@ -1,4 +1,4 @@
-use crate::{backend::Upstream, backend_opt::UpstreamOption, error::*, log::*, utils::*};
+use crate::{backend::UpstreamGroup, backend_opt::UpstreamOption, error::*, log::*, utils::*};
 use bytes::BufMut;
 use hyper::{
   header::{self, HeaderMap, HeaderName, HeaderValue},
@@ -12,14 +12,14 @@ use std::net::SocketAddr;
 pub(super) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
   _client_addr: &SocketAddr,
-  upstream_scheme_host: &Uri,
-  upstream: &Upstream,
+  upstream: &UpstreamGroup,
+  upstream_base_uri: &Uri,
 ) -> Result<()> {
   for opt in upstream.opts.iter() {
     match opt {
       UpstreamOption::OverrideHost => {
         // overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
-        let upstream_host = upstream_scheme_host.host().ok_or_else(|| anyhow!("none"))?;
+        let upstream_host = upstream_base_uri.host().ok_or_else(|| anyhow!("none"))?;
         headers
           .insert(header::HOST, HeaderValue::from_str(upstream_host)?)
           .ok_or_else(|| anyhow!("none"))?;

@@ -1,4 +1,4 @@
-use crate::error::*;
+use crate::{backend::Upstream, error::*};
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
 use std::fs;
@@ -52,6 +52,7 @@ pub struct TlsOption {
 #[derive(Deserialize, Debug, Default)]
 pub struct ReverseProxyOption {
   pub path: Option<String>,
+  pub replace_path: Option<String>,
   pub upstream: Vec<UpstreamParams>,
   pub upstream_options: Option<Vec<String>>,
 }
@@ -62,7 +63,7 @@ pub struct UpstreamParams {
   pub tls: Option<bool>,
 }
 impl UpstreamParams {
-  pub fn to_uri(&self) -> Result<hyper::Uri> {
+  pub fn to_upstream(&self) -> Result<Upstream> {
     let mut scheme = "http";
     if let Some(t) = self.tls {
       if t {
@@ -70,7 +71,9 @@ impl UpstreamParams {
       }
     }
     let location = format!("{}://{}", scheme, self.location);
-    location.parse::<hyper::Uri>().map_err(|e| anyhow!("{}", e))
+    Ok(Upstream {
+      uri: location.parse::<hyper::Uri>().map_err(|e| anyhow!("{}", e))?,
+    })
   }
 }
 

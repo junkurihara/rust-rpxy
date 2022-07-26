@@ -65,7 +65,7 @@ impl MessageLog {
     self.xff = xff.map_or_else(|| "", |v| v.to_str().unwrap_or("")).to_string();
     self
   }
-  pub fn upstream(&mut self, upstream: &str) -> &mut Self {
+  pub fn upstream(&mut self, upstream: &hyper::Uri) -> &mut Self {
     self.upstream = upstream.to_string();
     self
   }

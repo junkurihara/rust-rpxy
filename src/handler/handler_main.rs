@@ -1,7 +1,7 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
 use super::{utils_headers::*, utils_request::*, utils_response::ResLog, utils_synth_response::*};
 use crate::{
-  backend::{ServerNameLC, Upstream},
+  backend::{ServerNameLC, UpstreamGroup},
   error::*,
   globals::Globals,
   log::*,
@@ -80,15 +80,9 @@ where
     // Find reverse proxy for given path and choose one of upstream host
     // Longest prefix match
     let path = req.uri().path();
-    let upstream = if let Some(upstream) = backend.reverse_proxy.get(path) {
-      upstream
-    } else {
-      return self.return_with_error_log(StatusCode::NOT_FOUND, &mut log_data);
-    };
-    let upstream_scheme_host = if let Some(u) = upstream.get() {
-      u
-    } else {
-      return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
+    let upstream_group = match backend.reverse_proxy.get(path) {
+      Some(ug) => ug,
+      None => return self.return_with_error_log(StatusCode::NOT_FOUND, &mut log_data),
     };
 
     // Upgrade in request header
@@ -100,9 +94,8 @@ where
       &client_addr,
       &listen_addr,
       &mut req,
-      upstream_scheme_host,
       &upgrade_in_request,
-      upstream,
+      upstream_group,
       tls_enabled,
     ) {
       error!("Failed to generate destination uri for reverse proxy: {}", e);
@@ -111,7 +104,7 @@ where
     // debug!("Request to be forwarded: {:?}", req_forwarded);
     req.log_debug(&client_addr, Some("(to Backend)"));
     log_data.xff(&req.headers().get("x-forwarded-for"));
-    log_data.upstream(&upstream_scheme_host.to_string());
+    log_data.upstream(req.uri());
     //////
 
     // Forward request to
@@ -223,9 +216,8 @@ where
     client_addr: &SocketAddr,
     listen_addr: &SocketAddr,
     req: &mut Request<B>,
-    upstream_scheme_host: &Uri,
     upgrade: &Option<String>,
-    upstream: &Upstream,
+    upstream_group: &UpstreamGroup,
     tls_enabled: bool,
   ) -> Result<()> {
     debug!("Generate request to be forwarded");
@@ -263,21 +255,37 @@ where
         .insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
 
+    // Fix unique upstream destination since there could be multiple ones.
+    let upstream_chosen = upstream_group.get().ok_or_else(|| anyhow!("Failed to get upstream"))?;
+
     // apply upstream-specific headers given in upstream_option
     let headers = req.headers_mut();
-    apply_upstream_options_to_header(headers, client_addr, upstream_scheme_host, upstream)?;
+    apply_upstream_options_to_header(headers, client_addr, upstream_group, &upstream_chosen.uri)?;
 
     // update uri in request
-    ensure!(upstream_scheme_host.authority().is_some() && upstream_scheme_host.scheme().is_some());
+    ensure!(upstream_chosen.uri.authority().is_some() && upstream_chosen.uri.scheme().is_some());
     let new_uri = Uri::builder()
-      .scheme(upstream_scheme_host.scheme().unwrap().as_str())
-      .authority(upstream_scheme_host.authority().unwrap().as_str());
-    let pq = req.uri().path_and_query();
-    *req.uri_mut() = match pq {
-      None => new_uri,
-      Some(x) => new_uri.path_and_query(x.to_owned()),
+      .scheme(upstream_chosen.uri.scheme().unwrap().as_str())
+      .authority(upstream_chosen.uri.authority().unwrap().as_str());
+    let org_pq = match req.uri().path_and_query() {
+      Some(pq) => pq.to_string(),
+      None => "/".to_string(),
     }
-    .build()?;
+    .into_bytes();
+
+    // replace some parts of path if opt_replace_path is enabled for chosen upstream
+    let new_pq = match &upstream_group.replace_path {
+      Some(new_path) => {
+        let matched_path: &[u8] = upstream_group.path.as_ref();
+        ensure!(!matched_path.is_empty() && org_pq.len() >= matched_path.len());
+        let mut new_pq = Vec::<u8>::with_capacity(org_pq.len() - matched_path.len() + new_path.len());
+        new_pq.extend_from_slice(new_path);
+        new_pq.extend_from_slice(&org_pq[matched_path.len()..]);
+        new_pq
+      }
+      None => org_pq,
+    };
+    *req.uri_mut() = new_uri.path_and_query(new_pq).build()?;
 
     // upgrade
     if let Some(v) = upgrade {
@@ -288,7 +296,7 @@ where
     }
 
     // Change version to http/1.1 when destination scheme is http
-    if req.version() != Version::HTTP_11 && upstream_scheme_host.scheme() == Some(&Scheme::HTTP) {
+    if req.version() != Version::HTTP_11 && upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
       *req.version_mut() = Version::HTTP_11;
     } else if req.version() == Version::HTTP_3 {
       debug!("HTTP/3 is currently unsupported for request to upstream. Use HTTP/2.");
