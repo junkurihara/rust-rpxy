@@ -11,8 +11,8 @@ mod config;
 mod constants;
 mod error;
 mod globals;
+mod handler;
 mod log;
-mod msg_handler;
 mod proxy;
 mod utils;
 
@@ -26,8 +26,8 @@ use crate::{
   proxy::Proxy,
 };
 use futures::future::select_all;
+use handler::HttpMessageHandler;
 use hyper::Client;
-use msg_handler::HttpMessageHandler;
 // use hyper_trust_dns::TrustDnsResolver;
 use rustc_hash::FxHashMap as HashMap;
 use std::{io::Write, sync::Arc};

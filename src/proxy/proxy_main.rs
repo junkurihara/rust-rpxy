@@ -1,5 +1,5 @@
 // use super::proxy_handler::handle_request;
-use crate::{backend::ServerNameLC, error::*, globals::Globals, log::*, msg_handler::HttpMessageHandler};
+use crate::{backend::ServerNameLC, error::*, globals::Globals, handler::HttpMessageHandler, log::*};
 use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, Body, Request};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
