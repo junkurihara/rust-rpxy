@@ -9,7 +9,7 @@ use tokio::{
   time::{timeout, Duration},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct LocalExecutor {
   runtime_handle: Handle,
 }

@@ -1,5 +1,10 @@
 # rpxy: A simple and ultrafast reverse-proxy for multiple host names with TLS termination, written in pure Rust
 
+![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
+![Build and Publish Docker](https://github.com/junkurihara/rust-rpxy/actions/workflows/docker_build_push.yml/badge.svg)
+![ShiftLeft Scan](https://github.com/junkurihara/rust-rpxy/actions/workflows/shift_left.yml/badge.svg)
+
+
 **WIP Project**
 
 ## Introduction

@@ -218,7 +218,7 @@ where
   }
 
   #[allow(clippy::too_many_arguments)]
-  fn generate_request_forwarded<B: core::fmt::Debug>(
+  fn generate_request_forwarded<B>(
     &self,
     client_addr: &SocketAddr,
     listen_addr: &SocketAddr,
