@@ -263,7 +263,9 @@ where
     apply_upstream_options_to_header(headers, client_addr, upstream_group, &upstream_chosen.uri)?;
 
     // update uri in request
-    ensure!(upstream_chosen.uri.authority().is_some() && upstream_chosen.uri.scheme().is_some());
+    if !(upstream_chosen.uri.authority().is_some() && upstream_chosen.uri.scheme().is_some()) {
+      return Err(RpxyError::Handler("Upstream uri `scheme` and `authority` is broken"));
+    };
     let new_uri = Uri::builder()
       .scheme(upstream_chosen.uri.scheme().unwrap().as_str())
       .authority(upstream_chosen.uri.authority().unwrap().as_str());
@@ -277,7 +279,9 @@ where
     let new_pq = match &upstream_group.replace_path {
       Some(new_path) => {
         let matched_path: &[u8] = upstream_group.path.as_ref();
-        ensure!(!matched_path.is_empty() && org_pq.len() >= matched_path.len());
+        if matched_path.is_empty() || org_pq.len() < matched_path.len() {
+          return Err(RpxyError::Handler("Upstream uri `path and query` is broken"));
+        };
         let mut new_pq = Vec::<u8>::with_capacity(org_pq.len() - matched_path.len() + new_path.len());
         new_pq.extend_from_slice(new_path);
         new_pq.extend_from_slice(&org_pq[matched_path.len()..]);

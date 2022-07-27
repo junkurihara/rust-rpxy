@@ -52,6 +52,7 @@ bytes = "1.2.0"
 quinn = { version = "0.8.3", optional = true }
 h3 = { git = "https://github.com/hyperium/h3.git", optional = true }
 h3-quinn = { git = "https://github.com/hyperium/h3.git", optional = true }
+thiserror = "1.0.31"
 
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]

@@ -63,10 +63,9 @@ impl<B> ParseHost for Request<B> {
     let uri_host = self.uri().host();
     // let uri_port = self.uri().port_u16();
 
-    ensure!(
-      !(headers_host.is_none() && uri_host.is_none()),
-      "No host in request header"
-    );
+    if !(!(headers_host.is_none() && uri_host.is_none())) {
+      return Err(RpxyError::Request("No host in request header"));
+    }
 
     // prioritize server_name in uri
     uri_host.map_or_else(
@@ -75,8 +74,8 @@ impl<B> ParseHost for Request<B> {
         if m.starts_with(&[b'[']) {
           // v6 address with bracket case. if port is specified, always it is in this case.
           let mut iter = m.split(|ptr| ptr == &b'[' || ptr == &b']');
-          iter.next().ok_or_else(|| anyhow!("Invalid Host"))?; // first item is always blank
-          iter.next().ok_or_else(|| anyhow!("Invalid Host"))
+          iter.next().ok_or(RpxyError::Request("Invalid Host"))?; // first item is always blank
+          iter.next().ok_or(RpxyError::Request("Invalid Host"))
         } else if m.len() - m.split(|v| v == &b':').fold(0, |acc, s| acc + s.len()) >= 2 {
           // v6 address case, if 2 or more ':' is contained
           Ok(m)
@@ -85,7 +84,7 @@ impl<B> ParseHost for Request<B> {
           m.split(|colon| colon == &b':')
             .into_iter()
             .next()
-            .ok_or_else(|| anyhow!("Invalid Host"))
+            .ok_or(RpxyError::Request("Invalid Host"))
         }
       },
       |v| Ok(v.as_bytes()),

@@ -56,7 +56,7 @@ where
       }
       Err(err) => {
         warn!("QUIC accepting connection failed: {:?}", err);
-        return Err(anyhow!("{}", err));
+        return Err(RpxyError::QuicConn(err));
       }
     }
 
@@ -104,7 +104,7 @@ where
         debug!("HTTP/3 incoming request trailers");
         sender.send_trailers(trailers.unwrap()).await?;
       }
-      Ok(()) as Result<()>
+      Ok(())
     });
 
     let new_req: Request<Body> = Request::from_parts(req_parts, req_body);

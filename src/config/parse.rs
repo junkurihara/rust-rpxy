@@ -14,7 +14,7 @@ use std::net::SocketAddr;
 // #[cfg(feature = "tls")]
 use std::path::PathBuf;
 
-pub fn parse_opts(globals: &mut Globals) -> Result<()> {
+pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Error> {
   let _ = include_str!("../../Cargo.toml");
   let options = clap::command!().arg(
     Arg::new("config_file")
@@ -191,7 +191,7 @@ pub fn parse_opts(globals: &mut Globals) -> Result<()> {
   Ok(())
 }
 
-fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> Result<ReverseProxy> {
+fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<ReverseProxy, anyhow::Error> {
   let mut upstream: HashMap<PathNameLC, UpstreamGroup> = HashMap::default();
   rp_settings.iter().for_each(|rpo| {
     let path = match &rpo.path {

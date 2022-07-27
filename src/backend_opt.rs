@@ -7,12 +7,12 @@ pub enum UpstreamOption {
   // TODO: Adds more options for heder override
 }
 impl TryFrom<&str> for UpstreamOption {
-  type Error = anyhow::Error;
+  type Error = RpxyError;
   fn try_from(val: &str) -> Result<Self> {
     match val {
       "override_host" => Ok(Self::OverrideHost),
       "upgrade_insecure_requests" => Ok(Self::UpgradeInsecureRequests),
-      _ => Err(anyhow!("Unsupported header option")),
+      _ => Err(RpxyError::Other(anyhow!("Unsupported header option"))),
     }
   }
 }
