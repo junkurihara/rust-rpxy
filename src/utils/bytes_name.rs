@@ -1,22 +1,20 @@
-use bytes::{Buf, Bytes};
-
 pub trait BytesName {
-  type Output: Buf;
+  type Output;
   fn to_byte_name(self) -> Self::Output;
   fn to_ascii_lowercase_byte_name(self) -> Self::Output;
 }
 
 impl<T: Into<String>> BytesName for T {
-  type Output = Bytes;
+  type Output = Vec<u8>;
 
   fn to_byte_name(self) -> Self::Output {
-    let b = self.into().bytes().collect::<Vec<u8>>();
-    Bytes::from(b)
+    self.into().bytes().collect::<Vec<u8>>()
+    // Bytes::from(b)
   }
 
   fn to_ascii_lowercase_byte_name(self) -> Self::Output {
-    let b = self.into().bytes().collect::<Vec<u8>>().to_ascii_lowercase();
-    Bytes::from(b)
+    self.into().bytes().collect::<Vec<u8>>().to_ascii_lowercase()
+    // Bytes::from(b)
   }
 }
 
@@ -29,7 +27,7 @@ mod tests {
     let bn = s.to_byte_name();
     let bn_lc = s.to_ascii_lowercase_byte_name();
 
-    assert_eq!(Bytes::from(s.as_bytes()), bn);
-    assert_eq!(Bytes::from("ok_string"), bn_lc);
+    assert_eq!(Vec::from(s.as_bytes()), bn);
+    assert_eq!(Vec::from("ok_string"), bn_lc);
   }
 }
