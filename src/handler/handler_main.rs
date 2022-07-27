@@ -1,7 +1,7 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
-use super::{utils_headers::*, utils_request::*, utils_response::ResLog, utils_synth_response::*};
+use super::{utils_headers::*, utils_request::*, utils_synth_response::*};
 use crate::{
-  backend::{ServerNameLC, UpstreamGroup},
+  backend::{ServerNameExp, UpstreamGroup},
   error::*,
   globals::Globals,
   log::*,
@@ -39,9 +39,8 @@ where
     client_addr: SocketAddr, // アクセス制御用
     listen_addr: SocketAddr,
     tls_enabled: bool,
-    tls_server_name: Option<ServerNameLC>,
+    tls_server_name: Option<ServerNameExp>,
   ) -> Result<Response<Body>> {
-    req.log_debug(&client_addr, Some("(from Client)"));
     ////////
     let mut log_data = MessageLog::from(&req);
     log_data.client_addr(&client_addr);
@@ -102,7 +101,6 @@ where
       return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
     };
     // debug!("Request to be forwarded: {:?}", req_forwarded);
-    req.log_debug(&client_addr, Some("(to Backend)"));
     log_data.xff(&req.headers().get("x-forwarded-for"));
     log_data.upstream(req.uri());
     //////
@@ -123,14 +121,9 @@ where
       }
     };
 
-    res_backend.log_debug(&backend.server_name, &client_addr, Some("(from Backend)"));
-    // let response_log = res_backend.status().to_string();
-
     if res_backend.status() != StatusCode::SWITCHING_PROTOCOLS {
       // Generate response to client
       if self.generate_response_forwarded(&mut res_backend).is_ok() {
-        // info!("{} => {}", request_log, response_log);
-        res_backend.log_debug(&backend.server_name, &client_addr, Some("(to Client)"));
         log_data.status_code(&res_backend.status()).output();
         return Ok(res_backend);
       } else {

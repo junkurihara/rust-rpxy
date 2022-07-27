@@ -1,4 +1,9 @@
-use crate::{backend::UpstreamGroup, backend_opt::UpstreamOption, error::*, log::*, utils::*};
+use crate::{
+  backend::{UpstreamGroup, UpstreamOption},
+  error::*,
+  log::*,
+  utils::*,
+};
 use bytes::BufMut;
 use hyper::{
   header::{self, HeaderMap, HeaderName, HeaderValue},

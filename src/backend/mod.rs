@@ -1,31 +1,27 @@
-use crate::{backend_opt::UpstreamOption, log::*};
-use rand::Rng;
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+mod upstream;
+mod upstream_opts;
+
+use crate::log::*;
+use rustc_hash::FxHashMap as HashMap;
 use std::{
-  borrow::Cow,
   fs::File,
   io::{self, BufReader, Cursor, Read},
   path::PathBuf,
-  sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-  },
+  sync::Arc,
 };
 use tokio_rustls::rustls::{
   server::ResolvesServerCertUsingSni,
   sign::{any_supported_type, CertifiedKey},
   Certificate, PrivateKey, ServerConfig,
 };
+pub use upstream::{ReverseProxy, Upstream, UpstreamGroup};
+pub use upstream_opts::UpstreamOption;
 
-// server name (hostname or ip address) in ascii lower case
-pub type ServerNameLC = Vec<u8>;
-pub type PathNameLC = Vec<u8>;
+// server name (hostname or ip address) and path name representation in backends
+pub type ServerNameExp = Vec<u8>; // lowercase ascii bytes
+pub type PathNameExp = Vec<u8>; // lowercase ascii bytes
 
-pub struct Backends {
-  pub apps: HashMap<ServerNameLC, Backend>, // hyper::uriで抜いたhostで引っ掛ける
-  pub default_server_name: Option<ServerNameLC>, // for plaintext http
-}
-
+/// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
 pub struct Backend {
   pub app_name: String,
   pub server_name: String,
@@ -35,104 +31,6 @@ pub struct Backend {
   pub tls_cert_path: Option<PathBuf>,
   pub tls_cert_key_path: Option<PathBuf>,
   pub https_redirection: Option<bool>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ReverseProxy {
-  pub upstream: HashMap<PathNameLC, UpstreamGroup>, // TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
-}
-
-impl ReverseProxy {
-  pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamGroup> {
-    // trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
-    // コスト的にこの程度で十分
-    let path_lc = path_str.into().to_ascii_lowercase();
-    let path_bytes = path_lc.as_bytes();
-
-    let matched_upstream = self
-      .upstream
-      .iter()
-      .filter(|(route_bytes, _)| {
-        match path_bytes.starts_with(route_bytes) {
-          true => {
-            route_bytes.len() == 1 // route = '/', i.e., default
-            || match path_bytes.get(route_bytes.len()) {
-              None => true, // exact case
-              Some(p) => p == &b'/', // sub-path case
-            }
-          }
-          _ => false,
-        }
-      })
-      .max_by_key(|(route_bytes, _)| route_bytes.len());
-    if let Some((_path, u)) = matched_upstream {
-      debug!(
-        "Found upstream: {:?}",
-        String::from_utf8(_path.to_vec()).unwrap_or_else(|_| "<none>".to_string())
-      );
-      Some(u)
-    } else {
-      None
-    }
-  }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum LoadBalance {
-  RoundRobin,
-  Random,
-}
-impl Default for LoadBalance {
-  fn default() -> Self {
-    Self::RoundRobin
-  }
-}
-
-#[derive(Debug, Clone)]
-pub struct Upstream {
-  pub uri: hyper::Uri, // base uri without specific path
-}
-
-#[derive(Debug, Clone)]
-pub struct UpstreamGroup {
-  pub upstream: Vec<Upstream>,
-  pub path: PathNameLC,
-  pub replace_path: Option<PathNameLC>,
-  pub lb: LoadBalance,
-  pub cnt: UpstreamCount, // counter for load balancing
-  pub opts: HashSet<UpstreamOption>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct UpstreamCount(Arc<AtomicUsize>);
-
-impl UpstreamGroup {
-  pub fn get(&self) -> Option<&Upstream> {
-    match self.lb {
-      LoadBalance::RoundRobin => {
-        let idx = self.increment_cnt();
-        self.upstream.get(idx)
-      }
-      LoadBalance::Random => {
-        let mut rng = rand::thread_rng();
-        let max = self.upstream.len() - 1;
-        self.upstream.get(rng.gen_range(0..max))
-      }
-    }
-  }
-
-  fn current_cnt(&self) -> usize {
-    self.cnt.0.load(Ordering::Relaxed)
-  }
-
-  fn increment_cnt(&self) -> usize {
-    if self.current_cnt() < self.upstream.len() - 1 {
-      self.cnt.0.fetch_add(1, Ordering::Relaxed)
-    } else {
-      self.cnt.0.fetch_and(0, Ordering::Relaxed)
-    }
-  }
 }
 
 impl Backend {
@@ -208,6 +106,12 @@ impl Backend {
       })?;
     Ok(CertifiedKey::new(certs, signing_key))
   }
+}
+
+/// HashMap and some meta information for multiple Backend structs.
+pub struct Backends {
+  pub apps: HashMap<ServerNameExp, Backend>, // hyper::uriで抜いたhostで引っ掛ける
+  pub default_server_name: Option<ServerNameExp>, // for plaintext http
 }
 
 impl Backends {

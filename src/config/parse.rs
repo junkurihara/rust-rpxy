@@ -1,7 +1,6 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
 use crate::{
-  backend::{Backend, PathNameLC, ReverseProxy, UpstreamGroup},
-  backend_opt::UpstreamOption,
+  backend::{Backend, PathNameExp, ReverseProxy, UpstreamGroup, UpstreamOption},
   constants::*,
   error::*,
   globals::*,
@@ -192,7 +191,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
 }
 
 fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<ReverseProxy, anyhow::Error> {
-  let mut upstream: HashMap<PathNameLC, UpstreamGroup> = HashMap::default();
+  let mut upstream: HashMap<PathNameExp, UpstreamGroup> = HashMap::default();
   rp_settings.iter().for_each(|rpo| {
     let path = match &rpo.path {
       Some(p) => p.as_bytes().to_ascii_lowercase(),

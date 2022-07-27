@@ -1,58 +1,5 @@
-use crate::{error::*, log::*, utils::*};
+use crate::error::*;
 use hyper::{header, Request};
-use std::fmt::Display;
-
-////////////////////////////////////////////////////
-// Functions of utils for request messages
-pub trait ReqLog {
-  fn log<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>);
-  fn log_debug<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>);
-  fn build_message<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) -> String;
-}
-impl<B> ReqLog for &Request<B> {
-  fn log<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) {
-    info!("{}", &self.build_message(src, extra));
-  }
-  fn log_debug<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) {
-    debug!("{}", &self.build_message(src, extra));
-  }
-  fn build_message<T: Display + ToCanonical>(self, src: &T, extra: Option<&str>) -> String {
-    let canonical_src = src.to_canonical();
-
-    let host = self
-      .headers()
-      .get(header::HOST)
-      .map_or_else(|| "", |v| v.to_str().unwrap_or(""));
-    let uri_scheme = self
-      .uri()
-      .scheme_str()
-      .map_or_else(|| "".to_string(), |v| format!("{}://", v));
-    let uri_host = self.uri().host().unwrap_or("");
-    let uri_pq = self.uri().path_and_query().map_or_else(|| "", |v| v.as_str());
-    let ua = self
-      .headers()
-      .get(header::USER_AGENT)
-      .map_or_else(|| "", |v| v.to_str().unwrap_or(""));
-    let xff = self
-      .headers()
-      .get("x-forwarded-for")
-      .map_or_else(|| "", |v| v.to_str().unwrap_or(""));
-
-    format!(
-      "{} <- {} -- {} {} {:?} -- ({}{}) \"{}\" \"{}\" {}",
-      host,
-      canonical_src,
-      self.method(),
-      uri_pq,
-      self.version(),
-      uri_scheme,
-      uri_host,
-      ua,
-      xff,
-      extra.unwrap_or("")
-    )
-  }
-}
 
 pub trait ParseHost {
   fn parse_host(&self) -> Result<&[u8]>;

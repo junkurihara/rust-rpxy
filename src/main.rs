@@ -6,7 +6,6 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 mod backend;
-mod backend_opt;
 mod config;
 mod constants;
 mod error;
@@ -17,7 +16,7 @@ mod proxy;
 mod utils;
 
 use crate::{
-  backend::{Backend, Backends, ServerNameLC},
+  backend::{Backend, Backends, ServerNameExp},
   config::parse_opts,
   constants::*,
   error::*,
@@ -73,7 +72,7 @@ fn main() {
       runtime_handle: runtime.handle().clone(),
       backends: Backends {
         default_server_name: None,
-        apps: HashMap::<ServerNameLC, Backend>::default(),
+        apps: HashMap::<ServerNameExp, Backend>::default(),
       },
 
       sni_consistency: true,
