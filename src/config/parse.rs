@@ -150,7 +150,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
         "Serving plaintext http for requests to unconfigured server_name by app {} (server_name: {}).",
         d, d_sn[0]
       );
-      globals.backends.default_server_name = Some(d_sn[0].as_bytes().to_vec());
+      globals.backends.default_server_name_bytes = Some(d_sn[0].as_bytes().to_vec());
     }
   }
 

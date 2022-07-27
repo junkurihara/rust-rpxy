@@ -71,7 +71,7 @@ fn main() {
 
       runtime_handle: runtime.handle().clone(),
       backends: Backends {
-        default_server_name: None,
+        default_server_name_bytes: None,
         apps: HashMap::<ServerNameExp, Backend>::default(),
       },
 

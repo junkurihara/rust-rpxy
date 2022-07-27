@@ -62,7 +62,7 @@ where
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
     let backend = if let Some(be) = self.globals.backends.apps.get(&server_name_bytes) {
       be
-    } else if let Some(default_server_name) = &self.globals.backends.default_server_name {
+    } else if let Some(default_server_name) = &self.globals.backends.default_server_name_bytes {
       debug!("Serving by default app");
       self.globals.backends.apps.get(default_server_name).unwrap()
     } else {
