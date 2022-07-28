@@ -1,5 +1,5 @@
 // use super::proxy_handler::handle_request;
-use crate::{backend::ServerNameBytesExp, error::*, globals::Globals, handler::HttpMessageHandler, log::*};
+use crate::{error::*, globals::Globals, handler::HttpMessageHandler, log::*, utils::ServerNameBytesExp};
 use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, Body, Request};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
@@ -61,7 +61,6 @@ where
     }
     debug!("Request incoming: current # {}", request_count.current());
 
-    // let inner = tls_server_name.map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase()));
     self.globals.runtime_handle.clone().spawn(async move {
       timeout(
         self.globals.proxy_timeout + Duration::from_secs(1),

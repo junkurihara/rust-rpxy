@@ -1,5 +1,5 @@
 use super::proxy_main::{LocalExecutor, Proxy};
-use crate::{constants::*, error::*, log::*};
+use crate::{constants::*, error::*, log::*, utils::BytesName};
 use hyper::{client::connect::Connect, server::conn::Http};
 use rustls::ServerConfig;
 use std::sync::Arc;
@@ -66,7 +66,7 @@ where
                   let (_, conn) = stream.get_ref();
                   let server_name = conn.sni_hostname();
                   debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", server_name);
-                  let server_name = server_name.map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase()));
+                  let server_name = server_name.map_or_else(|| None, |v| Some(v.to_server_name_vec()));
                   if server_name.is_none(){
                     Err(anyhow!("No SNI is given"))
                   } else {
@@ -140,7 +140,7 @@ where
             Err(_) => continue
           };
           let new_server_name = match hsd_downcast.server_name {
-            Some(sn) => sn.as_bytes().to_ascii_lowercase(),
+            Some(sn) => sn.to_server_name_vec(),
             None => {
               warn!("HTTP/3 no SNI is given");
               continue;

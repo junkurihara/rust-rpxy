@@ -1,4 +1,4 @@
-use super::{PathNameBytesExp, UpstreamOption};
+use super::{BytesName, PathNameBytesExp, UpstreamOption};
 use crate::log::*;
 use rand::Rng;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -19,8 +19,7 @@ impl ReverseProxy {
   pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamGroup> {
     // trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
     // コスト的にこの程度で十分
-    let path_lc = path_str.into().to_ascii_lowercase();
-    let path_bytes = path_lc.as_bytes();
+    let path_bytes = &(path_str.to_path_name_vec())[..];
 
     let matched_upstream = self
       .upstream

@@ -1,7 +1,10 @@
 mod upstream;
 mod upstream_opts;
 
-use crate::log::*;
+use crate::{
+  log::*,
+  utils::{BytesName, PathNameBytesExp, ServerNameBytesExp},
+};
 use rustc_hash::FxHashMap as HashMap;
 use std::{
   fs::File,
@@ -16,11 +19,6 @@ use tokio_rustls::rustls::{
 };
 pub use upstream::{ReverseProxy, Upstream, UpstreamGroup};
 pub use upstream_opts::UpstreamOption;
-
-// Server name (hostname or ip address) and path name representation in backends
-// For searching hashmap or key list by exact or longest-prefix matching
-pub type ServerNameBytesExp = Vec<u8>; // lowercase ascii bytes
-pub type PathNameBytesExp = Vec<u8>; // lowercase ascii bytes
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
 pub struct Backend {

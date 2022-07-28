@@ -1,10 +1,11 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
 use crate::{
-  backend::{Backend, PathNameBytesExp, ReverseProxy, UpstreamGroup, UpstreamOption},
+  backend::{Backend, ReverseProxy, UpstreamGroup, UpstreamOption},
   constants::*,
   error::*,
   globals::*,
   log::*,
+  utils::{BytesName, PathNameBytesExp},
 };
 use clap::Arg;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -91,7 +92,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
   // each app
   for (app_name, app) in apps.0.iter() {
     ensure!(app.server_name.is_some(), "Missing server_name");
-    let server_name = app.server_name.as_ref().unwrap().to_ascii_lowercase();
+    let server_name_string = app.server_name.as_ref().unwrap();
 
     // TLS settings
     let (tls_cert_path, tls_cert_key_path, https_redirection) = if app.tls.is_none() {
@@ -122,10 +123,10 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
     let reverse_proxy = get_reverse_proxy(app.reverse_proxy.as_ref().unwrap())?;
 
     globals.backends.apps.insert(
-      server_name.as_bytes().to_vec(),
+      server_name_string.to_server_name_vec(),
       Backend {
         app_name: app_name.to_owned(),
-        server_name: server_name.to_owned(),
+        server_name: server_name_string.to_ascii_lowercase(),
         reverse_proxy,
 
         tls_cert_path,
@@ -133,7 +134,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
         https_redirection,
       },
     );
-    info!("Registering application: {} ({})", app_name, server_name);
+    info!("Registering application: {} ({})", app_name, server_name_string);
   }
 
   // default backend application for plaintext http requests
@@ -194,8 +195,8 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<
   let mut upstream: HashMap<PathNameBytesExp, UpstreamGroup> = HashMap::default();
   rp_settings.iter().for_each(|rpo| {
     let path = match &rpo.path {
-      Some(p) => p.as_bytes().to_ascii_lowercase(),
-      None => "/".as_bytes().to_ascii_lowercase(),
+      Some(p) => p.to_path_name_vec(),
+      None => "/".to_path_name_vec(),
     };
 
     let elem = UpstreamGroup {
@@ -204,7 +205,7 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<
       replace_path: rpo
         .replace_path
         .as_ref()
-        .map_or_else(|| None, |v| Some(v.as_bytes().to_ascii_lowercase())),
+        .map_or_else(|| None, |v| Some(v.to_path_name_vec())),
       cnt: Default::default(),
       lb: Default::default(),
       opts: {

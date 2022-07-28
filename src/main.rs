@@ -16,13 +16,14 @@ mod proxy;
 mod utils;
 
 use crate::{
-  backend::{Backend, Backends, ServerNameBytesExp},
+  backend::{Backend, Backends},
   config::parse_opts,
   constants::*,
   error::*,
   globals::*,
   log::*,
   proxy::Proxy,
+  utils::ServerNameBytesExp,
 };
 use futures::future::select_all;
 use handler::HttpMessageHandler;

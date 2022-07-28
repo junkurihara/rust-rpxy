@@ -1,22 +1,31 @@
-use bytes::{Buf, Bytes};
+// Server name (hostname or ip address) and path name representation in backends
+// For searching hashmap or key list by exact or longest-prefix matching
+pub type ServerNameBytesExp = Vec<u8>; // lowercase ascii bytes
+
+// #[derive(Clone, Debug)]
+// pub struct ServerNameBytesExp(Vec<u8>);
+
+pub type PathNameBytesExp = Vec<u8>; // lowercase ascii bytes
 
 pub trait BytesName {
-  type Output: Buf;
-  fn to_bytes(self) -> Self::Output;
-  fn to_ascii_lowercase_bytes(self) -> Self::Output;
+  type OutputSv: Send + Sync + 'static;
+  type OutputPath;
+  fn to_server_name_vec(self) -> Self::OutputSv;
+  fn to_path_name_vec(self) -> Self::OutputPath;
 }
 
-impl<T: Into<String>> BytesName for T {
-  type Output = Bytes;
+impl<'a, T: Into<std::borrow::Cow<'a, str>>> BytesName for T {
+  type OutputSv = ServerNameBytesExp;
+  type OutputPath = PathNameBytesExp;
 
-  fn to_bytes(self) -> Self::Output {
-    let b = self.into().bytes().collect::<Vec<u8>>();
-    Bytes::from(b)
+  fn to_server_name_vec(self) -> Self::OutputSv {
+    let name = self.into().bytes().collect::<Vec<u8>>().to_ascii_lowercase();
+    name
   }
 
-  fn to_ascii_lowercase_bytes(self) -> Self::Output {
-    let b = self.into().bytes().collect::<Vec<u8>>().to_ascii_lowercase();
-    Bytes::from(b)
+  fn to_path_name_vec(self) -> Self::OutputPath {
+    let name = self.into().bytes().collect::<Vec<u8>>().to_ascii_lowercase();
+    name
   }
 }
 
@@ -26,10 +35,10 @@ mod tests {
   #[test]
   fn bytes_name_str_works() {
     let s = "OK_string";
-    let bn = s.to_bytes();
-    let bn_lc = s.to_ascii_lowercase_bytes();
+    let bn = s.to_path_name_vec();
+    let bn_lc = s.to_server_name_vec();
 
-    assert_eq!(Bytes::from(s.as_bytes()), bn);
-    assert_eq!(Bytes::from("ok_string"), bn_lc);
+    assert_eq!(Vec::from(s.as_bytes()), bn);
+    assert_eq!(Vec::from(s.as_bytes()), bn_lc);
   }
 }

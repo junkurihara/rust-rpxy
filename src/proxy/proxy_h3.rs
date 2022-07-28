@@ -1,5 +1,5 @@
 use super::Proxy;
-use crate::{backend::ServerNameBytesExp, error::*, log::*};
+use crate::{error::*, log::*, utils::ServerNameBytesExp};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, Request, Response};

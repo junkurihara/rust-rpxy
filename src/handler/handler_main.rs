@@ -1,11 +1,6 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
 use super::{utils_headers::*, utils_request::*, utils_synth_response::*};
-use crate::{
-  backend::{ServerNameBytesExp, UpstreamGroup},
-  error::*,
-  globals::Globals,
-  log::*,
-};
+use crate::{backend::UpstreamGroup, error::*, globals::Globals, log::*, utils::ServerNameBytesExp};
 use hyper::{
   client::connect::Connect,
   header::{self, HeaderValue},
