@@ -19,7 +19,7 @@ impl ReverseProxy {
   pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamGroup> {
     // trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
     // コスト的にこの程度で十分
-    let path_bytes = &(path_str.to_path_name_vec())[..];
+    let path_bytes = &path_str.to_path_name_vec();
 
     let matched_upstream = self
       .upstream
@@ -40,7 +40,7 @@ impl ReverseProxy {
     if let Some((_path, u)) = matched_upstream {
       debug!(
         "Found upstream: {:?}",
-        String::from_utf8(_path.to_vec()).unwrap_or_else(|_| "<none>".to_string())
+        String::from_utf8(_path.0.clone()).unwrap_or_else(|_| "<none>".to_string())
       );
       Some(u)
     } else {

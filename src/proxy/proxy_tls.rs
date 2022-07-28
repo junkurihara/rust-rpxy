@@ -148,7 +148,7 @@ where
           };
           debug!(
             "HTTP/3 connection incoming (SNI {:?})",
-            new_server_name
+            new_server_name.0
           );
           // TODO: server_nameをここで出してどんどん深く投げていくのは効率が悪い。connecting -> connectionsの後でいいのでは？
           // TODO: 通常のTLSと同じenumか何かにまとめたい

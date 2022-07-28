@@ -42,20 +42,20 @@ where
     //////
 
     // Here we start to handle with server_name
-    let server_name_bytes = if let Ok(v) = req.parse_host() {
-      v.to_ascii_lowercase()
+    let server_name = if let Ok(v) = req.parse_host() {
+      ServerNameBytesExp::from(v)
     } else {
       return self.return_with_error_log(StatusCode::BAD_REQUEST, &mut log_data);
     };
     // check consistency of between TLS SNI and HOST/Request URI Line.
     #[allow(clippy::collapsible_if)]
     if tls_enabled && self.globals.sni_consistency {
-      if !server_name_bytes.eq_ignore_ascii_case(&tls_server_name.unwrap_or_default()) {
+      if server_name != tls_server_name.unwrap_or_default() {
         return self.return_with_error_log(StatusCode::MISDIRECTED_REQUEST, &mut log_data);
       }
     }
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
-    let backend = if let Some(be) = self.globals.backends.apps.get(&server_name_bytes) {
+    let backend = if let Some(be) = self.globals.backends.apps.get(&server_name) {
       be
     } else if let Some(default_server_name) = &self.globals.backends.default_server_name_bytes {
       debug!("Serving by default app");
@@ -271,7 +271,7 @@ where
           return Err(RpxyError::Handler("Upstream uri `path and query` is broken"));
         };
         let mut new_pq = Vec::<u8>::with_capacity(org_pq.len() - matched_path.len() + new_path.len());
-        new_pq.extend_from_slice(new_path);
+        new_pq.extend_from_slice(new_path.as_ref());
         new_pq.extend_from_slice(&org_pq[matched_path.len()..]);
         new_pq
       }
