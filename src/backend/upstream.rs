@@ -1,4 +1,4 @@
-use super::{PathNameExp, UpstreamOption};
+use super::{PathNameBytesExp, UpstreamOption};
 use crate::log::*;
 use rand::Rng;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -12,7 +12,7 @@ use std::{
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxy {
-  pub upstream: HashMap<PathNameExp, UpstreamGroup>, // TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
+  pub upstream: HashMap<PathNameBytesExp, UpstreamGroup>, // TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
 }
 
 impl ReverseProxy {
@@ -70,8 +70,8 @@ pub struct Upstream {
 #[derive(Debug, Clone)]
 pub struct UpstreamGroup {
   pub upstream: Vec<Upstream>,
-  pub path: PathNameExp,
-  pub replace_path: Option<PathNameExp>,
+  pub path: PathNameBytesExp,
+  pub replace_path: Option<PathNameBytesExp>,
   pub lb: LoadBalance,
   pub cnt: UpstreamCount, // counter for load balancing
   pub opts: HashSet<UpstreamOption>,

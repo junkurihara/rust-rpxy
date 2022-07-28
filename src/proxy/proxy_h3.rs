@@ -1,5 +1,5 @@
 use super::Proxy;
-use crate::{backend::ServerNameExp, error::*, log::*};
+use crate::{backend::ServerNameBytesExp, error::*, log::*};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, Request, Response};
@@ -10,7 +10,11 @@ impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub(super) async fn connection_serve_h3(self, conn: quinn::Connecting, tls_server_name: ServerNameExp) -> Result<()> {
+  pub(super) async fn connection_serve_h3(
+    self,
+    conn: quinn::Connecting,
+    tls_server_name: ServerNameBytesExp,
+  ) -> Result<()> {
     let client_addr = conn.remote_address();
 
     match conn.await {
@@ -68,7 +72,7 @@ where
     req: Request<()>,
     stream: RequestStream<S, Bytes>,
     client_addr: SocketAddr,
-    tls_server_name: ServerNameExp,
+    tls_server_name: ServerNameBytesExp,
   ) -> Result<()>
   where
     S: BidiStream<Bytes> + Send + 'static,

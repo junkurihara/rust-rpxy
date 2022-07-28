@@ -1,7 +1,7 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
 use super::{utils_headers::*, utils_request::*, utils_synth_response::*};
 use crate::{
-  backend::{ServerNameExp, UpstreamGroup},
+  backend::{ServerNameBytesExp, UpstreamGroup},
   error::*,
   globals::Globals,
   log::*,
@@ -39,7 +39,7 @@ where
     client_addr: SocketAddr, // アクセス制御用
     listen_addr: SocketAddr,
     tls_enabled: bool,
-    tls_server_name: Option<ServerNameExp>,
+    tls_server_name: Option<ServerNameBytesExp>,
   ) -> Result<Response<Body>> {
     ////////
     let mut log_data = MessageLog::from(&req);

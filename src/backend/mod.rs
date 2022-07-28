@@ -19,8 +19,8 @@ pub use upstream_opts::UpstreamOption;
 
 // Server name (hostname or ip address) and path name representation in backends
 // For searching hashmap or key list by exact or longest-prefix matching
-pub type ServerNameExp = Vec<u8>; // lowercase ascii bytes
-pub type PathNameExp = Vec<u8>; // lowercase ascii bytes
+pub type ServerNameBytesExp = Vec<u8>; // lowercase ascii bytes
+pub type PathNameBytesExp = Vec<u8>; // lowercase ascii bytes
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
 pub struct Backend {
@@ -111,8 +111,8 @@ impl Backend {
 
 /// HashMap and some meta information for multiple Backend structs.
 pub struct Backends {
-  pub apps: HashMap<ServerNameExp, Backend>, // hyper::uriで抜いたhostで引っ掛ける
-  pub default_server_name_bytes: Option<ServerNameExp>, // for plaintext http
+  pub apps: HashMap<ServerNameBytesExp, Backend>, // hyper::uriで抜いたhostで引っ掛ける
+  pub default_server_name_bytes: Option<ServerNameBytesExp>, // for plaintext http
 }
 
 impl Backends {

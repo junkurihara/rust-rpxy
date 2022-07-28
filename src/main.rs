@@ -16,7 +16,7 @@ mod proxy;
 mod utils;
 
 use crate::{
-  backend::{Backend, Backends, ServerNameExp},
+  backend::{Backend, Backends, ServerNameBytesExp},
   config::parse_opts,
   constants::*,
   error::*,
@@ -72,7 +72,7 @@ fn main() {
       runtime_handle: runtime.handle().clone(),
       backends: Backends {
         default_server_name_bytes: None,
-        apps: HashMap::<ServerNameExp, Backend>::default(),
+        apps: HashMap::<ServerNameBytesExp, Backend>::default(),
       },
 
       sni_consistency: true,
