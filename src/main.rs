@@ -48,7 +48,6 @@ fn main() {
       }
     })
     .init();
-  info!("Start http (reverse) proxy");
 
   let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
   runtime_builder.enable_all();
