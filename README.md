@@ -224,9 +224,9 @@ Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml`
 
 [`./bench`](./bench/) directory could be a very simple example of configuration of `rpxy`. This can also be an example of an example of `docker` use case.
 
-### TIPS
+## TIPS
 
-#### Using Private Key Issued by Let's Encrypt
+### Using Private Key Issued by Let's Encrypt
 
 If you obtain certificates and private keys from [Let's Encrypt](https://letsencrypt.org/), you have PKCS1-formatted private keys. So you need to convert such retrieved private keys into PKCS8 format to use in `rpxy`.
 
@@ -239,7 +239,7 @@ openssl pkcs8 -topk8 -nocrypt \
     -outform PEM
 ```
 
-#### Other TIPS
+### Other TIPS
 
 todo!
 
