@@ -63,7 +63,7 @@ server_name = 'app1.example.com'
 reverse_proxy = [{ upstream = [{ location = 'app1.local:8080' }] }]
 ```
 
-In the above setting, `rpxy` listens on port 80 (TCP) and serves incoming cleartext HTTP request including a `app1.example.com` in its HOST header or it URL Request line.
+In the above setting, `rpxy` listens on port 80 (TCP) and serves incoming cleartext HTTP request including a `app1.example.com` in its HOST header or URL in its Request line.
 For example, request messages like the followings.
 
 ```
