@@ -86,11 +86,11 @@ default_application = "app1"
 
 [app.app1]
 server_name = "app1.example.com"
-...
+#...
 
 [app.app2]
 server_name = "app2.example.org"
-...
+#...
 ```
 
 Here we note that by specifying `default_application` entry, *HTTP* requests will be served by the specified application if HOST header or URL in Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since the secure connection cannot be established for the unknown server name.
@@ -99,7 +99,7 @@ Here we note that by specifying `default_application` entry, *HTTP* requests wil
 
 The request message will be routed to the backend application specified with the domain name `app1.localdomain:8080` or IP address over cleartext HTTP. If the backend channel needs to serve TLS like forwarding to `https://app1.localdomain:8080`, you need to enable a `tls` option for the location.
 
-```toml
+```
 { location = 'app1.localdomain:8080', tls = true }
 ```
 
@@ -111,7 +111,7 @@ You can specify multiple backend locations in the `reverse_proxy` array for *loa
 [apps."app_name"]
 server_name = 'app1.example.com'
 reverse_proxy = [
-  { location = 'app1.local:8080' }
+  { location = 'app1.local:8080' },
   { location = 'app2.local:8000' }
 ]
 ```
@@ -187,11 +187,11 @@ This path-based routing option would be enough in many cases. For example, you c
 ```toml
 [apps.app]
 server_name = 'app.example.com'
-...
+#...
 
 [[apps.app.reverse_proxy]]
 path = '/subapp1'
-replace_path = '/''
+replace_path = '/'
 upstream = [ { location = 'subapp1.local' } ]
 
 [[apps.app.reverse_proxy]]
