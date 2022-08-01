@@ -220,6 +220,10 @@ You can also use [`docker` image](https://hub.docker.com/r/jqtype/rpxy) instead 
 
 Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the `docker` volume option. See [`docker-compose.yml`](./docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
 
+## Example
+
+[`./bench`](./bench/) directory could be a very simple example of configuration of `rpxy`. This can also be an example of an example of `docker` use case.
+
 ### TIPS
 
 #### Using Private Key Issued by Let's Encrypt
