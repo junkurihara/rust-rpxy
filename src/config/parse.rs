@@ -10,8 +10,6 @@ use crate::{
 use clap::Arg;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::net::SocketAddr;
-
-// #[cfg(feature = "tls")]
 use std::path::PathBuf;
 
 pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Error> {

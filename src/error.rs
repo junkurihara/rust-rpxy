@@ -13,6 +13,9 @@ pub enum RpxyError {
   #[error("Http Request Message Error: {0}")]
   Request(&'static str),
 
+  #[error("TCP/UDP Proxy Layer Error: {0}")]
+  Proxy(String),
+
   #[error("I/O Error")]
   Io(#[from] io::Error),
 

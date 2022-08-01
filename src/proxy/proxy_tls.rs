@@ -68,7 +68,7 @@ where
                   debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", server_name);
                   let server_name = server_name.map_or_else(|| None, |v| Some(v.to_server_name_vec()));
                   if server_name.is_none(){
-                    Err(anyhow!("No SNI is given"))
+                    Err(RpxyError::Proxy("No SNI is given".to_string()))
                   } else {
                     // this immediately spawns another future to actually handle stream. so it is okay to introduce timeout for handshake.
                     self_inner.client_serve(stream, server_clone, client_addr, server_name); // TODO: don't want to pass copied value...
@@ -76,11 +76,11 @@ where
                   }
                 },
                 Err(e) => {
-                  Err(anyhow!("Failed to handshake TLS: {}", e))
+                  Err(RpxyError::Proxy(format!("Failed to handshake TLS: {}", e)))
                 }
               },
               Err(e) => {
-                Err(anyhow!("Timeout to handshake TLS: {}", e))
+                Err(RpxyError::Proxy(format!("Timeout to handshake TLS: {}", e)))
               }
             }
           };

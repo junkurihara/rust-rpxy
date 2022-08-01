@@ -24,10 +24,12 @@ pub(super) fn apply_upstream_options_to_header(
     match opt {
       UpstreamOption::OverrideHost => {
         // overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
-        let upstream_host = upstream_base_uri.host().ok_or_else(|| anyhow!("none"))?;
+        let upstream_host = upstream_base_uri
+          .host()
+          .ok_or_else(|| anyhow!("No hostname is given in override_host option"))?;
         headers
           .insert(header::HOST, HeaderValue::from_str(upstream_host)?)
-          .ok_or_else(|| anyhow!("none"))?;
+          .ok_or_else(|| anyhow!("Failed to insert host header in override_host option"))?;
       }
       UpstreamOption::UpgradeInsecureRequests => {
         // add upgrade-insecure-requests in request header if not exist

@@ -96,7 +96,7 @@ where
         size += body.remaining();
         if size > max_body_size {
           error!("Exceeds max request body size for HTTP/3");
-          return Err(anyhow!("Exceeds max request body size for HTTP/3"));
+          return Err(RpxyError::Proxy("Exceeds max request body size for HTTP/3".to_string()));
         }
         // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
         sender.send_data(body.copy_to_bytes(body.remaining())).await?;

@@ -144,15 +144,18 @@ where
         self.globals.runtime_handle.spawn(async move {
           let mut response_upgraded = onupgrade.await.map_err(|e| {
             error!("Failed to upgrade response: {}", e);
-            anyhow!("Failed to upgrade response: {}", e)
+            RpxyError::Hyper(e)
           })?;
           let mut request_upgraded = request_upgraded.await.map_err(|e| {
             error!("Failed to upgrade request: {}", e);
-            anyhow!("Failed to upgrade request: {}", e)
+            RpxyError::Hyper(e)
           })?;
           copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
             .await
-            .map_err(|e| anyhow!("Coping between upgraded connections failed: {}", e))?;
+            .map_err(|e| {
+              error!("Coping between upgraded connections failed: {}", e);
+              RpxyError::Io(e)
+            })?;
           Ok(()) as Result<()>
         });
         log_data.status_code(&res_backend.status()).output();
