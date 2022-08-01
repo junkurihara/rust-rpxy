@@ -50,8 +50,8 @@ hyper-rustls = { version = "0.23.0", default-features = false, features = [
 ] }
 bytes = "1.2.0"
 quinn = { version = "0.8.3", optional = true }
-h3 = { git = "https://github.com/hyperium/h3.git", optional = true }
-h3-quinn = { git = "https://github.com/hyperium/h3.git", optional = true }
+h3 = { path = "./h3/h3/", optional = true }
+h3-quinn = { path = "./h3/h3-quinn/", optional = true }
 thiserror = "1.0.31"
 
 
