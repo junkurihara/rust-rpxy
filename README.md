@@ -17,15 +17,34 @@
 
  [^1]: We should note that NGINX doesn't guarantee such a consistency by default. To this end, you have to add `if` statement in the configuration file in NGINX.
 
-## Making an executable binary
+## Installing/Building an executable binary of `rpxy`
+
+<!-- ### From `crates.io`
+
+The simplest way is to install from [`crates.io`](https://crates.io/crates/rpxy) as follows.
 
 ```:bash
+% cargo install rpxy
+```
+
+Then you have an executive binary `~/.cargo/bin/rpxy`.
+
+Alternatively, y -->
+You can build an executable binary yourself by checking out this Git repository.
+
+```:bash
+# Cloning the git repository
+% git clone https://github.com/junkurihara/rust-rpxy
+% cde rust-rpxy
+
+# Update submodule hyperium/h3
+% git submodule update --init
+
+# Build
 % cargo build --release
 ```
 
-Then you have a binary at `./target/release/rpxy`.
-
-You can also use [`docker` image](https://hub.docker.com/r/jqtype/rpxy) instead of building from the source.
+Then you have an executive binary `rust-rpxy/target/release/rpxy`.
 
 ## Usage
 
@@ -36,5 +55,8 @@ todo!
 todo!
 
 ## Using `docker` image
+
+You can also use [`docker` image](https://hub.docker.com/r/jqtype/rpxy) instead of directly executing the binary.
+
 
 todo!
