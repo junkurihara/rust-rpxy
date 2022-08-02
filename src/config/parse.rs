@@ -227,8 +227,8 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<
   ensure!(
     upstream
       .iter()
-      .all(|(_, elem)| !(elem.opts.contains(&UpstreamOption::ConvertToHttp11)
-        && elem.opts.contains(&UpstreamOption::ConvertToHttp2))),
+      .all(|(_, elem)| !(elem.opts.contains(&UpstreamOption::ConvertHttpsTo11)
+        && elem.opts.contains(&UpstreamOption::ConvertHttpsTo2))),
     "either one of force_http11 or force_http2 can be enabled"
   );
 

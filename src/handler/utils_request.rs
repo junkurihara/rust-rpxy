@@ -10,8 +10,8 @@ use hyper::{header, Request};
 pub(super) fn apply_upstream_options_to_request_line<B>(req: &mut Request<B>, upstream: &UpstreamGroup) -> Result<()> {
   for opt in upstream.opts.iter() {
     match opt {
-      UpstreamOption::ConvertToHttp11 => *req.version_mut() = hyper::Version::HTTP_11,
-      UpstreamOption::ConvertToHttp2 => *req.version_mut() = hyper::Version::HTTP_2,
+      UpstreamOption::ConvertHttpsTo11 => *req.version_mut() = hyper::Version::HTTP_11,
+      UpstreamOption::ConvertHttpsTo2 => *req.version_mut() = hyper::Version::HTTP_2,
       _ => (),
     }
   }

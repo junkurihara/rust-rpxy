@@ -51,7 +51,7 @@ upstream = [
   { location = 'www.yahoo.com', tls = true },
   { location = 'www.yahoo.co.jp', tls = true },
 ]
-upstream_options = ["override_host", "convert_to_http2"]
+upstream_options = ["override_host", "convert_https_to_2"]
 
 # Non-default destination in "localhost" app, which is routed by "path"
 [[apps.localhost.reverse_proxy]]
@@ -69,7 +69,7 @@ upstream = [
 upstream_options = [
   "override_host",
   "upgrade_insecure_requests",
-  "convert_to_http11",
+  "convert_https_to_11",
 ]
 ######################################################################
 
