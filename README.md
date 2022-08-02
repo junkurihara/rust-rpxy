@@ -1,4 +1,4 @@
-# rpxy: A simple and ultrafast reverse-proxy for multiple host names with TLS termination, written in pure Rust
+# rpxy: A simple and ultrafast reverse-proxy serving multiple domain names with TLS termination, written in pure Rust
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
@@ -17,7 +17,7 @@
 
  [^1]: We should note that NGINX doesn't guarantee such a consistency by default. To this end, you have to add `if` statement in the configuration file in NGINX.
 
-## Installing/Building an executable binary of `rpxy`
+## Installing/Building an Executable Binary of `rpxy`
 
 You can build an executable binary yourself by checking out this Git repository.
 
@@ -35,7 +35,7 @@ You can build an executable binary yourself by checking out this Git repository.
 
 Then you have an executive binary `rust-rpxy/target/release/rpxy`.
 
-Note that we do not have an option of installation via [`crates.io`](https://crates.io/), i.e., `cargo install`, at this point since some dependencies are not published yet. Alternatively, you can use `docker` image (see below) as the easiest way for `amd64` environment.
+Note that we do not have an option of installation via [`crates.io`](https://crates.io/), i.e., `cargo install`, at this point since some dependencies are not published yet. Alternatively, you can use docker image (see below) as the easiest way for `amd64` environment.
 
 ## Usage
 
@@ -136,7 +136,7 @@ In the above setting, both cleartext HTTP requests to port 80 and ciphertext HTT
 
 We should note that the private key specified by `tls_cert_key_path` must be *in PKCS8 format*. (See TIPS to convert PKCS1 formatted private key to PKCS8 one.)
 
-#### Redirecting cleartext HTTP requests to HTTPS
+#### Redirecting Cleartext HTTP Requests to HTTPS
 
 In the current Web, we believe it is common to serve everything through HTTPS rather than HTTP, and hence *https redirection* is often used for HTTP requests. When you specify both `listen_port` and `listen_port_tls`, you can enable an option of such  redirection by making `https_redirection` true.
 
@@ -146,7 +146,7 @@ tls = { https_redirection = true, tls_cert_path = 'localhost.crt', tls_cert_key_
 
 If it is true, `rpxy` returns the status code `301` to the cleartext request with new location `https://<requested_host>/<requested_query_and_path>` served over TLS.
 
-### Third Step: More Flexible Routing based on URL Path
+### Third Step: More Flexible Routing Based on URL Path
 
 `rpxy` can serves, of course, routes requests to multiple backend destination according to the path information. The routing information can be specified for each application (`server_name`) as follows.
 
@@ -213,18 +213,18 @@ This example configuration explains a very frequent situation of path-based rout
 
 Since it is currently a work-in-progress project, we are frequently adding new options. We first add new option entries in the `config-example.toml` as examples. So please refer to it for up-to-date options. We will prepare a comprehensive documentation for all options.
 
-## Using `docker` Image
+## Using Docker Image
 
-You can also use [`docker` image](https://hub.docker.com/r/jqtype/rpxy) instead of directly executing the binary. There are only two `docker`-specific environment variables.
+You can also use [docker image](https://hub.docker.com/r/jqtype/rpxy) instead of directly executing the binary. There are only two docker-specific environment variables.
 
 - `LOG_LEVEL=debug|info|warn|error`: Log level
-- `LOG_TO_FILE=true|false`: Enable logging to the log file `/var/log/rpxy/rpxy.log` using `logrotate`. You should mount `/var/log/rpxy` via `docker` volume option if enabled.
+- `LOG_TO_FILE=true|false`: Enable logging to the log file `/var/log/rpxy/rpxy.log` using `logrotate`. You should mount `/var/log/rpxy` via docker volume option if enabled.
 
-Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the `docker` volume option. See [`docker-compose.yml`](./docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
+Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the docker volume option. See [`docker-compose.yml`](./docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
 
 ## Example
 
-[`./bench`](./bench/) directory could be a very simple example of configuration of `rpxy`. This can also be an example of an example of `docker` use case.
+[`./bench`](./bench/) directory could be a very simple example of configuration of `rpxy`. This can also be an example of an example of docker use case.
 
 ## TIPS
 
