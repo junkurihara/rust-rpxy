@@ -5,7 +5,7 @@
 ![Build and Publish Docker](https://github.com/junkurihara/rust-rpxy/actions/workflows/docker_build_push.yml/badge.svg)
 ![ShiftLeft Scan](https://github.com/junkurihara/rust-rpxy/actions/workflows/shift_left.yml/badge.svg)
 
-**WIP Project**
+> **WIP Project**
 
 ## Introduction
 
@@ -66,13 +66,13 @@ reverse_proxy = [{ upstream = [{ location = 'app1.local:8080' }] }]
 In the above setting, `rpxy` listens on port 80 (TCP) and serves incoming cleartext HTTP request including a `app1.example.com` in its HOST header or URL in its Request line.
 For example, request messages like the followings.
 
-```
+```http
 GET http://app1.example.com/path/to HTTP/1.1\r\n
 ```
 
 or
 
-```
+```http
 GET /path/to HTTP/1.1\r\n
 HOST: app1.example.com\r\n
 ```
@@ -99,8 +99,10 @@ Here we note that by specifying `default_application` entry, *HTTP* requests wil
 
 The request message will be routed to the backend application specified with the domain name `app1.localdomain:8080` or IP address over cleartext HTTP. If the backend channel needs to serve TLS like forwarding to `https://app1.localdomain:8080`, you need to enable a `tls` option for the location.
 
-```
-{ location = 'app1.localdomain:8080', tls = true }
+```toml
+revese_proxy = [
+  { location = 'app1.localdomain:8080', tls = true }
+]
 ```
 
 #### Load Balancing
@@ -231,6 +233,7 @@ Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml`
 If you obtain certificates and private keys from [Let's Encrypt](https://letsencrypt.org/), you have PKCS1-formatted private keys. So you need to convert such retrieved private keys into PKCS8 format to use in `rpxy`.
 
 The most easiest way is to use `openssl` by
+
 ```bash
 openssl pkcs8 -topk8 -nocrypt \
     -in yoru_domain_from_le.key \
@@ -242,7 +245,6 @@ openssl pkcs8 -topk8 -nocrypt \
 ### Other TIPS
 
 todo!
-
 
 ## License
 
