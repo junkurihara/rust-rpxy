@@ -224,5 +224,13 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<
     rp_settings.iter().filter(|rpo| rpo.path.is_none()).count() < 2,
     "Multiple default reverse proxy setting"
   );
+  ensure!(
+    upstream
+      .iter()
+      .all(|(_, elem)| !(elem.opts.contains(&UpstreamOption::ConvertToHttp11)
+        && elem.opts.contains(&UpstreamOption::ConvertToHttp2))),
+    "either one of force_http11 or force_http2 can be enabled"
+  );
+
   Ok(ReverseProxy { upstream })
 }

@@ -1,5 +1,23 @@
-use crate::error::*;
+use crate::{
+  backend::{UpstreamGroup, UpstreamOption},
+  error::*,
+};
 use hyper::{header, Request};
+
+////////////////////////////////////////////////////
+// Functions to manipulate request line
+
+pub(super) fn apply_upstream_options_to_request_line<B>(req: &mut Request<B>, upstream: &UpstreamGroup) -> Result<()> {
+  for opt in upstream.opts.iter() {
+    match opt {
+      UpstreamOption::ConvertToHttp11 => *req.version_mut() = hyper::Version::HTTP_11,
+      UpstreamOption::ConvertToHttp2 => *req.version_mut() = hyper::Version::HTTP_2,
+      _ => (),
+    }
+  }
+
+  Ok(())
+}
 
 pub trait ParseHost {
   fn parse_host(&self) -> Result<&[u8]>;

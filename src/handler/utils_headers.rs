@@ -37,6 +37,7 @@ pub(super) fn apply_upstream_options_to_header(
           .entry(header::UPGRADE_INSECURE_REQUESTS)
           .or_insert(HeaderValue::from_bytes(&[b'1']).unwrap());
       }
+      _ => (),
     }
   }
 

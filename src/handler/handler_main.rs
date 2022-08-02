@@ -4,7 +4,6 @@ use crate::{backend::UpstreamGroup, error::*, globals::Globals, log::*, utils::S
 use hyper::{
   client::connect::Connect,
   header::{self, HeaderValue},
-  http::uri::Scheme,
   Body, Client, Request, Response, StatusCode, Uri, Version,
 };
 use std::{env, net::SocketAddr, sync::Arc};
@@ -95,7 +94,7 @@ where
       error!("Failed to generate destination uri for reverse proxy: {}", e);
       return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
     };
-    // debug!("Request to be forwarded: {:?}", req_forwarded);
+    debug!("Request to be forwarded: {:?}", req);
     log_data.xff(&req.headers().get("x-forwarded-for"));
     log_data.upstream(req.uri());
     //////
@@ -290,10 +289,10 @@ where
         .insert(header::CONNECTION, HeaderValue::from_str("upgrade")?);
     }
 
-    // Change version to http/1.1 when destination scheme is http
-    if req.version() != Version::HTTP_11 && upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
-      *req.version_mut() = Version::HTTP_11;
-    } else if req.version() == Version::HTTP_3 {
+    apply_upstream_options_to_request_line(req, upstream_group)?;
+
+    // if not specified (force_httpXX_upstream), version is preserved except for http/3
+    if req.version() == Version::HTTP_3 {
       debug!("HTTP/3 is currently unsupported for request to upstream. Use HTTP/2.");
       *req.version_mut() = Version::HTTP_2;
     }
