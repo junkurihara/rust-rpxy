@@ -120,7 +120,7 @@ reverse_proxy = [
 
 ### Second Step: Terminating TLS
 
-First of all, you need to specify a port `listen_port_tls` listening the HTTPS traffic, separately from HTTPS port (`listen_port`). Then, serving an HTTPS endpoint can be easily done for your desired application just by specifying TLS certificates and private keys in PEM files.
+First of all, you need to specify a port `listen_port_tls` listening the HTTPS traffic, separately from HTTP port (`listen_port`). Then, serving an HTTPS endpoint can be easily done for your desired application just by specifying TLS certificates and private keys in PEM files.
 
 ```toml
 listen_port = 80
