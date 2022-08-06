@@ -92,10 +92,10 @@ where
       let mut sender = body_sender;
       let mut size = 0usize;
       while let Some(mut body) = recv_stream.recv_data().await? {
-        debug!("HTTP/3 incoming request body");
+        debug!("HTTP/3 incoming request body: remaining {}", body.remaining());
         size += body.remaining();
         if size > max_body_size {
-          error!("Exceeds max request body size for HTTP/3");
+          error!("Exceeds max request body size for HTTP/3: received {}", size);
           return Err(RpxyError::Proxy("Exceeds max request body size for HTTP/3".to_string()));
         }
         // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
