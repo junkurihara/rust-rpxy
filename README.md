@@ -232,7 +232,7 @@ Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml`
 
 If you obtain certificates and private keys from [Let's Encrypt](https://letsencrypt.org/), you have PKCS1-formatted private keys. So you need to convert such retrieved private keys into PKCS8 format to use in `rpxy`.
 
-The most easiest way is to use `openssl` by
+The easiest way is to use `openssl` by
 
 ```bash
 openssl pkcs8 -topk8 -nocrypt \
