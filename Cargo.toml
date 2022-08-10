@@ -36,12 +36,12 @@ tokio = { version = "1.20.1", default-features = false, features = [
   "macros",
 ] }
 tokio-rustls = { version = "0.23.4", features = ["early-data"] }
-rustls-pemfile = "1.0.0"
+rustls-pemfile = "1.0.1"
 rustls = { version = "0.20.6", default-features = false }
 rand = "0.8.5"
 toml = { version = "0.5.9", default-features = false }
 rustc-hash = "1.1.0"
-serde = { version = "1.0.140", default-features = false, features = ["derive"] }
+serde = { version = "1.0.142", default-features = false, features = ["derive"] }
 hyper-rustls = { version = "0.23.0", default-features = false, features = [
   "tokio-runtime",
   "webpki-tokio",
@@ -52,7 +52,7 @@ bytes = "1.2.1"
 quinn = { version = "0.8.3", optional = true }
 h3 = { path = "./h3/h3/", optional = true }
 h3-quinn = { path = "./h3/h3-quinn/", optional = true }
-thiserror = "1.0.31"
+thiserror = "1.0.32"
 
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
