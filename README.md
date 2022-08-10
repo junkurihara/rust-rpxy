@@ -120,7 +120,7 @@ reverse_proxy = [
 
 ### Second Step: Terminating TLS
 
-First of all, you need to specify a port `listen_port_tls` listening the HTTPS traffic, separately from HTTPS port (`listen_port`). Then, serving an HTTPS endpoint can be easily done for your desired application just by specifying TLS certificates and private keys in PEM files.
+First of all, you need to specify a port `listen_port_tls` listening the HTTPS traffic, separately from HTTP port (`listen_port`). Then, serving an HTTPS endpoint can be easily done for your desired application just by specifying TLS certificates and private keys in PEM files.
 
 ```toml
 listen_port = 80
@@ -232,7 +232,7 @@ Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml`
 
 If you obtain certificates and private keys from [Let's Encrypt](https://letsencrypt.org/), you have PKCS1-formatted private keys. So you need to convert such retrieved private keys into PKCS8 format to use in `rpxy`.
 
-The most easiest way is to use `openssl` by
+The easiest way is to use `openssl` by
 
 ```bash
 openssl pkcs8 -topk8 -nocrypt \
