@@ -96,7 +96,9 @@ pub(super) fn add_header_entry_overwrite_if_exist(
 }
 
 pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
-  // Sometimes violates RFC6265: https://www.rfc-editor.org/rfc/rfc6265#section-5.4
+  // Sometimes violates RFC6265 (for http/1.1).
+  // https://www.rfc-editor.org/rfc/rfc6265#section-5.4
+  // This is allowed in RFC7540 (for http/2).
   // https://stackoverflow.com/questions/4843556/in-http-specification-what-is-the-string-that-separates-cookies
   let cookies = headers
     .iter()
@@ -123,6 +125,8 @@ pub(super) fn add_forwarding_header(
   let canonical_client_addr = client_addr.to_canonical().ip().to_string();
   append_header_entry_with_comma(headers, "x-forwarded-for", &canonical_client_addr)?;
 
+  // Single line cookie header
+  // TODO: This should be only for HTTP/1.1. For 2+, this can be multi-lined.
   make_cookie_single_line(headers)?;
 
   /////////// As Nginx
