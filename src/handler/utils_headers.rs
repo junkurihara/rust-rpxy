@@ -95,6 +95,22 @@ pub(super) fn add_header_entry_overwrite_if_exist(
   Ok(())
 }
 
+pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
+  // Sometimes violates RFC6265: https://www.rfc-editor.org/rfc/rfc6265#section-5.4
+  // https://stackoverflow.com/questions/4843556/in-http-specification-what-is-the-string-that-separates-cookies
+  let cookies = headers
+    .iter()
+    .filter(|(k, _)| **k == hyper::header::COOKIE)
+    .map(|(_, v)| v.to_str().unwrap_or(""))
+    .collect::<Vec<_>>()
+    .join("; ");
+  if !cookies.is_empty() {
+    headers.remove(hyper::header::COOKIE);
+    headers.insert(hyper::header::COOKIE, HeaderValue::from_bytes(cookies.as_bytes())?);
+  }
+  Ok(())
+}
+
 pub(super) fn add_forwarding_header(
   headers: &mut HeaderMap,
   client_addr: &SocketAddr,
@@ -106,6 +122,8 @@ pub(super) fn add_forwarding_header(
   // optional process defined by upstream_option is applied in fn apply_upstream_options
   let canonical_client_addr = client_addr.to_canonical().ip().to_string();
   append_header_entry_with_comma(headers, "x-forwarded-for", &canonical_client_addr)?;
+
+  make_cookie_single_line(headers)?;
 
   /////////// As Nginx
   // If we receive X-Forwarded-Proto, pass it through; otherwise, pass along the
