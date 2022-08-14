@@ -125,10 +125,10 @@ First of all, you need to specify a port `listen_port_tls` listening the HTTPS t
 ```toml
 listen_port = 80
 listen_port_tls = 443
-tls = { tls_cert_path = 'localhost.crt',  tls_cert_key_path = 'localhost.key' }
 
 [apps."app_name"]
 server_name = 'app1.example.com'
+tls = { tls_cert_path = 'localhost.crt',  tls_cert_key_path = 'localhost.key' }
 reverse_proxy = [{ upstream = [{ location = 'app1.local:8080' }] }]
 ```
 
