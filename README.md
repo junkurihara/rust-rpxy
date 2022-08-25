@@ -242,6 +242,19 @@ openssl pkcs8 -topk8 -nocrypt \
     -outform PEM
 ```
 
+### (Work Around) Deployment on Ubuntu 22.04LTS using docker behind `ufw`
+
+Basically, docker automatically manage your iptables if you use the port-mapping option, i.e., `--publish` for `docker run` or `ports` in `docker-compose.yml`. This means you do not need to manually expose your port, e.g., 443 TCP/UDP for HTTPS, using `ufw`-like management command.
+
+However, we found that if you want to use the brand-new UDP-based protocol, HTTP/3, on `rpxy`, you need to explicitly expose your HTTPS port by using `ufw`-like command.
+
+```
+% sudo ufw allow 443
+% sudo ufw enable
+```
+
+Your docker container can receive only TCP-based connection, i.e., HTTP/2 or before, unless you manually manage the port. We see that this is weird and expect that it is a kind of bug (of docker? ubuntu? or something else?). But at least for Ubuntu 22.04LTS, you need to handle it as above.
+
 ### Other TIPS
 
 todo!

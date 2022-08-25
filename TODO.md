@@ -6,4 +6,5 @@
 - Refactoring
 - Options to serve custom http_error page.
 - Prometheus metrics
+- Documentation
 - etc.
