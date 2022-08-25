@@ -248,7 +248,7 @@ Basically, docker automatically manage your iptables if you use the port-mapping
 
 However, we found that if you want to use the brand-new UDP-based protocol, HTTP/3, on `rpxy`, you need to explicitly expose your HTTPS port by using `ufw`-like command.
 
-```
+```bash
 % sudo ufw allow 443
 % sudo ufw enable
 ```
