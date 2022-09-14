@@ -7,4 +7,5 @@
 - Options to serve custom http_error page.
 - Prometheus metrics
 - Documentation
+- Client certificate
 - etc.
