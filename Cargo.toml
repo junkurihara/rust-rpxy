@@ -16,9 +16,9 @@ default = ["http3"]
 http3 = ["quinn", "h3", "h3-quinn"]
 
 [dependencies]
-env_logger = "0.9.0"
-anyhow = "1.0.64"
-clap = { version = "3.2.20", features = ["std", "cargo", "wrap_help"] }
+env_logger = "0.9.1"
+anyhow = "1.0.65"
+clap = { version = "3.2.22", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.24", features = ["alloc", "async-await"] }
 hyper = { version = "0.14.20", default-features = false, features = [
   "server",
@@ -27,7 +27,7 @@ hyper = { version = "0.14.20", default-features = false, features = [
   "stream",
 ] }
 log = "0.4.17"
-tokio = { version = "1.21.0", default-features = false, features = [
+tokio = { version = "1.21.1", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "parking_lot",
@@ -52,7 +52,7 @@ bytes = "1.2.1"
 quinn = { version = "0.8.5", optional = true }
 h3 = { path = "./h3/h3/", optional = true }
 h3-quinn = { path = "./h3/h3-quinn/", optional = true }
-thiserror = "1.0.34"
+thiserror = "1.0.35"
 
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
