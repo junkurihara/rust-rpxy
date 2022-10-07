@@ -7,5 +7,5 @@
 - Options to serve custom http_error page.
 - Prometheus metrics
 - Documentation
-- Client certificate
+- Client certificate -> support intermediate certificate. Currently, only supports client certificates directly signed by root CA.
 - etc.

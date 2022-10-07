@@ -47,6 +47,7 @@ pub struct TlsOption {
   pub tls_cert_path: Option<String>,
   pub tls_cert_key_path: Option<String>,
   pub https_redirection: Option<bool>,
+  pub client_ca_cert_path: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]

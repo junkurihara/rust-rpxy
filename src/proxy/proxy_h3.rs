@@ -1,9 +1,9 @@
-use super::Proxy;
-use crate::{error::*, log::*, utils::ServerNameBytesExp};
+use super::{proxy_client_cert::check_client_authentication, Proxy};
+use crate::{backend::SniKeyIdsMap, error::*, log::*, utils::ServerNameBytesExp};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, Request, Response};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::time::{timeout, Duration};
 
 impl<T> Proxy<T>
@@ -14,11 +14,28 @@ where
     self,
     conn: quinn::Connecting,
     tls_server_name: ServerNameBytesExp,
+    sni_cc_map: Arc<SniKeyIdsMap>,
   ) -> Result<()> {
     let client_addr = conn.remote_address();
 
     match conn.await {
       Ok(new_conn) => {
+        // Check client certificates
+        // TODO: consider move this function to the layer of handle_request (L7) to return 403
+        let cc = {
+          // https://docs.rs/quinn/latest/quinn/struct.Connection.html
+          let client_certs_setting_for_sni = sni_cc_map.get(&tls_server_name);
+          let client_certs = match new_conn.connection.peer_identity() {
+            Some(peer_identity) => peer_identity
+              .downcast::<Vec<rustls::Certificate>>()
+              .ok()
+              .map(|p| p.into_iter().collect::<Vec<_>>()),
+            None => None,
+          };
+          (client_certs, client_certs_setting_for_sni)
+        };
+        check_client_authentication(cc.0.as_ref().map(AsRef::as_ref), cc.1)?;
+
         let mut h3_conn = h3::server::Connection::<_, bytes::Bytes>::new(h3_quinn::Connection::new(new_conn)).await?;
         info!(
           "QUIC/HTTP3 connection established from {:?} {:?}",

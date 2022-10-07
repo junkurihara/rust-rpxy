@@ -20,7 +20,7 @@ impl PathNameBytesExp {
   where
     I: std::slice::SliceIndex<[u8]>,
   {
-    (&self.0).get(index)
+    self.0.get(index)
   }
   pub fn starts_with(&self, needle: &Self) -> bool {
     self.0.starts_with(&needle.0)

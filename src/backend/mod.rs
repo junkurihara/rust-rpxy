@@ -5,7 +5,8 @@ use crate::{
   log::*,
   utils::{BytesName, PathNameBytesExp, ServerNameBytesExp},
 };
-use rustc_hash::FxHashMap as HashMap;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use rustls::OwnedTrustAnchor;
 use std::{
   fs::File,
   io::{self, BufReader, Cursor, Read},
@@ -19,6 +20,7 @@ use tokio_rustls::rustls::{
 };
 pub use upstream::{ReverseProxy, Upstream, UpstreamGroup};
 pub use upstream_opts::UpstreamOption;
+use x509_parser::prelude::*;
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
 pub struct Backend {
@@ -30,6 +32,7 @@ pub struct Backend {
   pub tls_cert_path: Option<PathBuf>,
   pub tls_cert_key_path: Option<PathBuf>,
   pub https_redirection: Option<bool>,
+  pub client_ca_cert_path: Option<PathBuf>,
 }
 
 impl Backend {
@@ -105,6 +108,66 @@ impl Backend {
       })?;
     Ok(CertifiedKey::new(certs, signing_key))
   }
+
+  fn read_client_ca_certs(&self) -> io::Result<(Vec<OwnedTrustAnchor>, HashSet<Vec<u8>>)> {
+    debug!("Read CA certificate for client authentication");
+    // Reads client certificate and returns client
+    let client_ca_cert_path = {
+      if let Some(c) = self.client_ca_cert_path.as_ref() {
+        c
+      } else {
+        return Err(io::Error::new(io::ErrorKind::Other, "Invalid certs and keys paths"));
+      }
+    };
+    let certs: Vec<_> = {
+      let certs_path_str = client_ca_cert_path.display().to_string();
+      let mut reader = BufReader::new(File::open(client_ca_cert_path).map_err(|e| {
+        io::Error::new(
+          e.kind(),
+          format!("Unable to load the client certificates [{}]: {}", certs_path_str, e),
+        )
+      })?);
+      rustls_pemfile::certs(&mut reader)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the client certificates"))?
+    }
+    .drain(..)
+    .map(Certificate)
+    .collect();
+
+    let owned_trust_anchors: Vec<_> = certs
+      .iter()
+      .map(|v| {
+        let trust_anchor = tokio_rustls::webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
+        rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+          trust_anchor.subject,
+          trust_anchor.spki,
+          trust_anchor.name_constraints,
+        )
+      })
+      .collect();
+
+    let subject_key_identifiers: HashSet<_> = certs
+      .iter()
+      .filter_map(|v| {
+        // retrieve ca key id (subject key id)
+        let cert = parse_x509_certificate(&v.0).unwrap().1;
+        let subject_key_ids = cert
+          .iter_extensions()
+          .filter_map(|ext| match ext.parsed_extension() {
+            ParsedExtension::SubjectKeyIdentifier(skid) => Some(skid),
+            _ => None,
+          })
+          .collect::<Vec<_>>();
+        if !subject_key_ids.is_empty() {
+          Some(subject_key_ids[0].0.to_owned())
+        } else {
+          None
+        }
+      })
+      .collect();
+
+    Ok((owned_trust_anchors, subject_key_identifiers))
+  }
 }
 
 /// HashMap and some meta information for multiple Backend structs.
@@ -113,12 +176,20 @@ pub struct Backends {
   pub default_server_name_bytes: Option<ServerNameBytesExp>, // for plaintext http
 }
 
+pub type SniKeyIdsMap = HashMap<ServerNameBytesExp, HashSet<Vec<u8>>>;
+pub struct ServerCrypto {
+  pub inner: Arc<ServerConfig>,
+  pub server_name_client_ca_keyids_map: Arc<SniKeyIdsMap>,
+}
+
 impl Backends {
-  pub async fn generate_server_crypto_with_cert_resolver(&self) -> Result<ServerConfig, anyhow::Error> {
+  pub async fn generate_server_crypto_with_cert_resolver(&self) -> Result<ServerCrypto, anyhow::Error> {
     let mut resolver = ResolvesServerCertUsingSni::new();
+    let mut client_ca_roots = rustls::RootCertStore::empty();
+    let mut client_ca_key_ids: SniKeyIdsMap = HashMap::default();
 
     // let mut cnt = 0;
-    for (_, backend) in self.apps.iter() {
+    for (server_name_bytes_exp, backend) in self.apps.iter() {
       if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
         match backend.read_certs_and_key() {
           Ok(certified_key) => {
@@ -137,14 +208,40 @@ impl Backends {
             warn!("Failed to add certificate for {}: {}", backend.server_name.as_str(), e);
           }
         }
+        // add client certificate if specified
+        if backend.client_ca_cert_path.is_some() {
+          match backend.read_client_ca_certs() {
+            Ok((owned_trust_anchors, subject_key_ids)) => {
+              // TODO: ここでSubject Key ID (CA Key ID)を記録しておく。認証後にpeer certificateのauthority key idとの一貫性をチェック。
+              // v3 x509前提で特定のkey id extが入ってなければ使えない前提
+              client_ca_roots.add_server_trust_anchors(owned_trust_anchors.into_iter());
+              client_ca_key_ids.insert(server_name_bytes_exp.to_owned(), subject_key_ids);
+            }
+            Err(e) => {
+              warn!(
+                "Failed to add client ca certificate for {}: {}",
+                backend.server_name.as_str(),
+                e
+              );
+            }
+          }
+        }
       }
     }
     // debug!("Load certificate chain for {} server_name's", cnt);
 
+    //////////////
+    // TODO: Client Certs
+    let client_certs_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(client_ca_roots);
+    // No ClientCert or WithClientCert
+    // let client_certs_verifier = rustls::server::AllowAnyAuthenticatedClient::new(client_ca_roots);
+
     let mut server_config = ServerConfig::builder()
       .with_safe_defaults()
-      .with_no_client_auth()
+      // .with_no_client_auth()
+      .with_client_cert_verifier(client_certs_verifier)
       .with_cert_resolver(Arc::new(resolver));
+    //////////////////////////////
 
     #[cfg(feature = "http3")]
     {
@@ -160,6 +257,9 @@ impl Backends {
       server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     }
 
-    Ok(server_config)
+    Ok(ServerCrypto {
+      inner: Arc::new(server_config),
+      server_name_client_ca_keyids_map: Arc::new(client_ca_key_ids),
+    })
   }
 }

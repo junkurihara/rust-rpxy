@@ -1,0 +1,4 @@
+authorityKeyIdentifier=keyid:always
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+
