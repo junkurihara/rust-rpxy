@@ -110,7 +110,7 @@ impl Backend {
   }
 
   fn read_client_ca_certs(&self) -> io::Result<(Vec<OwnedTrustAnchor>, HashSet<Vec<u8>>)> {
-    debug!("Read CA certificate for client authentication");
+    debug!("Read CA certificates for client authentication");
     // Reads client certificate and returns client
     let client_ca_cert_path = {
       if let Some(c) = self.client_ca_cert_path.as_ref() {
