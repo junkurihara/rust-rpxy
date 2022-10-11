@@ -88,7 +88,6 @@ where
             debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", server_name);
             let server_name = server_name.map_or_else(|| None, |v| Some(v.to_server_name_vec()));
             if server_name.is_none(){
-              // conn.send_close_notify();
               Err(RpxyError::Proxy("No SNI is given".to_string()))
             } else {
               //////////////////////////////
@@ -97,10 +96,6 @@ where
               let client_certs = conn.peer_certificates();
               let client_certs_setting_for_sni = sni_cc_map.get(&server_name.clone().unwrap());
               check_client_authentication(client_certs, client_certs_setting_for_sni)?;
-              // if let Err(e) = check_client_authentication(client_certs, client_certs_setting_for_sni){
-              //   conn.send_close_notify();
-              //   return Err(e);
-              // }
               //////////////////////////////
               // this immediately spawns another future to actually handle stream. so it is okay to introduce timeout for handshake.
               self_inner.client_serve(stream, server_clone, client_addr, server_name); // TODO: don't want to pass copied value...
@@ -109,7 +104,6 @@ where
           };
           self.globals.runtime_handle.spawn( async move {
             if let Err(e) = handshake_fut.await {
-
               error!("{}", e);
             }
           });
