@@ -46,9 +46,9 @@ pub(super) fn check_client_authentication(
 
   if !match_server_crypto_and_client_cert {
     // TODO: return 403 here
-    error!("Inconsistent client certificate for given server name");
+    error!("Inconsistent client certificate was provided for SNI");
     return Err(RpxyError::Proxy(
-      "Inconsistent client certificate for given server name".to_string(),
+      "Inconsistent client certificate was provided for SNI".to_string(),
     ));
   }
 
