@@ -235,7 +235,7 @@ If you obtain certificates and private keys from [Let's Encrypt](https://letsenc
 The easiest way is to use `openssl` by
 
 ```bash
-$ openssl pkcs8 -topk8 -nocrypt \
+% openssl pkcs8 -topk8 -nocrypt \
     -in yoru_domain_from_le.key \
     -inform PEM \
     -out your_domain_pkcs8.key.pem \
@@ -249,9 +249,9 @@ First, you need to prepare a CA certificate used to verify client certificate. I
 1. Generate CA key of `secp256v1`, CSR, and then generate CA certificate that will be set for `tls.client_ca_cert_path` for each server app in `config.toml`.
 
   ```bash
-  $ openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out client.ca.key
+  % openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out client.ca.key
 
-  $ openssl req -new -key client.ca.key -out client.ca.csr
+  % openssl req -new -key client.ca.key -out client.ca.csr
   ...
   -----
   Country Name (2 letter code) []: ...
@@ -262,15 +262,15 @@ First, you need to prepare a CA certificate used to verify client certificate. I
   Common Name (eg, fully qualified host name) []: <Should not input CN>
   Email Address []: ...
 
-  $ openssl x509 -req -days 3650 -sha256 -in client.ca.csr -signkey client.ca.key -out client.ca.crt -extfile client.ca.ext
+  % openssl x509 -req -days 3650 -sha256 -in client.ca.csr -signkey client.ca.key -out client.ca.crt -extfile client.ca.ext
   ```
 
 2. Generate a client key of `secp256v1` and certificate signed by CA key.
 
   ```bash
-  $ openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out client.key
+  % openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out client.key
 
-  $ openssl req -new -key client.key -out client.csr
+  % openssl req -new -key client.key -out client.csr
   ...
   -----
   Country Name (2 letter code) []:
@@ -281,13 +281,13 @@ First, you need to prepare a CA certificate used to verify client certificate. I
   Common Name (eg, fully qualified host name) []: <Should not input CN>
   Email Address []:
 
-  $ openssl x509 -req -days 365 -sha256 -in client.csr -CA client.ca.crt -CAkey client.ca.key -CAcreateserial -out client.crt -extfile client.ext
+  % openssl x509 -req -days 365 -sha256 -in client.csr -CA client.ca.crt -CAkey client.ca.key -CAcreateserial -out client.crt -extfile client.ext
   ```
 
   Now you have a client key `client.key` and certificate `client.crt` (version 3). `p12` file can be retrieved as
 
   ```bash
-  $ openssl pkcs12 -export -inkey client.key -in client.crt -certfile client.ca.crt -out client.pfx
+  % openssl pkcs12 -export -inkey client.key -in client.crt -certfile client.ca.crt -out client.pfx
   ```
 
   All of sample certificate files are found in `./example-certs/` directory.
