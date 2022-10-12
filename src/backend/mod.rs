@@ -231,16 +231,22 @@ impl Backends {
     // debug!("Load certificate chain for {} server_name's", cnt);
 
     //////////////
-    // TODO: Client Certs
-    let client_certs_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(client_ca_roots);
-    // No ClientCert or WithClientCert
-    // let client_certs_verifier = rustls::server::AllowAnyAuthenticatedClient::new(client_ca_roots);
+    let mut server_config = if client_ca_key_ids.is_empty() {
+      ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_cert_resolver(Arc::new(resolver))
+    } else {
+      // TODO: Client Certs
+      // No ClientCert or WithClientCert
+      // let client_certs_verifier = rustls::server::AllowAnyAuthenticatedClient::new(client_ca_roots);
+      let client_certs_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(client_ca_roots);
+      ServerConfig::builder()
+        .with_safe_defaults()
+        .with_client_cert_verifier(client_certs_verifier)
+        .with_cert_resolver(Arc::new(resolver))
+    };
 
-    let mut server_config = ServerConfig::builder()
-      .with_safe_defaults()
-      // .with_no_client_auth()
-      .with_client_cert_verifier(client_certs_verifier)
-      .with_cert_resolver(Arc::new(resolver));
     //////////////////////////////
 
     #[cfg(feature = "http3")]

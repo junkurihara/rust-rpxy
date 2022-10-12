@@ -7,5 +7,7 @@
 - Options to serve custom http_error page.
 - Prometheus metrics
 - Documentation
-- Client certificate -> support intermediate certificate. Currently, only supports client certificates directly signed by root CA.
+- Client certificate
+  - support intermediate certificate. Currently, only supports client certificates directly signed by root CA.
+  - split rustls::server::ServerConfig for SNIs
 - etc.
