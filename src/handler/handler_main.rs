@@ -35,11 +35,26 @@ where
     listen_addr: SocketAddr,
     tls_enabled: bool,
     tls_server_name: Option<ServerNameBytesExp>,
+    tls_client_auth_result: Option<std::result::Result<(), ClientCertsError>>,
   ) -> Result<Response<Body>> {
     ////////
     let mut log_data = MessageLog::from(&req);
     log_data.client_addr(&client_addr);
     //////
+    // First check client auth result if exist
+    if let Some(res) = tls_client_auth_result {
+      match res {
+        Err(ClientCertsError::ClientCertRequired(_)) => {
+          // Client cert is required for the TLS server name
+          return self.return_with_error_log(StatusCode::FORBIDDEN, &mut log_data);
+        }
+        Err(ClientCertsError::InconsistentClientCert(_)) => {
+          // Client cert provided was inconsistent to the TLS server name
+          return self.return_with_error_log(StatusCode::BAD_REQUEST, &mut log_data);
+        }
+        _ => (),
+      }
+    }
 
     // Here we start to handle with server_name
     let server_name = if let Ok(v) = req.parse_host() {

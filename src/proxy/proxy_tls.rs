@@ -92,13 +92,14 @@ where
             } else {
               //////////////////////////////
               // Check client certificate
-              // TODO: consider move this function to the layer of handle_request (L7) to return 403
               let client_certs = conn.peer_certificates();
-              let client_certs_setting_for_sni = sni_cc_map.get(&server_name.clone().unwrap());
-              check_client_authentication(client_certs, client_certs_setting_for_sni)?;
+              let client_ca_keyids_set_for_sni = sni_cc_map.get(&server_name.clone().unwrap());
+               // TODO: pass this value to the layer of handle_request (L7) to return 403
+              let client_certs_auth_result = check_client_authentication(client_certs, client_ca_keyids_set_for_sni);
               //////////////////////////////
               // this immediately spawns another future to actually handle stream. so it is okay to introduce timeout for handshake.
-              self_inner.client_serve(stream, server_clone, client_addr, server_name); // TODO: don't want to pass copied value...
+              // TODO: don't want to pass copied value...
+              self_inner.client_serve(stream, server_clone, client_addr, server_name, Some(client_certs_auth_result));
               Ok(())
             }
           };

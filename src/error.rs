@@ -43,3 +43,12 @@ pub enum RpxyError {
   #[error(transparent)]
   Other(#[from] anyhow::Error),
 }
+
+#[derive(Debug, Error, Clone)]
+pub enum ClientCertsError {
+  #[error("TLS Client Certificate is Required for Given SNI: {0}")]
+  ClientCertRequired(String),
+
+  #[error("Inconsistent TLS Client Certificate for Given SNI: {0}")]
+  InconsistentClientCert(String),
+}

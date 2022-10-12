@@ -7,9 +7,9 @@ use x509_parser::prelude::*;
 // TODO: consider move this function to the layer of handle_request (L7) to return 403
 pub(super) fn check_client_authentication(
   client_certs: Option<&[Certificate]>,
-  client_certs_setting_for_sni: Option<&HashSet<Vec<u8>>>,
-) -> Result<()> {
-  let client_ca_keyids_set = match client_certs_setting_for_sni {
+  client_ca_keyids_set_for_sni: Option<&HashSet<Vec<u8>>>,
+) -> std::result::Result<(), ClientCertsError> {
+  let client_ca_keyids_set = match client_ca_keyids_set_for_sni {
     Some(c) => c,
     None => {
       // No client cert settings for given server name
@@ -23,9 +23,8 @@ pub(super) fn check_client_authentication(
       c
     }
     None => {
-      // TODO: return 403 here
       error!("Client certificate is needed for given server name");
-      return Err(RpxyError::Proxy(
+      return Err(ClientCertsError::ClientCertRequired(
         "Client certificate is needed for given server name".to_string(),
       ));
     }
@@ -45,9 +44,8 @@ pub(super) fn check_client_authentication(
   });
 
   if !match_server_crypto_and_client_cert {
-    // TODO: return 403 here
     error!("Inconsistent client certificate was provided for SNI");
-    return Err(RpxyError::Proxy(
+    return Err(ClientCertsError::InconsistentClientCert(
       "Inconsistent client certificate was provided for SNI".to_string(),
     ));
   }

@@ -21,7 +21,6 @@ where
     match conn.await {
       Ok(new_conn) => {
         // Check client certificates
-        // TODO: consider move this function to the layer of handle_request (L7) to return 403
         let cc = {
           // https://docs.rs/quinn/latest/quinn/struct.Connection.html
           let client_certs_setting_for_sni = sni_cc_map.get(&tls_server_name);
@@ -34,7 +33,8 @@ where
           };
           (client_certs, client_certs_setting_for_sni)
         };
-        check_client_authentication(cc.0.as_ref().map(AsRef::as_ref), cc.1)?;
+        // TODO: pass this value to the layer of handle_request (L7) to return 403
+        let tls_client_auth_result = check_client_authentication(cc.0.as_ref().map(AsRef::as_ref), cc.1);
 
         let mut h3_conn = h3::server::Connection::<_, bytes::Bytes>::new(h3_quinn::Connection::new(new_conn)).await?;
         info!(
@@ -61,10 +61,17 @@ where
 
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
+          let tls_client_auth_result_inner = tls_client_auth_result.clone();
           self.globals.runtime_handle.spawn(async move {
             if let Err(e) = timeout(
               self_inner.globals.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
-              self_inner.stream_serve_h3(req, stream, client_addr, tls_server_name_inner),
+              self_inner.stream_serve_h3(
+                req,
+                stream,
+                client_addr,
+                tls_server_name_inner,
+                tls_client_auth_result_inner,
+              ),
             )
             .await
             {
@@ -90,6 +97,7 @@ where
     stream: RequestStream<S, Bytes>,
     client_addr: SocketAddr,
     tls_server_name: ServerNameBytesExp,
+    tls_client_auth_result: std::result::Result<(), ClientCertsError>,
   ) -> Result<()>
   where
     S: BidiStream<Bytes> + Send + 'static,
@@ -141,6 +149,7 @@ where
         self.listening_on,
         self.tls_enabled,
         Some(tls_server_name),
+        Some(tls_client_auth_result),
       )
       .await?;
 
