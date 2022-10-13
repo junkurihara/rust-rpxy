@@ -18,12 +18,12 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
     Arg::new("config_file")
       .long("config")
       .short('c')
-      .takes_value(true)
+      .value_name("FILE")
       .help("Configuration file path like \"./config.toml\""),
   );
   let matches = options.get_matches();
 
-  let config = if let Some(config_file_path) = matches.value_of("config_file") {
+  let config = if let Some(config_file_path) = matches.get_one::<String>("config_file") {
     ConfigToml::new(config_file_path)?
   } else {
     // Default config Toml
