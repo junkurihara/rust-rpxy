@@ -1,6 +1,12 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
 use super::{utils_headers::*, utils_request::*, utils_synth_response::*};
-use crate::{backend::UpstreamGroup, error::*, globals::Globals, log::*, utils::ServerNameBytesExp};
+use crate::{
+  backend::{Backend, UpstreamGroup},
+  error::*,
+  globals::Globals,
+  log::*,
+  utils::ServerNameBytesExp,
+};
 use hyper::{
   client::connect::Connect,
   header::{self, HeaderValue},
@@ -118,7 +124,7 @@ where
 
     if res_backend.status() != StatusCode::SWITCHING_PROTOCOLS {
       // Generate response to client
-      if self.generate_response_forwarded(&mut res_backend).is_ok() {
+      if self.generate_response_forwarded(&mut res_backend, backend).is_ok() {
         log_data.status_code(&res_backend.status()).output();
         return Ok(res_backend);
       } else {
@@ -176,7 +182,11 @@ where
   ////////////////////////////////////////////////////
   // Functions to generate messages
 
-  fn generate_response_forwarded<B: core::fmt::Debug>(&self, response: &mut Response<B>) -> Result<()> {
+  fn generate_response_forwarded<B: core::fmt::Debug>(
+    &self,
+    response: &mut Response<B>,
+    chosen_backend: &Backend,
+  ) -> Result<()> {
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
@@ -184,7 +194,8 @@ where
 
     #[cfg(feature = "http3")]
     {
-      if self.globals.http3 {
+      // TODO: Workaround for avoid h3 for client authentication
+      if self.globals.http3 && chosen_backend.client_ca_cert_path.is_none() {
         if let Some(port) = self.globals.https_port {
           add_header_entry_overwrite_if_exist(
             headers,
@@ -195,6 +206,15 @@ where
             ),
           )?;
         }
+      } else {
+        // remove alt-svc to disallow requests via http3
+        headers.remove(header::ALT_SVC.as_str());
+      }
+    }
+    #[cfg(not(feature = "http3"))]
+    {
+      if let Some(port) = self.globals.https_port {
+        headers.remove(header::ALT_SVC.as_str());
       }
     }
 

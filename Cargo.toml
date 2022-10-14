@@ -1,6 +1,6 @@
 [package]
 name = "rpxy"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -18,7 +18,7 @@ http3 = ["quinn", "h3", "h3-quinn"]
 [dependencies]
 env_logger = "0.9.1"
 anyhow = "1.0.65"
-clap = { version = "4.0.14", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.0.15", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.24", features = ["alloc", "async-await"] }
 hyper = { version = "0.14.20", default-features = false, features = [
   "server",
@@ -53,6 +53,7 @@ quinn = { version = "0.8.5", optional = true }
 h3 = { path = "./h3/h3/", optional = true }
 h3-quinn = { path = "./h3/h3-quinn/", optional = true }
 thiserror = "1.0.37"
+x509-parser = "0.14.0"
 
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]

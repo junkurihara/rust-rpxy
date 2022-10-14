@@ -93,9 +93,9 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
     let server_name_string = app.server_name.as_ref().unwrap();
 
     // TLS settings
-    let (tls_cert_path, tls_cert_key_path, https_redirection) = if app.tls.is_none() {
+    let (tls_cert_path, tls_cert_key_path, https_redirection, client_ca_cert_path) = if app.tls.is_none() {
       ensure!(globals.http_port.is_some(), "Required HTTP port");
-      (None, None, None)
+      (None, None, None, None)
     } else {
       let tls = app.tls.as_ref().unwrap();
       ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
@@ -109,6 +109,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
           ensure!(globals.https_port.is_some()); // only when both https ports are configured.
           tls.https_redirection
         },
+        tls.client_ca_cert_path.as_ref().map(PathBuf::from),
       )
     };
     if globals.http_port.is_none() {
@@ -130,6 +131,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
         tls_cert_path,
         tls_cert_key_path,
         https_redirection,
+        client_ca_cert_path,
       },
     );
     info!("Registering application: {} ({})", app_name, server_name_string);

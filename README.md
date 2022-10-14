@@ -128,7 +128,7 @@ listen_port_tls = 443
 
 [apps."app_name"]
 server_name = 'app1.example.com'
-tls = { tls_cert_path = 'localhost.crt',  tls_cert_key_path = 'localhost.key' }
+tls = { tls_cert_path = 'server.crt',  tls_cert_key_path = 'server.key' }
 reverse_proxy = [{ upstream = [{ location = 'app1.local:8080' }] }]
 ```
 
@@ -141,7 +141,7 @@ We should note that the private key specified by `tls_cert_key_path` must be *in
 In the current Web, we believe it is common to serve everything through HTTPS rather than HTTP, and hence *https redirection* is often used for HTTP requests. When you specify both `listen_port` and `listen_port_tls`, you can enable an option of such  redirection by making `https_redirection` true.
 
 ```toml
-tls = { https_redirection = true, tls_cert_path = 'localhost.crt', tls_cert_key_path = 'localhost.key' }
+tls = { https_redirection = true, tls_cert_path = 'server.crt', tls_cert_key_path = 'server.key' }
 ```
 
 If it is true, `rpxy` returns the status code `301` to the cleartext request with new location `https://<requested_host>/<requested_query_and_path>` served over TLS.
@@ -155,7 +155,7 @@ listen_port_tls = 443
 
 [apps.app1]
 server_name = 'app1.example.com'
-tls = { https_redirection = true, tls_cert_path = 'localhost.crt', tls_cert_key_path = 'localhost.key' }
+tls = { https_redirection = true, tls_cert_path = 'server.crt', tls_cert_key_path = 'server.key' }
 
 [[apps.app1.reverse_proxy]]
 upstream = [
@@ -226,6 +226,33 @@ Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml`
 
 [`./bench`](./bench/) directory could be a very simple example of configuration of `rpxy`. This can also be an example of an example of docker use case.
 
+## Experimental Features and Caveats
+
+### HTTP/3
+
+`rpxy` can serves HTTP/3 requests thanks to `quinn` and `hyperium/h3`. To enable this experimental feature, add an entry `experimental.h3` in your `config.toml` like follows. Any values in the entry like `alt_svc_max_age` are optional.
+
+```toml
+[experimental.h3]
+alt_svc_max_age = 3600
+request_max_body_size = 65536
+max_concurrent_connections = 10000
+max_concurrent_bidistream = 100
+max_concurrent_unistream = 100
+```
+
+### Client Authentication via Client Certificates
+
+Client authentication is enabled when `apps."app_name".tls.client_ca_cert_path` is set for the domain specified by `"app_name"` like
+
+```toml
+[apps.localhost]
+server_name = 'localhost' # Domain name
+tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_path = './server.key', client_ca_cert_path = './client_cert.ca.crt' }
+```
+
+ However, currently we have a limitation on HTTP/3 support for applications that enables client authentication. If an application is set with client authentication, HTTP/3 doesn't work for the application.
+
 ## TIPS
 
 ### Using Private Key Issued by Let's Encrypt
@@ -235,12 +262,64 @@ If you obtain certificates and private keys from [Let's Encrypt](https://letsenc
 The easiest way is to use `openssl` by
 
 ```bash
-openssl pkcs8 -topk8 -nocrypt \
+% openssl pkcs8 -topk8 -nocrypt \
     -in yoru_domain_from_le.key \
     -inform PEM \
     -out your_domain_pkcs8.key.pem \
     -outform PEM
 ```
+
+### Client Authentication using Client Certificate Signed by Your Own Root CA
+
+First, you need to prepare a CA certificate used to verify client certificate. If you do not have one, you can generate CA key and certificate by OpenSSL commands as follows. *Note that `rustls` accepts X509v3 certificates and reject SHA-1, and that `rpxy` relys on Version 3 extension fields of `KeyID`s of `Subject Key Identifier` and `Authority Key Identifier`.*
+
+1. Generate CA key of `secp256v1`, CSR, and then generate CA certificate that will be set for `tls.client_ca_cert_path` for each server app in `config.toml`.
+
+  ```bash
+  % openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out client.ca.key
+
+  % openssl req -new -key client.ca.key -out client.ca.csr
+  ...
+  -----
+  Country Name (2 letter code) []: ...
+  State or Province Name (full name) []: ...
+  Locality Name (eg, city) []: ...
+  Organization Name (eg, company) []: ...
+  Organizational Unit Name (eg, section) []: ...
+  Common Name (eg, fully qualified host name) []: <Should not input CN>
+  Email Address []: ...
+
+  % openssl x509 -req -days 3650 -sha256 -in client.ca.csr -signkey client.ca.key -out client.ca.crt -extfile client.ca.ext
+  ```
+
+2. Generate a client key of `secp256v1` and certificate signed by CA key.
+
+  ```bash
+  % openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out client.key
+
+  % openssl req -new -key client.key -out client.csr
+  ...
+  -----
+  Country Name (2 letter code) []:
+  State or Province Name (full name) []:
+  Locality Name (eg, city) []:
+  Organization Name (eg, company) []:
+  Organizational Unit Name (eg, section) []:
+  Common Name (eg, fully qualified host name) []: <Should not input CN>
+  Email Address []:
+
+  % openssl x509 -req -days 365 -sha256 -in client.csr -CA client.ca.crt -CAkey client.ca.key -CAcreateserial -out client.crt -extfile client.ext
+  ```
+
+  Now you have a client key `client.key` and certificate `client.crt` (version 3). `pfx` (`p12`) file can be retrieved as
+
+  ```bash
+  % openssl pkcs12 -export -inkey client.key -in client.crt -certfile client.ca.crt -out client.pfx
+  ```
+
+  Note that on MacOS, a `pfx` generated by `OpenSSL 3.0.6` cannot be imported to MacOS KeyChain Access. We generated the sample `pfx` using `LibreSSL 2.8.3` instead `OpenSSL`.
+
+  All of sample certificate files are found in `./example-certs/` directory.
 
 ### (Work Around) Deployment on Ubuntu 22.04LTS using docker behind `ufw`
 

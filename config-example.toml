@@ -37,8 +37,9 @@ default_app = 'another_localhost'
 server_name = 'localhost' # Domain name
 
 # Optional: TLS setting. if https_port is specified and tls is true above, this must be given.
-tls = { https_redirection = true, tls_cert_path = '/certs/localhost.crt', tls_cert_key_path = '/certs/localhost.key' } # for docker volume mounted certs
-#tls = { https_redirection = true, tls_cert_path = './localhost.crt', tls_cert_key_path = './localhost.key' }          # for local
+tls = { https_redirection = true, tls_cert_path = '/certs/server.crt', tls_cert_key_path = '/certs/server.key' } # for docker volume mounted certs
+#tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_path = './server.key' }          # for local
+#tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_path = './server.key', client_ca_cert_path = './client_cert.ca.crt' }          # for local with client_cert
 
 ## TODO
 # allowhosts = ['127.0.0.1', '::1', '192.168.10.0/24'] # TODO
