@@ -51,7 +51,6 @@ where
     server: Http<LocalExecutor>,
     peer_addr: SocketAddr,
     tls_server_name: Option<ServerNameBytesExp>,
-    tls_client_auth_result: Option<std::result::Result<(), ClientCertsError>>,
   ) where
     I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
   {
@@ -75,7 +74,6 @@ where
                 self.listening_on,
                 self.tls_enabled,
                 tls_server_name.clone(),
-                tls_client_auth_result.clone(),
               )
             }),
           )
@@ -94,9 +92,7 @@ where
       let tcp_listener = TcpListener::bind(&self.listening_on).await?;
       info!("Start TCP proxy serving with HTTP request for configured host names");
       while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
-        self
-          .clone()
-          .client_serve(stream, server.clone(), _client_addr, None, None);
+        self.clone().client_serve(stream, server.clone(), _client_addr, None);
       }
       Ok(()) as Result<()>
     };

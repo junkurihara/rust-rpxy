@@ -6,7 +6,7 @@ use crate::{
   utils::{BytesName, PathNameBytesExp, ServerNameBytesExp},
 };
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use rustls::OwnedTrustAnchor;
+use rustls::{OwnedTrustAnchor, RootCertStore};
 use std::{
   fs::File,
   io::{self, BufReader, Cursor, Read},
@@ -146,6 +146,7 @@ impl Backend {
       })
       .collect();
 
+    // TODO: SKID is not used currently
     let subject_key_identifiers: HashSet<_> = certs
       .iter()
       .filter_map(|v| {
@@ -176,54 +177,87 @@ pub struct Backends {
   pub default_server_name_bytes: Option<ServerNameBytesExp>, // for plaintext http
 }
 
-pub type SniKeyIdsMap = HashMap<ServerNameBytesExp, HashSet<Vec<u8>>>;
+pub type SniServerCryptoMap = HashMap<ServerNameBytesExp, Arc<ServerConfig>>;
 pub struct ServerCrypto {
-  pub inner: Arc<ServerConfig>,
-  pub server_name_client_ca_keyids_map: Arc<SniKeyIdsMap>,
+  // For Quic/HTTP3, only servers with no client authentication
+  pub inner_global_no_client_auth: Arc<ServerConfig>,
+  // For TLS over TCP/HTTP2 and 1.1, map of SNI to server_crypto for all given servers
+  pub inner_local_map: Arc<SniServerCryptoMap>,
 }
 
 impl Backends {
-  pub async fn generate_server_crypto_with_cert_resolver(&self) -> Result<ServerCrypto, anyhow::Error> {
-    let mut resolver = ResolvesServerCertUsingSni::new();
-    let mut client_ca_roots = rustls::RootCertStore::empty();
-    let mut client_ca_key_ids: SniKeyIdsMap = HashMap::default();
+  pub async fn generate_server_crypto(&self) -> Result<ServerCrypto, anyhow::Error> {
+    let mut resolver_global = ResolvesServerCertUsingSni::new();
+    let mut server_crypto_local_map: SniServerCryptoMap = HashMap::default();
 
-    // let mut cnt = 0;
     for (server_name_bytes_exp, backend) in self.apps.iter() {
       if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
         match backend.read_certs_and_key() {
           Ok(certified_key) => {
-            if let Err(e) = resolver.add(backend.server_name.as_str(), certified_key) {
+            let mut resolver_local = ResolvesServerCertUsingSni::new();
+            let mut client_ca_roots_local = RootCertStore::empty();
+
+            // add server certificate and key
+            if let Err(e) = resolver_local.add(backend.server_name.as_str(), certified_key.to_owned()) {
               error!(
                 "{}: Failed to read some certificates and keys {}",
                 backend.server_name.as_str(),
                 e
               )
-            } else {
-              // debug!("Add certificate for server_name: {}", backend.server_name.as_str());
-              // cnt += 1;
             }
+
+            if backend.client_ca_cert_path.is_none() {
+              // aggregated server config for no client auth server for http3
+              if let Err(e) = resolver_global.add(backend.server_name.as_str(), certified_key) {
+                error!(
+                  "{}: Failed to read some certificates and keys {}",
+                  backend.server_name.as_str(),
+                  e
+                )
+              }
+            } else {
+              // add client certificate if specified
+              match backend.read_client_ca_certs() {
+                Ok((owned_trust_anchors, _subject_key_ids)) => {
+                  client_ca_roots_local.add_server_trust_anchors(owned_trust_anchors.into_iter());
+                }
+                Err(e) => {
+                  warn!(
+                    "Failed to add client CA certificate for {}: {}",
+                    backend.server_name.as_str(),
+                    e
+                  );
+                }
+              }
+            }
+
+            let mut server_config_local = if client_ca_roots_local.is_empty() {
+              // with no client auth, enable http1.1 -- 3
+              let mut sc = ServerConfig::builder()
+                .with_safe_defaults()
+                .with_no_client_auth()
+                .with_cert_resolver(Arc::new(resolver_local));
+              #[cfg(feature = "http3")]
+              {
+                sc.alpn_protocols = vec![b"h3".to_vec(), b"hq-29".to_vec()]; // TODO: remove hq-29 later?
+              }
+              sc
+            } else {
+              // with client auth, enable only http1.1 and 2
+              // let client_certs_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(client_ca_roots);
+              let client_certs_verifier = rustls::server::AllowAnyAuthenticatedClient::new(client_ca_roots_local);
+              ServerConfig::builder()
+                .with_safe_defaults()
+                .with_client_cert_verifier(client_certs_verifier)
+                .with_cert_resolver(Arc::new(resolver_local))
+            };
+            server_config_local.alpn_protocols.push(b"h2".to_vec());
+            server_config_local.alpn_protocols.push(b"http/1.1".to_vec());
+
+            server_crypto_local_map.insert(server_name_bytes_exp.to_owned(), Arc::new(server_config_local));
           }
           Err(e) => {
             warn!("Failed to add certificate for {}: {}", backend.server_name.as_str(), e);
-          }
-        }
-        // add client certificate if specified
-        if backend.client_ca_cert_path.is_some() {
-          match backend.read_client_ca_certs() {
-            Ok((owned_trust_anchors, subject_key_ids)) => {
-              // TODO: ここでSubject Key ID (CA Key ID)を記録しておく。認証後にpeer certificateのauthority key idとの一貫性をチェック。
-              // v3 x509前提で特定のkey id extが入ってなければ使えない前提
-              client_ca_roots.add_server_trust_anchors(owned_trust_anchors.into_iter());
-              client_ca_key_ids.insert(server_name_bytes_exp.to_owned(), subject_key_ids);
-            }
-            Err(e) => {
-              warn!(
-                "Failed to add client ca certificate for {}: {}",
-                backend.server_name.as_str(),
-                e
-              );
-            }
           }
         }
       }
@@ -231,27 +265,16 @@ impl Backends {
     // debug!("Load certificate chain for {} server_name's", cnt);
 
     //////////////
-    let mut server_config = if client_ca_key_ids.is_empty() {
-      ServerConfig::builder()
-        .with_safe_defaults()
-        .with_no_client_auth()
-        .with_cert_resolver(Arc::new(resolver))
-    } else {
-      // TODO: Client Certs
-      // No ClientCert or WithClientCert
-      // let client_certs_verifier = rustls::server::AllowAnyAuthenticatedClient::new(client_ca_roots);
-      let client_certs_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(client_ca_roots);
-      ServerConfig::builder()
-        .with_safe_defaults()
-        .with_client_cert_verifier(client_certs_verifier)
-        .with_cert_resolver(Arc::new(resolver))
-    };
+    let mut server_crypto_global = ServerConfig::builder()
+      .with_safe_defaults()
+      .with_no_client_auth()
+      .with_cert_resolver(Arc::new(resolver_global));
 
     //////////////////////////////
 
     #[cfg(feature = "http3")]
     {
-      server_config.alpn_protocols = vec![
+      server_crypto_global.alpn_protocols = vec![
         b"h3".to_vec(),
         b"hq-29".to_vec(), // TODO: remove later?
         b"h2".to_vec(),
@@ -264,8 +287,8 @@ impl Backends {
     }
 
     Ok(ServerCrypto {
-      inner: Arc::new(server_config),
-      server_name_client_ca_keyids_map: Arc::new(client_ca_key_ids),
+      inner_global_no_client_auth: Arc::new(server_crypto_global),
+      inner_local_map: Arc::new(server_crypto_local_map),
     })
   }
 }

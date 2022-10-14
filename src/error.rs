@@ -44,6 +44,7 @@ pub enum RpxyError {
   Other(#[from] anyhow::Error),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Error, Clone)]
 pub enum ClientCertsError {
   #[error("TLS Client Certificate is Required for Given SNI: {0}")]

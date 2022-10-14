@@ -4,6 +4,7 @@ use rustls::Certificate;
 use x509_parser::extensions::ParsedExtension;
 use x509_parser::prelude::*;
 
+#[allow(dead_code)]
 // TODO: consider move this function to the layer of handle_request (L7) to return 403
 pub(super) fn check_client_authentication(
   client_certs: Option<&[Certificate]>,

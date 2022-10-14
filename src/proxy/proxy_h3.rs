@@ -1,9 +1,9 @@
-use super::{proxy_client_cert::check_client_authentication, Proxy};
-use crate::{backend::SniKeyIdsMap, error::*, log::*, utils::ServerNameBytesExp};
+use super::Proxy;
+use crate::{error::*, log::*, utils::ServerNameBytesExp};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, Request, Response};
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 use tokio::time::{timeout, Duration};
 
 impl<T> Proxy<T>
@@ -14,28 +14,11 @@ where
     self,
     conn: quinn::Connecting,
     tls_server_name: ServerNameBytesExp,
-    sni_cc_map: Arc<SniKeyIdsMap>,
   ) -> Result<()> {
     let client_addr = conn.remote_address();
 
     match conn.await {
       Ok(new_conn) => {
-        // Check client certificates
-        let cc = {
-          // https://docs.rs/quinn/latest/quinn/struct.Connection.html
-          let client_certs_setting_for_sni = sni_cc_map.get(&tls_server_name);
-          let client_certs = match new_conn.connection.peer_identity() {
-            Some(peer_identity) => peer_identity
-              .downcast::<Vec<rustls::Certificate>>()
-              .ok()
-              .map(|p| p.into_iter().collect::<Vec<_>>()),
-            None => None,
-          };
-          (client_certs, client_certs_setting_for_sni)
-        };
-        // TODO: pass this value to the layer of handle_request (L7) to return 403
-        let tls_client_auth_result = check_client_authentication(cc.0.as_ref().map(AsRef::as_ref), cc.1);
-
         let mut h3_conn = h3::server::Connection::<_, bytes::Bytes>::new(h3_quinn::Connection::new(new_conn)).await?;
         info!(
           "QUIC/HTTP3 connection established from {:?} {:?}",
@@ -43,43 +26,46 @@ where
         );
         // TODO: Is here enough to fetch server_name from NewConnection?
         // to avoid deep nested call from listener_service_h3
-        while let Some((req, stream)) = match h3_conn.accept().await {
-          Ok(opt_req) => opt_req,
-          Err(e) => {
-            warn!("HTTP/3 failed to accept incoming connection: {}", e);
-            return Ok(h3_conn.shutdown(0).await?);
-          }
-        } {
-          // We consider the connection count separately from the stream count.
-          // Max clients for h1/h2 = max 'stream' for h3.
-          let request_count = self.globals.request_count.clone();
-          if request_count.increment() > self.globals.max_clients {
-            request_count.decrement();
-            return Ok(h3_conn.shutdown(0).await?);
-          }
-          debug!("Request incoming: current # {}", request_count.current());
-
-          let self_inner = self.clone();
-          let tls_server_name_inner = tls_server_name.clone();
-          let tls_client_auth_result_inner = tls_client_auth_result.clone();
-          self.globals.runtime_handle.spawn(async move {
-            if let Err(e) = timeout(
-              self_inner.globals.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
-              self_inner.stream_serve_h3(
-                req,
-                stream,
-                client_addr,
-                tls_server_name_inner,
-                tls_client_auth_result_inner,
-              ),
-            )
-            .await
-            {
-              error!("HTTP/3 failed to process stream: {}", e);
+        loop {
+          // this routine follows hyperium/h3 examples https://github.com/hyperium/h3/blob/master/examples/server.rs
+          match h3_conn.accept().await {
+            Ok(None) => {
+              break;
             }
-            request_count.decrement();
-            debug!("Request processed: current # {}", request_count.current());
-          });
+            Err(e) => {
+              warn!("HTTP/3 error on accept incoming connection: {}", e);
+              match e.get_error_level() {
+                h3::error::ErrorLevel::ConnectionError => break,
+                h3::error::ErrorLevel::StreamError => continue,
+              }
+            }
+            Ok(Some((req, stream))) => {
+              // We consider the connection count separately from the stream count.
+              // Max clients for h1/h2 = max 'stream' for h3.
+              let request_count = self.globals.request_count.clone();
+              if request_count.increment() > self.globals.max_clients {
+                request_count.decrement();
+                h3_conn.shutdown(0).await?;
+                break;
+              }
+              debug!("Request incoming: current # {}", request_count.current());
+
+              let self_inner = self.clone();
+              let tls_server_name_inner = tls_server_name.clone();
+              self.globals.runtime_handle.spawn(async move {
+                if let Err(e) = timeout(
+                  self_inner.globals.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
+                  self_inner.stream_serve_h3(req, stream, client_addr, tls_server_name_inner),
+                )
+                .await
+                {
+                  error!("HTTP/3 failed to process stream: {}", e);
+                }
+                request_count.decrement();
+                debug!("Request processed: current # {}", request_count.current());
+              });
+            }
+          }
         }
       }
       Err(err) => {
@@ -97,7 +83,6 @@ where
     stream: RequestStream<S, Bytes>,
     client_addr: SocketAddr,
     tls_server_name: ServerNameBytesExp,
-    tls_client_auth_result: std::result::Result<(), ClientCertsError>,
   ) -> Result<()>
   where
     S: BidiStream<Bytes> + Send + 'static,
@@ -149,7 +134,6 @@ where
         self.listening_on,
         self.tls_enabled,
         Some(tls_server_name),
-        Some(tls_client_auth_result),
       )
       .await?;
 
