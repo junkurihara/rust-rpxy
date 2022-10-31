@@ -62,7 +62,7 @@ where
 
           // spawns async handshake to avoid blocking thread by sequential handshake.
           let handshake_fut = async move {
-            let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls::server::Acceptor::new().unwrap(), raw_stream).await;
+            let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls::server::Acceptor::default(), raw_stream).await;
             if let Err(e) = acceptor {
               return Err(RpxyError::Proxy(format!("Failed to handshake TLS: {}", e)));
             }

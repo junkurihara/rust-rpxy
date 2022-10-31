@@ -1,6 +1,6 @@
 [package]
 name = "rpxy"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -17,9 +17,9 @@ http3 = ["quinn", "h3", "h3-quinn"]
 
 [dependencies]
 env_logger = "0.9.1"
-anyhow = "1.0.65"
-clap = { version = "4.0.15", features = ["std", "cargo", "wrap_help"] }
-futures = { version = "0.3.24", features = ["alloc", "async-await"] }
+anyhow = "1.0.66"
+clap = { version = "4.0.18", features = ["std", "cargo", "wrap_help"] }
+futures = { version = "0.3.25", features = ["alloc", "async-await"] }
 hyper = { version = "0.14.20", default-features = false, features = [
   "server",
   "http1",
@@ -37,11 +37,11 @@ tokio = { version = "1.21.2", default-features = false, features = [
 ] }
 tokio-rustls = { version = "0.23.4", features = ["early-data"] }
 rustls-pemfile = "1.0.1"
-rustls = { version = "0.20.6", default-features = false }
+rustls = { version = "0.20.7", default-features = false }
 rand = "0.8.5"
 toml = { version = "0.5.9", default-features = false }
 rustc-hash = "1.1.0"
-serde = { version = "1.0.145", default-features = false, features = ["derive"] }
+serde = { version = "1.0.147", default-features = false, features = ["derive"] }
 hyper-rustls = { version = "0.23.0", default-features = false, features = [
   "tokio-runtime",
   "webpki-tokio",
