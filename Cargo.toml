@@ -16,11 +16,11 @@ default = ["http3"]
 http3 = ["quinn", "h3", "h3-quinn"]
 
 [dependencies]
-env_logger = "0.9.1"
+env_logger = "0.9.3"
 anyhow = "1.0.66"
-clap = { version = "4.0.18", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.0.26", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.25", features = ["alloc", "async-await"] }
-hyper = { version = "0.14.22", default-features = false, features = [
+hyper = { version = "0.14.23", default-features = false, features = [
   "server",
   "http1",
   "http2",
@@ -42,7 +42,7 @@ rand = "0.8.5"
 toml = { version = "0.5.9", default-features = false }
 rustc-hash = "1.1.0"
 serde = { version = "1.0.147", default-features = false, features = ["derive"] }
-hyper-rustls = { version = "0.23.0", default-features = false, features = [
+hyper-rustls = { version = "0.23.1", default-features = false, features = [
   "tokio-runtime",
   "webpki-tokio",
   "http1",
