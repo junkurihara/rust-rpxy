@@ -16,7 +16,7 @@ default = ["http3"]
 http3 = ["quinn", "h3", "h3-quinn"]
 
 [dependencies]
-env_logger = "0.9.3"
+env_logger = "0.10.0"
 anyhow = "1.0.66"
 clap = { version = "4.0.26", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.25", features = ["alloc", "async-await"] }
