@@ -18,7 +18,7 @@ http3 = ["quinn", "h3", "h3-quinn"]
 [dependencies]
 env_logger = "0.10.0"
 anyhow = "1.0.66"
-clap = { version = "4.0.27", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.0.29", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.25", features = ["alloc", "async-await"] }
 hyper = { version = "0.14.23", default-features = false, features = [
   "server",
@@ -27,7 +27,7 @@ hyper = { version = "0.14.23", default-features = false, features = [
   "stream",
 ] }
 log = "0.4.17"
-tokio = { version = "1.22.0", default-features = false, features = [
+tokio = { version = "1.23.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "parking_lot",
@@ -41,8 +41,8 @@ rustls = { version = "0.20.7", default-features = false }
 rand = "0.8.5"
 toml = { version = "0.5.9", default-features = false }
 rustc-hash = "1.1.0"
-serde = { version = "1.0.148", default-features = false, features = ["derive"] }
-hyper-rustls = { version = "0.23.1", default-features = false, features = [
+serde = { version = "1.0.150", default-features = false, features = ["derive"] }
+hyper-rustls = { version = "0.23.2", default-features = false, features = [
   "tokio-runtime",
   "webpki-tokio",
   "http1",
