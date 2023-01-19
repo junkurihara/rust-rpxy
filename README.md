@@ -4,6 +4,7 @@
 ![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
 ![Build and Publish Docker](https://github.com/junkurihara/rust-rpxy/actions/workflows/docker_build_push.yml/badge.svg)
 ![ShiftLeft Scan](https://github.com/junkurihara/rust-rpxy/actions/workflows/shift_left.yml/badge.svg)
+[![Docker Image Size (latest by date)](https://img.shields.io/docker/image-size/jqtype/rpxy)](https://hub.docker.com/r/jqtype/rpxy)
 
 > **WIP Project**
 
