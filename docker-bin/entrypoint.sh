@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 LOG_FILE=/var/log/rpxy/rpxy.log
 
 if [ -z ${LOG_TO_FILE} ]; then

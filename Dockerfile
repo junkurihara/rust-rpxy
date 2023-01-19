@@ -1,4 +1,5 @@
 FROM ubuntu:22.04 AS base
+LABEL maintainer="Jun Kurihara"
 
 SHELL ["/bin/sh", "-x", "-c"]
 ENV SERIAL 2
@@ -26,13 +27,13 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
 
 ########################################
 FROM base AS runner
-LABEL maintainer="Jun Kurihara"
 
-ENV RUNTIME_DEPS bash logrotate ca-certificates
+ENV RUNTIME_DEPS logrotate ca-certificates
 
 RUN apt-get update && \
   apt-get install -qy --no-install-recommends $RUNTIME_DEPS && \
   apt-get -qy clean && \
+  apt-get -qy autoremove &&\
   rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log &&\
   mkdir -p /opt/rpxy/sbin &&\
   mkdir -p /var/log/rpxy && \
