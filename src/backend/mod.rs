@@ -5,9 +5,11 @@ use crate::{
   log::*,
   utils::{BytesName, PathNameBytesExp, ServerNameBytesExp},
 };
+use derive_builder::Builder;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use rustls::{OwnedTrustAnchor, RootCertStore};
 use std::{
+  borrow::Cow,
   fs::File,
   io::{self, BufReader, Cursor, Read},
   path::PathBuf,
@@ -18,21 +20,50 @@ use tokio_rustls::rustls::{
   sign::{any_supported_type, CertifiedKey},
   Certificate, PrivateKey, ServerConfig,
 };
-pub use upstream::{ReverseProxy, Upstream, UpstreamGroup};
+pub use upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder};
 pub use upstream_opts::UpstreamOption;
 use x509_parser::prelude::*;
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
+#[derive(Builder)]
 pub struct Backend {
+  #[builder(setter(into))]
   pub app_name: String,
+  #[builder(setter(custom))]
   pub server_name: String,
   pub reverse_proxy: ReverseProxy,
 
   // tls settings
+  #[builder(setter(custom), default)]
   pub tls_cert_path: Option<PathBuf>,
+  #[builder(setter(custom), default)]
   pub tls_cert_key_path: Option<PathBuf>,
+  #[builder(default)]
   pub https_redirection: Option<bool>,
+  #[builder(setter(custom), default)]
   pub client_ca_cert_path: Option<PathBuf>,
+}
+impl<'a> BackendBuilder {
+  pub fn server_name(&mut self, server_name: impl Into<Cow<'a, str>>) -> &mut Self {
+    self.server_name = Some(server_name.into().to_ascii_lowercase());
+    self
+  }
+  pub fn tls_cert_path(&mut self, v: &Option<String>) -> &mut Self {
+    self.tls_cert_path = Some(opt_string_to_opt_pathbuf(v));
+    self
+  }
+  pub fn tls_cert_key_path(&mut self, v: &Option<String>) -> &mut Self {
+    self.tls_cert_key_path = Some(opt_string_to_opt_pathbuf(v));
+    self
+  }
+  pub fn client_ca_cert_path(&mut self, v: &Option<String>) -> &mut Self {
+    self.client_ca_cert_path = Some(opt_string_to_opt_pathbuf(v));
+    self
+  }
+}
+
+fn opt_string_to_opt_pathbuf(input: &Option<String>) -> Option<PathBuf> {
+  input.to_owned().as_ref().map(PathBuf::from)
 }
 
 impl Backend {

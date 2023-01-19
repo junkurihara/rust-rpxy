@@ -7,6 +7,12 @@ pub type Result<T> = std::result::Result<T, RpxyError>;
 /// Describes things that can go wrong in the Rpxy
 #[derive(Debug, Error)]
 pub enum RpxyError {
+  #[error("Proxy build error")]
+  ProxyBuild(#[from] crate::proxy::ProxyBuilderError),
+
+  #[error("MessageHandler build error")]
+  HandlerBuild(#[from] crate::handler::HttpMessageHandlerBuilderError),
+
   #[error("Http Message Handler Error: {0}")]
   Handler(&'static str),
 

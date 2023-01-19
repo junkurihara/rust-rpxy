@@ -1,5 +1,6 @@
 use super::{BytesName, PathNameBytesExp, UpstreamOption};
 use crate::log::*;
+use derive_builder::Builder;
 use rand::Rng;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
@@ -66,14 +67,49 @@ pub struct Upstream {
   pub uri: hyper::Uri, // base uri without specific path
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
 pub struct UpstreamGroup {
   pub upstream: Vec<Upstream>,
+  #[builder(setter(custom), default)]
   pub path: PathNameBytesExp,
+  #[builder(setter(custom), default)]
   pub replace_path: Option<PathNameBytesExp>,
+  #[builder(default)]
   pub lb: LoadBalance,
+  #[builder(default)]
   pub cnt: UpstreamCount, // counter for load balancing
+  #[builder(setter(custom), default)]
   pub opts: HashSet<UpstreamOption>,
+}
+impl UpstreamGroupBuilder {
+  pub fn path(&mut self, v: &Option<String>) -> &mut Self {
+    let path = match v {
+      Some(p) => p.to_path_name_vec(),
+      None => "/".to_path_name_vec(),
+    };
+    self.path = Some(path);
+    self
+  }
+  pub fn replace_path(&mut self, v: &Option<String>) -> &mut Self {
+    self.replace_path = Some(
+      v.to_owned()
+        .as_ref()
+        .map_or_else(|| None, |v| Some(v.to_path_name_vec())),
+    );
+    self
+  }
+  pub fn opts(&mut self, v: &Option<Vec<String>>) -> &mut Self {
+    let opts = if let Some(opts) = v {
+      opts
+        .iter()
+        .filter_map(|str| UpstreamOption::try_from(str.as_str()).ok())
+        .collect::<HashSet<UpstreamOption>>()
+    } else {
+      Default::default()
+    };
+    self.opts = Some(opts);
+    self
+  }
 }
 
 #[derive(Debug, Clone, Default)]

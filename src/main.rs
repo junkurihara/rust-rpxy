@@ -21,12 +21,12 @@ use crate::{
   constants::*,
   error::*,
   globals::*,
+  handler::HttpMessageHandlerBuilder,
   log::*,
-  proxy::Proxy,
+  proxy::ProxyBuilder,
   utils::ServerNameBytesExp,
 };
 use futures::future::select_all;
-use handler::HttpMessageHandler;
 use hyper::Client;
 // use hyper_trust_dns::TrustDnsResolver;
 use rustc_hash::FxHashMap as HashMap;
@@ -110,10 +110,11 @@ async fn entrypoint(globals: Arc<Globals>) -> Result<()> {
     .enable_http1()
     .enable_http2()
     .build();
-  let msg_handler = HttpMessageHandler {
-    forwarder: Arc::new(Client::builder().build::<_, hyper::Body>(connector)),
-    globals: globals.clone(),
-  };
+
+  let msg_handler = HttpMessageHandlerBuilder::default()
+    .forwarder(Arc::new(Client::builder().build::<_, hyper::Body>(connector)))
+    .globals(globals.clone())
+    .build()?;
 
   let addresses = globals.listen_sockets.clone();
   let futures = select_all(addresses.into_iter().map(|addr| {
@@ -122,12 +123,14 @@ async fn entrypoint(globals: Arc<Globals>) -> Result<()> {
       tls_enabled = https_port == addr.port()
     }
 
-    let proxy = Proxy {
-      globals: globals.clone(),
-      listening_on: addr,
-      tls_enabled,
-      msg_handler: msg_handler.clone(),
-    };
+    let proxy = ProxyBuilder::default()
+      .globals(globals.clone())
+      .listening_on(addr)
+      .tls_enabled(tls_enabled)
+      .msg_handler(msg_handler.clone())
+      .build()
+      .unwrap();
+
     globals.runtime_handle.spawn(proxy.start())
   }));
 

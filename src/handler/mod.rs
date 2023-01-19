@@ -3,4 +3,4 @@ mod utils_headers;
 mod utils_request;
 mod utils_synth_response;
 
-pub use handler_main::HttpMessageHandler;
+pub use handler_main::{HttpMessageHandler, HttpMessageHandlerBuilder, HttpMessageHandlerBuilderError};

@@ -1,5 +1,6 @@
 // use super::proxy_handler::handle_request;
 use crate::{error::*, globals::Globals, handler::HttpMessageHandler, log::*, utils::ServerNameBytesExp};
+use derive_builder::{self, Builder};
 use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, Body, Request};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
@@ -30,7 +31,7 @@ where
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Builder)]
 pub struct Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,

@@ -1,6 +1,6 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
 use crate::{
-  backend::{Backend, ReverseProxy, UpstreamGroup, UpstreamOption},
+  backend::{BackendBuilder, ReverseProxy, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption},
   constants::*,
   error::*,
   globals::*,
@@ -8,9 +8,8 @@ use crate::{
   utils::{BytesName, PathNameBytesExp},
 };
 use clap::Arg;
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use rustc_hash::FxHashMap as HashMap;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 
 pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Error> {
   let _ = include_str!("../../Cargo.toml");
@@ -91,49 +90,49 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
   for (app_name, app) in apps.0.iter() {
     ensure!(app.server_name.is_some(), "Missing server_name");
     let server_name_string = app.server_name.as_ref().unwrap();
-
-    // TLS settings
-    let (tls_cert_path, tls_cert_key_path, https_redirection, client_ca_cert_path) = if app.tls.is_none() {
-      ensure!(globals.http_port.is_some(), "Required HTTP port");
-      (None, None, None, None)
-    } else {
-      let tls = app.tls.as_ref().unwrap();
-      ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
-
-      (
-        tls.tls_cert_path.as_ref().map(PathBuf::from),
-        tls.tls_cert_key_path.as_ref().map(PathBuf::from),
-        if tls.https_redirection.is_none() {
-          Some(true) // Default true
-        } else {
-          ensure!(globals.https_port.is_some()); // only when both https ports are configured.
-          tls.https_redirection
-        },
-        tls.client_ca_cert_path.as_ref().map(PathBuf::from),
-      )
-    };
     if globals.http_port.is_none() {
       // if only https_port is specified, tls must be configured
       ensure!(app.tls.is_some())
     }
 
+    // backend builder
+    let mut backend_builder = BackendBuilder::default();
     // reverse proxy settings
     ensure!(app.reverse_proxy.is_some(), "Missing reverse_proxy");
     let reverse_proxy = get_reverse_proxy(app.reverse_proxy.as_ref().unwrap())?;
 
-    globals.backends.apps.insert(
-      server_name_string.to_server_name_vec(),
-      Backend {
-        app_name: app_name.to_owned(),
-        server_name: server_name_string.to_ascii_lowercase(),
-        reverse_proxy,
+    backend_builder
+      .app_name(server_name_string)
+      .server_name(server_name_string)
+      .reverse_proxy(reverse_proxy);
 
-        tls_cert_path,
-        tls_cert_key_path,
-        https_redirection,
-        client_ca_cert_path,
-      },
-    );
+    // TLS settings and build backend instance
+    let backend = if app.tls.is_none() {
+      ensure!(globals.http_port.is_some(), "Required HTTP port");
+      backend_builder.build()?
+    } else {
+      let tls = app.tls.as_ref().unwrap();
+      ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
+
+      let https_redirection = if tls.https_redirection.is_none() {
+        Some(true) // Default true
+      } else {
+        ensure!(globals.https_port.is_some()); // only when both https ports are configured.
+        tls.https_redirection
+      };
+
+      backend_builder
+        .tls_cert_path(&tls.tls_cert_path)
+        .tls_cert_key_path(&tls.tls_cert_key_path)
+        .https_redirection(https_redirection)
+        .client_ca_cert_path(&tls.client_ca_cert_path)
+        .build()?
+    };
+
+    globals
+      .backends
+      .apps
+      .insert(server_name_string.to_server_name_vec(), backend);
     info!("Registering application: {} ({})", app_name, server_name_string);
   }
 
@@ -194,33 +193,15 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
 fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<ReverseProxy, anyhow::Error> {
   let mut upstream: HashMap<PathNameBytesExp, UpstreamGroup> = HashMap::default();
   rp_settings.iter().for_each(|rpo| {
-    let path = match &rpo.path {
-      Some(p) => p.to_path_name_vec(),
-      None => "/".to_path_name_vec(),
-    };
+    let elem = UpstreamGroupBuilder::default()
+      .upstream(rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect())
+      .path(&rpo.path)
+      .replace_path(&rpo.replace_path)
+      .opts(&rpo.upstream_options)
+      .build()
+      .unwrap();
 
-    let elem = UpstreamGroup {
-      upstream: rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect(),
-      path: path.clone(),
-      replace_path: rpo
-        .replace_path
-        .as_ref()
-        .map_or_else(|| None, |v| Some(v.to_path_name_vec())),
-      cnt: Default::default(),
-      lb: Default::default(),
-      opts: {
-        if let Some(opts) = &rpo.upstream_options {
-          opts
-            .iter()
-            .filter_map(|str| UpstreamOption::try_from(str.as_str()).ok())
-            .collect::<HashSet<UpstreamOption>>()
-        } else {
-          Default::default()
-        }
-      },
-    };
-
-    upstream.insert(path, elem);
+    upstream.insert(elem.path.clone(), elem);
   });
   ensure!(
     rp_settings.iter().filter(|rpo| rpo.path.is_none()).count() < 2,

@@ -7,6 +7,7 @@ use crate::{
   log::*,
   utils::ServerNameBytesExp,
 };
+use derive_builder::Builder;
 use hyper::{
   client::connect::Connect,
   header::{self, HeaderValue},
@@ -16,13 +17,13 @@ use hyper::{
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::{io::copy_bidirectional, time::timeout};
 
-#[derive(Clone)]
+#[derive(Clone, Builder)]
 pub struct HttpMessageHandler<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  pub forwarder: Arc<Client<T>>,
-  pub globals: Arc<Globals>,
+  forwarder: Arc<Client<T>>,
+  globals: Arc<Globals>,
 }
 
 impl<T> HttpMessageHandler<T>
