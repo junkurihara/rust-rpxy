@@ -119,7 +119,7 @@ async fn entrypoint(globals: Arc<Globals>) -> Result<()> {
   let futures = select_all(addresses.into_iter().map(|addr| {
     let mut tls_enabled = false;
     if let Some(https_port) = globals.https_port {
-      tls_enabled = https_port == (addr.port() as u16)
+      tls_enabled = https_port == addr.port()
     }
 
     let proxy = Proxy {
