@@ -176,6 +176,14 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
         if let Some(x) = h3option.max_concurrent_unistream {
           globals.h3_max_concurrent_unistream = x.into();
         }
+        if let Some(x) = h3option.max_idle_timeout {
+          if x == 0u64 {
+            globals.h3_max_idle_timeout = None;
+          } else {
+            globals.h3_max_idle_timeout =
+              Some(quinn::IdleTimeout::try_from(tokio::time::Duration::from_secs(x)).unwrap())
+          }
+        }
       }
     }
 

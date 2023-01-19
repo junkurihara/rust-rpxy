@@ -37,6 +37,8 @@ pub struct Globals {
   pub h3_max_concurrent_unistream: quinn::VarInt,
   #[cfg(feature = "http3")]
   pub h3_max_concurrent_connections: u32,
+  #[cfg(feature = "http3")]
+  pub h3_max_idle_timeout: Option<quinn::IdleTimeout>,
 }
 
 #[derive(Debug, Clone, Default)]

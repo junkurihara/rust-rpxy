@@ -89,6 +89,8 @@ fn main() {
       h3_max_concurrent_bidistream: H3::MAX_CONCURRENT_BIDISTREAM.into(),
       #[cfg(feature = "http3")]
       h3_max_concurrent_unistream: H3::MAX_CONCURRENT_UNISTREAM.into(),
+      #[cfg(feature = "http3")]
+      h3_max_idle_timeout: Some(quinn::IdleTimeout::try_from(Duration::from_secs(H3::MAX_IDLE_TIMEOUT)).unwrap()),
     };
 
     if let Err(e) = parse_opts(&mut globals) {

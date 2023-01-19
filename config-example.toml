@@ -93,3 +93,5 @@ request_max_body_size = 65536      # bytes
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100
+max_idle_timeout = 10              # secs. 0 represents an infinite timeout.
+# WARNING: If a peer or its network path malfunctions or acts maliciously, an infinite idle timeout can result in permanently hung futures!

@@ -23,6 +23,7 @@ pub struct Http3Option {
   pub max_concurrent_connections: Option<u32>,
   pub max_concurrent_bidistream: Option<u32>,
   pub max_concurrent_unistream: Option<u32>,
+  pub max_idle_timeout: Option<u64>,
 }
 
 #[derive(Deserialize, Debug, Default)]

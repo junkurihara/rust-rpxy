@@ -130,7 +130,8 @@ where
     let mut transport_config_quic = TransportConfig::default();
     transport_config_quic
       .max_concurrent_bidi_streams(self.globals.h3_max_concurrent_bidistream)
-      .max_concurrent_uni_streams(self.globals.h3_max_concurrent_unistream);
+      .max_concurrent_uni_streams(self.globals.h3_max_concurrent_unistream)
+      .max_idle_timeout(self.globals.h3_max_idle_timeout);
 
     let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(rustls_server_config));
     server_config_h3.transport = Arc::new(transport_config_quic);
