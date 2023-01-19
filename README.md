@@ -239,6 +239,7 @@ request_max_body_size = 65536
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100
+max_idle_timeout = 10
 ```
 
 ### Client Authentication via Client Certificates
