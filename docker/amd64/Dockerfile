@@ -1,3 +1,4 @@
+
 FROM ubuntu:22.04 AS base
 LABEL maintainer="Jun Kurihara"
 
@@ -28,6 +29,7 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
 ########################################
 FROM base AS runner
 
+ENV TAG_NAME=amd64
 ENV RUNTIME_DEPS logrotate ca-certificates
 
 RUN apt-get update && \
@@ -40,8 +42,8 @@ RUN apt-get update && \
   touch /var/log/rpxy/rpxy.log
 
 COPY --from=builder /tmp/target/release/rpxy /opt/rpxy/sbin/rpxy
-COPY docker-bin/run.sh /
-COPY docker-bin/entrypoint.sh /
+COPY ./docker/${TAG_NAME}/run.sh /
+COPY ./docker/entrypoint.sh /
 
 RUN chmod 755 /run.sh && \
   chmod 755 /entrypoint.sh

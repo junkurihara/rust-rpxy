@@ -26,11 +26,19 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push x86_64
         uses: docker/build-push-action@v3
         with:
           context: .
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
-          file: ./Dockerfile
+          file: ./docker/amd64/Dockerfile
+      - name: Build and push x86_64
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:slim, ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest-slim
+          file: ./docker/amd64-slim/Dockerfile
