@@ -33,7 +33,7 @@ include /etc/logrotate.d
 # system-specific logs may be also be configured here.
 EOF
 
-cat > /etc/logrotate.d/rpxy << EOF
+cat > /etc/logrotate.d/rpxy.conf << EOF
 ${LOG_FILE} {
     dateext
     daily
@@ -48,8 +48,8 @@ ${LOG_FILE} {
 }
 EOF
 
-cp -p /etc/cron.daily/logrotate /etc/cron.hourly/
-service cron start
+cp -f /etc/periodic/daily/logrotate /etc/periodic/15min
+crond restart
 
 # debug level logging
 if [ -z $LOG_LEVEL ]; then
