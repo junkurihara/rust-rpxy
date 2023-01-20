@@ -10,15 +10,15 @@ COPY . /tmp/
 
 ENV RUSTFLAGS "-C link-arg=-s"
 
-# RUN update-ca-certificates 2> /dev/null || true
-
 RUN echo "Building rpxy from source" && \
   cargo build --release && \
   musl-strip --strip-all /tmp/target/${TARGET_DIR}/release/rpxy
 
 ########################################
 FROM alpine:latest as runner
+LABEL maintainer="Jun Kurihara"
 
+ENV TAG_NAME=amd64-slim
 ENV TARGET_DIR=x86_64-unknown-linux-musl
 ENV RUNTIME_DEPS logrotate ca-certificates
 
@@ -29,8 +29,8 @@ RUN apk add --no-cache ${RUNTIME_DEPS} && \
   touch /var/log/rpxy/rpxy.log
 
 COPY --from=builder /tmp/target/${TARGET_DIR}/release/rpxy /opt/rpxy/sbin/rpxy
-COPY docker-bin/run.sh /
-COPY docker-bin/entrypoint.sh /
+COPY ./docker/${TAG_NAME}/run.sh /
+COPY ./docker/entrypoint.sh /
 
 RUN chmod 755 /run.sh && \
   chmod 755 /entrypoint.sh

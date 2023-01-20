@@ -221,7 +221,7 @@ You can also use [docker image](https://hub.docker.com/r/jqtype/rpxy) instead of
 - `LOG_LEVEL=debug|info|warn|error`: Log level
 - `LOG_TO_FILE=true|false`: Enable logging to the log file `/var/log/rpxy/rpxy.log` using `logrotate`. You should mount `/var/log/rpxy` via docker volume option if enabled.
 
-Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the docker volume option. See [`docker-compose.yml`](./docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
+Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the docker volume option. See [`docker/docker-compose.yml`](./docker/docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
 
 ## Example
 
