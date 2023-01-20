@@ -34,7 +34,7 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
           file: ./docker/amd64/Dockerfile
-      - name: Build and push x86_64
+      - name: Build and push x86_64-slim
         uses: docker/build-push-action@v3
         with:
           context: .
