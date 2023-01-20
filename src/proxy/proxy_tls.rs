@@ -16,8 +16,6 @@ use tokio::{
 };
 
 #[cfg(feature = "http3")]
-use futures::StreamExt;
-#[cfg(feature = "http3")]
 use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
 
 impl<T> Proxy<T>
@@ -136,12 +134,13 @@ where
     let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(rustls_server_config));
     server_config_h3.transport = Arc::new(transport_config_quic);
     server_config_h3.concurrent_connections(self.globals.h3_max_concurrent_connections);
-    let (endpoint, mut incoming) = Endpoint::server(server_config_h3, self.listening_on)?;
+    // let (endpoint, mut incoming) = Endpoint::server(server_config_h3, self.listening_on)?;
+    let endpoint = Endpoint::server(server_config_h3, self.listening_on)?;
 
     let mut server_crypto: Option<Arc<ServerCrypto>> = None;
     loop {
       tokio::select! {
-        new_conn = incoming.next() => {
+        new_conn = endpoint.accept() => {
           if server_crypto.is_none() || new_conn.is_none() {
             continue;
           }
