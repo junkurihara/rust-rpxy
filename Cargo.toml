@@ -18,7 +18,7 @@ http3 = ["quinn", "h3", "h3-quinn"]
 [dependencies]
 env_logger = "0.10.0"
 anyhow = "1.0.68"
-clap = { version = "4.1.3", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.1.4", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.25", features = ["alloc", "async-await"] }
 hyper = { version = "0.14.23", default-features = false, features = [
   "server",
