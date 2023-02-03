@@ -20,7 +20,7 @@ env_logger = "0.10.0"
 anyhow = "1.0.68"
 clap = { version = "4.1.4", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.26", features = ["alloc", "async-await"] }
-hyper = { version = "0.14.23", default-features = false, features = [
+hyper = { version = "0.14.24", default-features = false, features = [
   "server",
   "http1",
   "http2",
