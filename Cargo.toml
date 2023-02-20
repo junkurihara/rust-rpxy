@@ -17,8 +17,8 @@ http3 = ["quinn", "h3", "h3-quinn"]
 
 [dependencies]
 env_logger = "0.10.0"
-anyhow = "1.0.68"
-clap = { version = "4.1.4", features = ["std", "cargo", "wrap_help"] }
+anyhow = "1.0.69"
+clap = { version = "4.1.6", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.26", features = ["alloc", "async-await"] }
 hyper = { version = "0.14.24", default-features = false, features = [
   "server",
@@ -39,7 +39,7 @@ tokio-rustls = { version = "0.23.4", features = ["early-data"] }
 rustls-pemfile = "1.0.2"
 rustls = { version = "0.20.8", default-features = false }
 rand = "0.8.5"
-toml = { version = "0.7.1", default-features = false, features = ["parse"] }
+toml = { version = "0.7.2", default-features = false, features = ["parse"] }
 rustc-hash = "1.1.0"
 serde = { version = "1.0.152", default-features = false, features = ["derive"] }
 hyper-rustls = { version = "0.23.2", default-features = false, features = [
