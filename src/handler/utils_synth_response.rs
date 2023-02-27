@@ -22,7 +22,7 @@ pub(super) fn secure_redirection<B>(
   let new_uri = Uri::builder().scheme("https").path_and_query(pq);
   let dest_uri = match tls_port {
     Some(443) | None => new_uri.authority(server_name),
-    Some(p) => new_uri.authority(format!("{}:{}", server_name, p)),
+    Some(p) => new_uri.authority(format!("{server_name}:{p}")),
   }
   .build()?;
   let response = Response::builder()

@@ -63,7 +63,7 @@ where
           let handshake_fut = async move {
             let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls::server::Acceptor::default(), raw_stream).await;
             if let Err(e) = acceptor {
-              return Err(RpxyError::Proxy(format!("Failed to handshake TLS: {}", e)));
+              return Err(RpxyError::Proxy(format!("Failed to handshake TLS: {e}")));
             }
             let start = acceptor.unwrap();
             let client_hello = start.client_hello();
@@ -80,7 +80,7 @@ where
             let stream = match start.into_stream(server_crypto.unwrap().clone()).await {
               Ok(s) => s,
               Err(e) => {
-                return Err(RpxyError::Proxy(format!("Failed to handshake TLS: {}", e)));
+                return Err(RpxyError::Proxy(format!("Failed to handshake TLS: {e}")));
               }
             };
             self_inner.client_serve(stream, server_clone, client_addr, server_name);

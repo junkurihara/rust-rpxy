@@ -58,10 +58,10 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
     .flat_map(|x| {
       let mut v: Vec<SocketAddr> = vec![];
       if let Some(p) = globals.http_port {
-        v.push(format!("{}:{}", x, p).parse().unwrap());
+        v.push(format!("{x}:{p}").parse().unwrap());
       }
       if let Some(p) = globals.https_port {
-        v.push(format!("{}:{}", x, p).parse().unwrap());
+        v.push(format!("{x}:{p}").parse().unwrap());
       }
       v
     })
