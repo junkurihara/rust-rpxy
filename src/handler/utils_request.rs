@@ -47,7 +47,6 @@ impl<B> ParseHost for Request<B> {
         } else {
           // v4 address or hostname
           m.split(|colon| colon == &b':')
-            .into_iter()
             .next()
             .ok_or(RpxyError::Request("Invalid Host"))
         }
