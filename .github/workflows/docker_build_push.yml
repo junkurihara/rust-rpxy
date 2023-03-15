@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - develop
 
 jobs:
   build_and_push:
@@ -12,10 +13,13 @@ jobs:
       IMAGE_NAME: rpxy
 
     steps:
-      - name: checkout
+      - name: Checkout
         uses: actions/checkout@v3
         with:
           submodules: recursive
+
+      - name: GitHub Environment
+        run: echo "BRANCH=${GITHUB_REF##*/}" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -26,7 +30,8 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push x86_64
+      - name: Release build and push x86_64
+        if: ${{ env.BRANCH == 'main' }}
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -34,7 +39,9 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
           file: ./docker/amd64/Dockerfile
-      - name: Build and push x86_64-slim
+
+      - name: Release build and push x86_64-slim
+        if: ${{ env.BRANCH == 'main' }}
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -42,3 +49,13 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:slim, ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest-slim
           file: ./docker/amd64-slim/Dockerfile
+
+      - name: Nightly build and push x86_64
+        if: ${{ env.BRANCH == 'develop' }}
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:nightly
+          file: ./docker/amd64/Dockerfile
