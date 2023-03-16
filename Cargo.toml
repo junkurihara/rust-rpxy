@@ -53,7 +53,7 @@ quinn = { version = "0.8.5", optional = true }
 h3 = { path = "./h3/h3/", optional = true }
 h3-quinn = { path = "./h3/h3-quinn/", optional = true }
 thiserror = "1.0.39"
-x509-parser = "0.14.0"
+x509-parser = "0.15.0"
 derive_builder = "0.12.0"
 
 
