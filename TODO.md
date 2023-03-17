@@ -2,8 +2,8 @@
 
 - Improvement of path matcher
 - More flexible option for rewriting path
-- Smaller footprint of docker image using musl
 - Refactoring
+- Unit tests
 - Options to serve custom http_error page.
 - Prometheus metrics
 - Documentation
