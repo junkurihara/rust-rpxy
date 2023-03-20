@@ -4,6 +4,7 @@
 - More flexible option for rewriting path
 - Refactoring
 - Unit tests
+- Implementing load-balancing of backend apps (currently it doesn't consider to maintain session but simply rotate in a certain fashion)
 - Options to serve custom http_error page.
 - Prometheus metrics
 - Documentation
