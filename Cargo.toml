@@ -18,7 +18,7 @@ http3 = ["quinn", "h3", "h3-quinn"]
 [dependencies]
 env_logger = "0.10.0"
 anyhow = "1.0.70"
-clap = { version = "4.1.11", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.1.14", features = ["std", "cargo", "wrap_help"] }
 futures = { version = "0.3.27", features = ["alloc", "async-await"] }
 hyper = { version = "0.14.25", default-features = false, features = [
   "server",
@@ -27,7 +27,7 @@ hyper = { version = "0.14.25", default-features = false, features = [
   "stream",
 ] }
 log = "0.4.17"
-tokio = { version = "1.26.0", default-features = false, features = [
+tokio = { version = "1.27.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "parking_lot",
