@@ -30,24 +30,11 @@ use futures::future::select_all;
 use hyper::Client;
 // use hyper_trust_dns::TrustDnsResolver;
 use rustc_hash::FxHashMap as HashMap;
-use std::{io::Write, sync::Arc};
+use std::sync::Arc;
 use tokio::time::Duration;
 
 fn main() {
-  // env::set_var("RUST_LOG", "info");
-  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-    .format(|buf, rec| {
-      let ts = buf.timestamp();
-      match rec.level() {
-        log::Level::Debug => {
-          writeln!(buf, "{} [{}] {} ({})", ts, rec.level(), rec.args(), rec.target(),)
-        }
-        _ => {
-          writeln!(buf, "{} [{}] {}", ts, rec.level(), rec.args(),)
-        }
-      }
-    })
-    .init();
+  init_logger();
 
   let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
   runtime_builder.enable_all();
