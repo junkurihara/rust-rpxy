@@ -16,17 +16,17 @@ default = ["http3"]
 http3 = ["quinn", "h3", "h3-quinn"]
 
 [dependencies]
-env_logger = "0.10.0"
 anyhow = "1.0.70"
-clap = { version = "4.1.14", features = ["std", "cargo", "wrap_help"] }
-futures = { version = "0.3.27", features = ["alloc", "async-await"] }
-hyper = { version = "0.14.25", default-features = false, features = [
-  "server",
-  "http1",
-  "http2",
-  "stream",
-] }
-log = "0.4.17"
+clap = { version = "4.2.1", features = ["std", "cargo", "wrap_help"] }
+rand = "0.8.5"
+toml = { version = "0.7.3", default-features = false, features = ["parse"] }
+rustc-hash = "1.1.0"
+serde = { version = "1.0.159", default-features = false, features = ["derive"] }
+bytes = "1.4.0"
+thiserror = "1.0.40"
+x509-parser = "0.15.0"
+derive_builder = "0.12.0"
+futures = { version = "0.3.28", features = ["alloc", "async-await"] }
 tokio = { version = "1.27.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
@@ -35,26 +35,32 @@ tokio = { version = "1.27.0", default-features = false, features = [
   "sync",
   "macros",
 ] }
-tokio-rustls = { version = "0.23.4", features = ["early-data"] }
-rustls-pemfile = "1.0.2"
-rustls = { version = "0.20.8", default-features = false }
-rand = "0.8.5"
-toml = { version = "0.7.3", default-features = false, features = ["parse"] }
-rustc-hash = "1.1.0"
-serde = { version = "1.0.158", default-features = false, features = ["derive"] }
+
+# http and tls
+hyper = { version = "0.14.25", default-features = false, features = [
+  "server",
+  "http1",
+  "http2",
+  "stream",
+] }
 hyper-rustls = { version = "0.23.2", default-features = false, features = [
   "tokio-runtime",
   "webpki-tokio",
   "http1",
   "http2",
 ] }
-bytes = "1.4.0"
-quinn = { version = "0.8.5", optional = true }
+tokio-rustls = { version = "0.23.4", features = ["early-data"] }
+rustls-pemfile = "1.0.2"
+rustls = { version = "0.20.8", default-features = false }
+
+# logging
+tracing = { version = "0.1.37" }
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+
+# http/3
+quinn = { version = "0.9.3", optional = true }
 h3 = { path = "./h3/h3/", optional = true }
 h3-quinn = { path = "./h3/h3-quinn/", optional = true }
-thiserror = "1.0.40"
-x509-parser = "0.15.0"
-derive_builder = "0.12.0"
 
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]

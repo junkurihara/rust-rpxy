@@ -7,7 +7,6 @@ use crate::{
   utils::BytesName,
 };
 #[cfg(feature = "http3")]
-use futures::StreamExt;
 use hyper::{client::connect::Connect, server::conn::Http};
 #[cfg(feature = "http3")]
 use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
@@ -61,7 +60,7 @@ where
 
           // spawns async handshake to avoid blocking thread by sequential handshake.
           let handshake_fut = async move {
-            let acceptor = tokio_rustls::LazyConfigAcceptor::new(rustls::server::Acceptor::default(), raw_stream).await;
+            let acceptor = tokio_rustls::LazyConfigAcceptor::new(tokio_rustls::rustls::server::Acceptor::default(), raw_stream).await;
             if let Err(e) = acceptor {
               return Err(RpxyError::Proxy(format!("Failed to handshake TLS: {e}")));
             }
@@ -122,9 +121,11 @@ where
     info!("Start UDP proxy serving with HTTP/3 request for configured host names");
     // first set as null config server
     let rustls_server_config = ServerConfig::builder()
-      .with_safe_defaults()
+      .with_safe_default_cipher_suites()
+      .with_safe_default_kx_groups()
+      .with_protocol_versions(&[&rustls::version::TLS13])?
       .with_no_client_auth()
-      .with_cert_resolver(Arc::new(tokio_rustls::rustls::server::ResolvesServerCertUsingSni::new()));
+      .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()));
 
     let mut transport_config_quic = TransportConfig::default();
     transport_config_quic
@@ -135,16 +136,16 @@ where
     let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(rustls_server_config));
     server_config_h3.transport = Arc::new(transport_config_quic);
     server_config_h3.concurrent_connections(self.globals.h3_max_concurrent_connections);
-    let (endpoint, mut incoming) = Endpoint::server(server_config_h3, self.listening_on)?;
+    let endpoint = Endpoint::server(server_config_h3, self.listening_on)?;
 
     let mut server_crypto: Option<Arc<ServerCrypto>> = None;
     loop {
       tokio::select! {
-        new_conn = incoming.next() => {
+        new_conn = endpoint.accept() => {
           if server_crypto.is_none() || new_conn.is_none() {
             continue;
           }
-          let mut conn = new_conn.unwrap();
+          let mut conn: quinn::Connecting = new_conn.unwrap();
           let hsd = match conn.handshake_data().await {
             Ok(h) => h,
             Err(_) => continue
