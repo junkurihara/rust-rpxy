@@ -1,3 +1,6 @@
 [submodule "h3"]
 	path = h3
 	url = git@github.com:junkurihara/h3.git
+[submodule "quinn"]
+	path = quinn
+	url = git@github.com:junkurihara/quinn.git

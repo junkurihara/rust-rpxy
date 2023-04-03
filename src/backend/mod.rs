@@ -168,7 +168,8 @@ impl Backend {
     let owned_trust_anchors: Vec<_> = certs
       .iter()
       .map(|v| {
-        let trust_anchor = tokio_rustls::webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
+        // let trust_anchor = tokio_rustls::webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
+        let trust_anchor = webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
         rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
           trust_anchor.subject,
           trust_anchor.spki,
@@ -279,7 +280,7 @@ impl Backends {
               let client_certs_verifier = rustls::server::AllowAnyAuthenticatedClient::new(client_ca_roots_local);
               ServerConfig::builder()
                 .with_safe_defaults()
-                .with_client_cert_verifier(client_certs_verifier)
+                .with_client_cert_verifier(Arc::new(client_certs_verifier))
                 .with_cert_resolver(Arc::new(resolver_local))
             };
             server_config_local.alpn_protocols.push(b"h2".to_vec());
