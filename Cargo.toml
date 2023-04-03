@@ -43,7 +43,7 @@ hyper = { version = "0.14.25", default-features = false, features = [
   "http2",
   "stream",
 ] }
-hyper-rustls = { version = "0.23.2", default-features = false, features = [
+hyper-rustls = { version = "0.24.0", default-features = false, features = [
   "tokio-runtime",
   "webpki-tokio",
   "http1",
