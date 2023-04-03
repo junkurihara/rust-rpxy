@@ -43,24 +43,27 @@ hyper = { version = "0.14.25", default-features = false, features = [
   "http2",
   "stream",
 ] }
-hyper-rustls = { version = "0.23.2", default-features = false, features = [
+hyper-rustls = { version = "0.24.0", default-features = false, features = [
   "tokio-runtime",
   "webpki-tokio",
   "http1",
   "http2",
 ] }
-tokio-rustls = { version = "0.23.4", features = ["early-data"] }
+tokio-rustls = { version = "0.24.0", features = ["early-data"] }
 rustls-pemfile = "1.0.2"
-rustls = { version = "0.20.8", default-features = false }
+rustls = { version = "0.21.0", default-features = false }
+webpki = "0.22.0"
 
 # logging
 tracing = { version = "0.1.37" }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 
 # http/3
-quinn = { version = "0.9.3", optional = true }
+# quinn = { version = "0.9.3", optional = true }
+quinn = { path = "./quinn/quinn", optional = true } # Tentative to support rustls-0.21
 h3 = { path = "./h3/h3/", optional = true }
-h3-quinn = { path = "./h3/h3-quinn/", optional = true }
+# h3-quinn = { path = "./h3/h3-quinn/", optional = true }
+h3-quinn = { path = "./h3-quinn/", optional = true } # Tentative to support rustls-0.21
 
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
