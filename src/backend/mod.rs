@@ -69,12 +69,9 @@ fn opt_string_to_opt_pathbuf(input: &Option<String>) -> Option<PathBuf> {
 impl Backend {
   pub fn read_certs_and_key(&self) -> io::Result<CertifiedKey> {
     debug!("Read TLS server certificates and private key");
-    let (certs_path, certs_keys_path) =
-      if let (Some(c), Some(k)) = (self.tls_cert_path.as_ref(), self.tls_cert_key_path.as_ref()) {
-        (c, k)
-      } else {
-        return Err(io::Error::new(io::ErrorKind::Other, "Invalid certs and keys paths"));
-      };
+    let (Some(certs_path), Some(certs_keys_path)) = (self.tls_cert_path.as_ref(), self.tls_cert_key_path.as_ref()) else {
+      return Err(io::Error::new(io::ErrorKind::Other, "Invalid certs and keys paths"));
+    };
     let certs: Vec<_> = {
       let certs_path_str = certs_path.display().to_string();
       let mut reader = BufReader::new(File::open(certs_path).map_err(|e| {
@@ -144,11 +141,10 @@ impl Backend {
     debug!("Read CA certificates for client authentication");
     // Reads client certificate and returns client
     let client_ca_cert_path = {
-      if let Some(c) = self.client_ca_cert_path.as_ref() {
-        c
-      } else {
+      let Some(c) = self.client_ca_cert_path.as_ref() else {
         return Err(io::Error::new(io::ErrorKind::Other, "Invalid certs and keys paths"));
-      }
+      };
+      c
     };
     let certs: Vec<_> = {
       let certs_path_str = client_ca_cert_path.display().to_string();

@@ -141,9 +141,7 @@ where
       false
     } {
       if let Some(request_upgraded) = request_upgraded {
-        let onupgrade = if let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() {
-          onupgrade
-        } else {
+        let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() else {
           error!("Response does not have an upgrade extension");
           return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
         };
