@@ -28,12 +28,15 @@ use x509_parser::prelude::*;
 #[derive(Builder)]
 pub struct Backend {
   #[builder(setter(into))]
+  /// backend application name, e.g., app1
   pub app_name: String,
   #[builder(setter(custom))]
+  /// server name, e.g., example.com, in String ascii lower case
   pub server_name: String,
+  /// struct of reverse proxy serving incoming request
   pub reverse_proxy: ReverseProxy,
 
-  // tls settings
+  /// tls settings
   #[builder(setter(custom), default)]
   pub tls_cert_path: Option<PathBuf>,
   #[builder(setter(custom), default)]

@@ -1,5 +1,5 @@
 /// Server name (hostname or ip address) representation in bytes-based struct
-/// For searching hashmap or key list by exact or longest-prefix matching
+/// for searching hashmap or key list by exact or longest-prefix matching
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct ServerNameBytesExp(pub Vec<u8>); // lowercase ascii bytes
 impl From<&[u8]> for ServerNameBytesExp {
@@ -8,8 +8,8 @@ impl From<&[u8]> for ServerNameBytesExp {
   }
 }
 
-/// Server name (hostname or ip address) representation in bytes-based struct
-/// For searching hashmap or key list by exact or longest-prefix matching
+/// Path name, like "/path/ok", represented in bytes-based struct
+/// for searching hashmap or key list by exact or longest-prefix matching
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct PathNameBytesExp(pub Vec<u8>); // lowercase ascii bytes
 impl PathNameBytesExp {

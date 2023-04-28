@@ -266,6 +266,8 @@ where
     };
 
     // Fix unique upstream destination since there could be multiple ones.
+    // TODO: StickyならCookieをここでgetに与える必要
+    // TODO: Stickyで、Cookieが与えられなかったらset-cookie向けにcookieを返す必要。upstreamオブジェクトに含めるのも手。
     let upstream_chosen = upstream_group.get().ok_or_else(|| anyhow!("Failed to get upstream"))?;
 
     // apply upstream-specific headers given in upstream_option

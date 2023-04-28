@@ -17,6 +17,7 @@ pub struct ReverseProxy {
 }
 
 impl ReverseProxy {
+  /// Get an appropriate upstream destination for given path string.
   pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamGroup> {
     // trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
     // コスト的にこの程度で十分
@@ -52,9 +53,14 @@ impl ReverseProxy {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
+/// Load Balancing Option
 pub enum LoadBalance {
+  /// Simple round robin without session persistance
   RoundRobin,
+  /// Randomly chose one upstream server
   Random,
+  /// Round robin with session persistance using cookie
+  StickyRoundRobin,
 }
 impl Default for LoadBalance {
   fn default() -> Self {
@@ -63,22 +69,32 @@ impl Default for LoadBalance {
 }
 
 #[derive(Debug, Clone)]
+/// Upstream struct just containing uri without path
 pub struct Upstream {
-  pub uri: hyper::Uri, // base uri without specific path
+  /// Base uri without specific path
+  pub uri: hyper::Uri,
 }
 
 #[derive(Debug, Clone, Builder)]
+/// Struct serving multiple upstream servers for, e.g., load balancing.
 pub struct UpstreamGroup {
+  /// Upstream server(s)
   pub upstream: Vec<Upstream>,
   #[builder(setter(custom), default)]
+  /// Path like "/path" in [[PathNameBytesExp]] associated with the upstream server(s)
   pub path: PathNameBytesExp,
   #[builder(setter(custom), default)]
+  /// Path in [[PathNameBytesExp]] that will be used to replace the "path" part of incoming url
   pub replace_path: Option<PathNameBytesExp>,
+
   #[builder(default)]
+  /// Load balancing option
   pub lb: LoadBalance,
   #[builder(default)]
-  pub cnt: UpstreamCount, // counter for load balancing
+  /// Counter for load balancing
+  pub cnt: UpstreamCount,
   #[builder(setter(custom), default)]
+  /// Activated upstream options defined in [[UpstreamOption]]
   pub opts: HashSet<UpstreamOption>,
 }
 impl UpstreamGroupBuilder {
@@ -116,6 +132,7 @@ impl UpstreamGroupBuilder {
 pub struct UpstreamCount(Arc<AtomicUsize>);
 
 impl UpstreamGroup {
+  /// Get an enabled option of load balancing [[LoadBalance]]
   pub fn get(&self) -> Option<&Upstream> {
     match self.lb {
       LoadBalance::RoundRobin => {
@@ -127,13 +144,16 @@ impl UpstreamGroup {
         let max = self.upstream.len() - 1;
         self.upstream.get(rng.gen_range(0..max))
       }
+      LoadBalance::StickyRoundRobin => todo!(), // TODO: TODO:
     }
   }
 
+  /// Get a current count of upstream served
   fn current_cnt(&self) -> usize {
     self.cnt.0.load(Ordering::Relaxed)
   }
 
+  /// Increment count of upstream served
   fn increment_cnt(&self) -> usize {
     if self.current_cnt() < self.upstream.len() - 1 {
       self.cnt.0.fetch_add(1, Ordering::Relaxed)
