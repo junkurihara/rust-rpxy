@@ -52,6 +52,7 @@ upstream = [
   { location = 'www.yahoo.com', tls = true },
   { location = 'www.yahoo.co.jp', tls = true },
 ]
+load_balance = "round_robin" # or "random" or "sticky" (sticky session) or "none" (fix to the first one, default)
 upstream_options = ["override_host", "convert_https_to_2"]
 
 # Non-default destination in "localhost" app, which is routed by "path"
@@ -67,6 +68,7 @@ upstream = [
   { location = 'www.bing.com', tls = true },
   { location = 'www.bing.co.jp', tls = true },
 ]
+load_balance = "random" # or "round_robin" or "sticky" (sticky session) or "none" (fix to the first one, default)
 upstream_options = [
   "override_host",
   "upgrade_insecure_requests",

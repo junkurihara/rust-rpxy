@@ -1,4 +1,7 @@
-use super::{BytesName, PathNameBytesExp, UpstreamOption};
+use super::{
+  load_balance::{load_balance_options as lb_opts, LoadBalance},
+  BytesName, PathNameBytesExp, UpstreamOption,
+};
 use crate::log::*;
 use derive_builder::Builder;
 use rand::Rng;
@@ -51,23 +54,6 @@ impl ReverseProxy {
   }
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-/// Load Balancing Option
-pub enum LoadBalance {
-  /// Simple round robin without session persistance
-  RoundRobin,
-  /// Randomly chose one upstream server
-  Random,
-  /// Round robin with session persistance using cookie
-  StickyRoundRobin,
-}
-impl Default for LoadBalance {
-  fn default() -> Self {
-    Self::RoundRobin
-  }
-}
-
 #[derive(Debug, Clone)]
 /// Upstream struct just containing uri without path
 pub struct Upstream {
@@ -87,7 +73,7 @@ pub struct UpstreamGroup {
   /// Path in [[PathNameBytesExp]] that will be used to replace the "path" part of incoming url
   pub replace_path: Option<PathNameBytesExp>,
 
-  #[builder(default)]
+  #[builder(setter(custom), default)]
   /// Load balancing option
   pub lb: LoadBalance,
   #[builder(default)]
@@ -97,6 +83,7 @@ pub struct UpstreamGroup {
   /// Activated upstream options defined in [[UpstreamOption]]
   pub opts: HashSet<UpstreamOption>,
 }
+
 impl UpstreamGroupBuilder {
   pub fn path(&mut self, v: &Option<String>) -> &mut Self {
     let path = match v {
@@ -114,6 +101,24 @@ impl UpstreamGroupBuilder {
     );
     self
   }
+  pub fn lb(&mut self, v: &Option<String>) -> &mut Self {
+    let lb = if let Some(x) = v {
+      match x.as_str() {
+        lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
+        lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin,
+        lb_opts::RANDOM => LoadBalance::Random,
+        lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin,
+        _ => {
+          error!("Specified load balancing option is invalid.");
+          LoadBalance::default()
+        }
+      }
+    } else {
+      LoadBalance::default()
+    };
+    self.lb = Some(lb);
+    self
+  }
   pub fn opts(&mut self, v: &Option<Vec<String>>) -> &mut Self {
     let opts = if let Some(opts) = v {
       opts
@@ -128,6 +133,7 @@ impl UpstreamGroupBuilder {
   }
 }
 
+// TODO: カウンタの移動
 #[derive(Debug, Clone, Default)]
 pub struct UpstreamCount(Arc<AtomicUsize>);
 
@@ -135,6 +141,7 @@ impl UpstreamGroup {
   /// Get an enabled option of load balancing [[LoadBalance]]
   pub fn get(&self) -> Option<&Upstream> {
     match self.lb {
+      LoadBalance::FixToFirst => self.upstream.get(0),
       LoadBalance::RoundRobin => {
         let idx = self.increment_cnt();
         self.upstream.get(idx)

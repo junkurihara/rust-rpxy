@@ -1,3 +1,4 @@
+mod load_balance;
 mod upstream;
 mod upstream_opts;
 

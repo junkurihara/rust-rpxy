@@ -205,6 +205,7 @@ fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<
       .upstream(rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect())
       .path(&rpo.path)
       .replace_path(&rpo.replace_path)
+      .lb(&rpo.load_balance)
       .opts(&rpo.upstream_options)
       .build()
       .unwrap();
