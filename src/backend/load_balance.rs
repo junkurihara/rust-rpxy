@@ -12,12 +12,8 @@ pub(super) mod load_balance_options {
   pub const STICKY_ROUND_ROBIN: &str = "sticky";
 }
 
-//
-//   /// Counter for load balancing
-//   pub cnt: UpstreamCount,
-
-// TODO: カウンタの移動
 #[derive(Debug, Clone, Builder)]
+/// Counter object as a pointer to the current serving upstream destination
 pub struct LbRoundRobinCount {
   #[builder(default)]
   cnt: Arc<AtomicUsize>,
@@ -52,12 +48,12 @@ impl LbRoundRobinCount {
 pub enum LoadBalance {
   /// Fix to the first upstream. Use if only one upstream destination is specified
   FixToFirst,
-  /// Simple round robin without session persistance
-  RoundRobin(LbRoundRobinCount), // TODO: カウンタはここにいれる。randomとかには不要なので
   /// Randomly chose one upstream server
   Random,
+  /// Simple round robin without session persistance
+  RoundRobin(LbRoundRobinCount),
   /// Round robin with session persistance using cookie
-  StickyRoundRobin,
+  StickyRoundRobin(LbRoundRobinCount),
 }
 impl Default for LoadBalance {
   fn default() -> Self {

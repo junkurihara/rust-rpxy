@@ -96,14 +96,19 @@ impl UpstreamGroupBuilder {
     let lb = if let Some(x) = v {
       match x.as_str() {
         lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
+        lb_opts::RANDOM => LoadBalance::Random,
         lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(
           LbRoundRobinCountBuilder::default()
             .max_val(upstream_num)
             .build()
             .unwrap(),
         ),
-        lb_opts::RANDOM => LoadBalance::Random,
-        lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin,
+        lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
+          LbRoundRobinCountBuilder::default()
+            .max_val(upstream_num)
+            .build()
+            .unwrap(),
+        ),
         _ => {
           error!("Specified load balancing option is invalid.");
           LoadBalance::default()
@@ -143,7 +148,7 @@ impl UpstreamGroup {
         let max = self.upstream.len() - 1;
         self.upstream.get(rng.gen_range(0..max))
       }
-      LoadBalance::StickyRoundRobin => todo!(), // TODO: TODO:
+      LoadBalance::StickyRoundRobin(_cnt) => todo!(), // TODO: TODO:
     }
   }
 }
