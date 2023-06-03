@@ -1,18 +1,12 @@
 use super::{
-  load_balance::{load_balance_options as lb_opts, LoadBalance},
+  load_balance::{load_balance_options as lb_opts, LbRoundRobinCountBuilder, LoadBalance},
   BytesName, PathNameBytesExp, UpstreamOption,
 };
 use crate::log::*;
 use derive_builder::Builder;
 use rand::Rng;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use std::{
-  borrow::Cow,
-  sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-  },
-};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxy {
@@ -76,9 +70,6 @@ pub struct UpstreamGroup {
   #[builder(setter(custom), default)]
   /// Load balancing option
   pub lb: LoadBalance,
-  #[builder(default)]
-  /// Counter for load balancing
-  pub cnt: UpstreamCount,
   #[builder(setter(custom), default)]
   /// Activated upstream options defined in [[UpstreamOption]]
   pub opts: HashSet<UpstreamOption>,
@@ -101,11 +92,16 @@ impl UpstreamGroupBuilder {
     );
     self
   }
-  pub fn lb(&mut self, v: &Option<String>) -> &mut Self {
+  pub fn lb(&mut self, v: &Option<String>, upstream_num: &usize) -> &mut Self {
     let lb = if let Some(x) = v {
       match x.as_str() {
         lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
-        lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin,
+        lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(
+          LbRoundRobinCountBuilder::default()
+            .max_val(upstream_num)
+            .build()
+            .unwrap(),
+        ),
         lb_opts::RANDOM => LoadBalance::Random,
         lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin,
         _ => {
@@ -133,17 +129,13 @@ impl UpstreamGroupBuilder {
   }
 }
 
-// TODO: カウンタの移動
-#[derive(Debug, Clone, Default)]
-pub struct UpstreamCount(Arc<AtomicUsize>);
-
 impl UpstreamGroup {
   /// Get an enabled option of load balancing [[LoadBalance]]
   pub fn get(&self) -> Option<&Upstream> {
-    match self.lb {
+    match &self.lb {
       LoadBalance::FixToFirst => self.upstream.get(0),
-      LoadBalance::RoundRobin => {
-        let idx = self.increment_cnt();
+      LoadBalance::RoundRobin(cnt) => {
+        let idx = cnt.increment_cnt();
         self.upstream.get(idx)
       }
       LoadBalance::Random => {
@@ -152,20 +144,6 @@ impl UpstreamGroup {
         self.upstream.get(rng.gen_range(0..max))
       }
       LoadBalance::StickyRoundRobin => todo!(), // TODO: TODO:
-    }
-  }
-
-  /// Get a current count of upstream served
-  fn current_cnt(&self) -> usize {
-    self.cnt.0.load(Ordering::Relaxed)
-  }
-
-  /// Increment count of upstream served
-  fn increment_cnt(&self) -> usize {
-    if self.current_cnt() < self.upstream.len() - 1 {
-      self.cnt.0.fetch_add(1, Ordering::Relaxed)
-    } else {
-      self.cnt.0.fetch_and(0, Ordering::Relaxed)
     }
   }
 }

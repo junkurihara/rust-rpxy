@@ -1,6 +1,6 @@
 use super::toml::{ConfigToml, ReverseProxyOption};
 use crate::{
-  backend::{BackendBuilder, ReverseProxy, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption},
+  backend::{BackendBuilder, ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption},
   constants::*,
   error::*,
   globals::*,
@@ -200,12 +200,15 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
 
 fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<ReverseProxy, anyhow::Error> {
   let mut upstream: HashMap<PathNameBytesExp, UpstreamGroup> = HashMap::default();
+
   rp_settings.iter().for_each(|rpo| {
+    let vec_upstream: Vec<Upstream> = rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect();
+    let lb_upstream_num = vec_upstream.len();
     let elem = UpstreamGroupBuilder::default()
-      .upstream(rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect())
+      .upstream(vec_upstream)
       .path(&rpo.path)
       .replace_path(&rpo.replace_path)
-      .lb(&rpo.load_balance)
+      .lb(&rpo.load_balance, &lb_upstream_num)
       .opts(&rpo.upstream_options)
       .build()
       .unwrap();
