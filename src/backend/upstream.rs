@@ -1,10 +1,9 @@
 use super::{
-  load_balance::{load_balance_options as lb_opts, LbRoundRobinCountBuilder, LoadBalance},
+  load_balance::{load_balance_options as lb_opts, LbRandomBuilder, LbRoundRobinBuilder, LoadBalance},
   BytesName, PathNameBytesExp, UpstreamOption,
 };
 use crate::log::*;
 use derive_builder::Builder;
-use rand::Rng;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::borrow::Cow;
 
@@ -96,16 +95,16 @@ impl UpstreamGroupBuilder {
     let lb = if let Some(x) = v {
       match x.as_str() {
         lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
-        lb_opts::RANDOM => LoadBalance::Random,
+        lb_opts::RANDOM => LoadBalance::Random(LbRandomBuilder::default().num_upstreams(upstream_num).build().unwrap()),
         lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(
-          LbRoundRobinCountBuilder::default()
-            .max_val(upstream_num)
+          LbRoundRobinBuilder::default()
+            .num_upstreams(upstream_num)
             .build()
             .unwrap(),
         ),
         lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
-          LbRoundRobinCountBuilder::default()
-            .max_val(upstream_num)
+          LbRoundRobinBuilder::default()
+            .num_upstreams(upstream_num)
             .build()
             .unwrap(),
         ),
@@ -137,18 +136,8 @@ impl UpstreamGroupBuilder {
 impl UpstreamGroup {
   /// Get an enabled option of load balancing [[LoadBalance]]
   pub fn get(&self) -> Option<&Upstream> {
-    match &self.lb {
-      LoadBalance::FixToFirst => self.upstream.get(0),
-      LoadBalance::RoundRobin(cnt) => {
-        let idx = cnt.increment_cnt();
-        self.upstream.get(idx)
-      }
-      LoadBalance::Random => {
-        let mut rng = rand::thread_rng();
-        let max = self.upstream.len() - 1;
-        self.upstream.get(rng.gen_range(0..max))
-      }
-      LoadBalance::StickyRoundRobin(_cnt) => todo!(), // TODO: TODO:
-    }
+    let idx = self.lb.get_idx();
+    debug!("Upstream of index {idx} is chosen.");
+    self.upstream.get(idx)
   }
 }
