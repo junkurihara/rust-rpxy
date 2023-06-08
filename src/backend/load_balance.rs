@@ -1,5 +1,5 @@
 use super::{load_balance_sticky_cookie::StickyCookieConfig, LbContext, Upstream};
-use crate::{constants::STICKY_COOKIE_NAME, error::*, log::*};
+use crate::{constants::STICKY_COOKIE_NAME, log::*};
 use derive_builder::Builder;
 use rand::Rng;
 use rustc_hash::FxHashMap as HashMap;
