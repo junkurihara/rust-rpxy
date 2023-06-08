@@ -108,7 +108,7 @@ revese_proxy = [
 
 #### Load Balancing
 
-You can specify multiple backend locations in the `reverse_proxy` array for *load-balancing* with an appropriate `load_balance` option. Currently it works in the manner of round-robin or in the random fashion. if `load_balance` is not specified, the first backend location is always chosen.
+You can specify multiple backend locations in the `reverse_proxy` array for *load-balancing* with an appropriate `load_balance` option. Currently it works in the manner of round-robin, in the random fashion, or round-robin with *session-persistance* using cookie. if `load_balance` is not specified, the first backend location is always chosen.
 
 ```toml
 [apps."app_name"]
@@ -117,10 +117,8 @@ reverse_proxy = [
   { location = 'app1.local:8080' },
   { location = 'app2.local:8000' }
 ]
-load_balance = 'round_robin'
+load_balance = 'round_robin' # or 'random' or 'sticky'
 ```
-
-(TODO: Sticky session is currently being implemented)
 
 ### Second Step: Terminating TLS
 
