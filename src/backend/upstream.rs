@@ -1,12 +1,16 @@
 use super::{
-  load_balance::{load_balance_options as lb_opts, LbRandomBuilder, LbRoundRobinBuilder, LoadBalance},
+  load_balance::{
+    load_balance_options as lb_opts, LbRandomBuilder, LbRoundRobinBuilder, LbStickyRoundRobinBuilder, LoadBalance,
+  },
+  load_balance_sticky_cookie::LbContext,
   BytesName, PathNameBytesExp, UpstreamOption,
 };
 use crate::log::*;
+use base64::{engine::general_purpose, Engine as _};
 use derive_builder::Builder;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use sha2::{Digest, Sha256};
 use std::borrow::Cow;
-
 #[derive(Debug, Clone)]
 pub struct ReverseProxy {
   pub upstream: HashMap<PathNameBytesExp, UpstreamGroup>, // TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
@@ -53,10 +57,20 @@ pub struct Upstream {
   /// Base uri without specific path
   pub uri: hyper::Uri,
 }
-
+impl Upstream {
+  /// Hashing uri with index to avoid collision
+  pub fn calculate_id_with_index(&self, index: usize) -> String {
+    let mut hasher = Sha256::new();
+    let uri_string = format!("{}&index={}", self.uri.clone(), index);
+    hasher.update(uri_string.as_bytes());
+    let digest = hasher.finalize();
+    general_purpose::URL_SAFE_NO_PAD.encode(digest)
+  }
+}
 #[derive(Debug, Clone, Builder)]
 /// Struct serving multiple upstream servers for, e.g., load balancing.
 pub struct UpstreamGroup {
+  #[builder(setter(custom))]
   /// Upstream server(s)
   pub upstream: Vec<Upstream>,
   #[builder(setter(custom), default)]
@@ -75,6 +89,10 @@ pub struct UpstreamGroup {
 }
 
 impl UpstreamGroupBuilder {
+  pub fn upstream(&mut self, upstream_vec: &[Upstream]) -> &mut Self {
+    self.upstream = Some(upstream_vec.to_vec());
+    self
+  }
   pub fn path(&mut self, v: &Option<String>) -> &mut Self {
     let path = match v {
       Some(p) => p.to_path_name_vec(),
@@ -91,7 +109,15 @@ impl UpstreamGroupBuilder {
     );
     self
   }
-  pub fn lb(&mut self, v: &Option<String>, upstream_num: &usize) -> &mut Self {
+  pub fn lb(
+    &mut self,
+    v: &Option<String>,
+    // upstream_num: &usize,
+    upstream_vec: &Vec<Upstream>,
+    server_name: &str,
+    path_opt: &Option<String>,
+  ) -> &mut Self {
+    let upstream_num = &upstream_vec.len();
     let lb = if let Some(x) = v {
       match x.as_str() {
         lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
@@ -103,8 +129,10 @@ impl UpstreamGroupBuilder {
             .unwrap(),
         ),
         lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
-          LbRoundRobinBuilder::default()
+          LbStickyRoundRobinBuilder::default()
             .num_upstreams(upstream_num)
+            .sticky_config(server_name, path_opt)
+            .upstream_maps(upstream_vec) // TODO:
             .build()
             .unwrap(),
         ),
@@ -135,9 +163,35 @@ impl UpstreamGroupBuilder {
 
 impl UpstreamGroup {
   /// Get an enabled option of load balancing [[LoadBalance]]
-  pub fn get(&self) -> Option<&Upstream> {
-    let idx = self.lb.get_idx();
-    debug!("Upstream of index {idx} is chosen.");
-    self.upstream.get(idx)
+  pub fn get(&self, context_to_lb: &Option<LbContext>) -> (Option<&Upstream>, Option<LbContext>) {
+    let pointer_to_upstream = self.lb.get_context(context_to_lb);
+    debug!("Upstream of index {} is chosen.", pointer_to_upstream.ptr);
+    debug!("Context to LB (Cookie in Req): {:?}", context_to_lb);
+    debug!(
+      "Context from LB (Set-Cookie in Res): {:?}",
+      pointer_to_upstream.context_lb
+    );
+    (
+      self.upstream.get(pointer_to_upstream.ptr),
+      pointer_to_upstream.context_lb,
+    )
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use super::*;
+  #[test]
+  fn calc_id_works() {
+    let uri = "https://www.rust-lang.org".parse::<hyper::Uri>().unwrap();
+    let upstream = Upstream { uri };
+    assert_eq!(
+      "eGsjoPbactQ1eUJjafYjPT3ekYZQkaqJnHdA_FMSkgM",
+      upstream.calculate_id_with_index(0)
+    );
+    assert_eq!(
+      "tNVXFJ9eNCT2mFgKbYq35XgH5q93QZtfU8piUiiDxVA",
+      upstream.calculate_id_with_index(1)
+    );
   }
 }

@@ -1,7 +1,14 @@
 mod load_balance;
+mod load_balance_sticky_cookie;
 mod upstream;
 mod upstream_opts;
 
+pub use self::{
+  load_balance::LoadBalance,
+  load_balance_sticky_cookie::{LbContext, StickyCookie, StickyCookieBuilder, StickyCookieValue},
+  upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder},
+  upstream_opts::UpstreamOption,
+};
 use crate::{
   log::*,
   utils::{BytesName, PathNameBytesExp, ServerNameBytesExp},
@@ -21,8 +28,6 @@ use tokio_rustls::rustls::{
   sign::{any_supported_type, CertifiedKey},
   Certificate, PrivateKey, ServerConfig,
 };
-pub use upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder};
-pub use upstream_opts::UpstreamOption;
 use x509_parser::prelude::*;
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.

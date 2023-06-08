@@ -99,7 +99,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
     let mut backend_builder = BackendBuilder::default();
     // reverse proxy settings
     ensure!(app.reverse_proxy.is_some(), "Missing reverse_proxy");
-    let reverse_proxy = get_reverse_proxy(app.reverse_proxy.as_ref().unwrap())?;
+    let reverse_proxy = get_reverse_proxy(server_name_string, app.reverse_proxy.as_ref().unwrap())?;
 
     backend_builder
       .app_name(server_name_string)
@@ -198,17 +198,21 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
   Ok(())
 }
 
-fn get_reverse_proxy(rp_settings: &[ReverseProxyOption]) -> std::result::Result<ReverseProxy, anyhow::Error> {
+fn get_reverse_proxy(
+  server_name_string: &str,
+  rp_settings: &[ReverseProxyOption],
+) -> std::result::Result<ReverseProxy, anyhow::Error> {
   let mut upstream: HashMap<PathNameBytesExp, UpstreamGroup> = HashMap::default();
 
   rp_settings.iter().for_each(|rpo| {
-    let vec_upstream: Vec<Upstream> = rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect();
-    let lb_upstream_num = vec_upstream.len();
+    let upstream_vec: Vec<Upstream> = rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect();
+    // let upstream_iter = rpo.upstream.iter().map(|x| x.to_upstream().unwrap());
+    // let lb_upstream_num = vec_upstream.len();
     let elem = UpstreamGroupBuilder::default()
-      .upstream(vec_upstream)
+      .upstream(&upstream_vec)
       .path(&rpo.path)
       .replace_path(&rpo.replace_path)
-      .lb(&rpo.load_balance, &lb_upstream_num)
+      .lb(&rpo.load_balance, &upstream_vec, server_name_string, &rpo.path)
       .opts(&rpo.upstream_options)
       .build()
       .unwrap();

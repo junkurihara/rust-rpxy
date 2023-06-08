@@ -24,3 +24,6 @@ pub mod H3 {
   pub const MAX_CONCURRENT_UNISTREAM: u32 = 64;
   pub const MAX_IDLE_TIMEOUT: u64 = 10; // secs
 }
+
+// For load-balancing with sticky cookie
+pub const STICKY_COOKIE_NAME: &str = "rpxy_srv_id";
