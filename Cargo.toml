@@ -21,7 +21,7 @@ clap = { version = "4.3.2", features = ["std", "cargo", "wrap_help"] }
 rand = "0.8.5"
 toml = { version = "0.7.4", default-features = false, features = ["parse"] }
 rustc-hash = "1.1.0"
-serde = { version = "1.0.163", default-features = false, features = ["derive"] }
+serde = { version = "1.0.164", default-features = false, features = ["derive"] }
 bytes = "1.4.0"
 thiserror = "1.0.40"
 x509-parser = "0.15.0"
@@ -64,6 +64,15 @@ quinn = { path = "./quinn/quinn", optional = true } # Tentative to support rustl
 h3 = { path = "./h3/h3/", optional = true }
 # h3-quinn = { path = "./h3/h3-quinn/", optional = true }
 h3-quinn = { path = "./h3-quinn/", optional = true } # Tentative to support rustls-0.21
+
+# cookie handling
+chrono = { version = "0.4.26", default-features = false, features = [
+  "unstable-locales",
+  "alloc",
+  "clock",
+] }
+base64 = "0.21.2"
+sha2 = { version = "0.10.6", default-features = false }
 
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]

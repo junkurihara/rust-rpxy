@@ -1,6 +1,14 @@
+mod load_balance;
+mod load_balance_sticky_cookie;
 mod upstream;
 mod upstream_opts;
 
+pub use self::{
+  load_balance::LoadBalance,
+  load_balance_sticky_cookie::{LbContext, StickyCookie, StickyCookieBuilder, StickyCookieValue},
+  upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder},
+  upstream_opts::UpstreamOption,
+};
 use crate::{
   log::*,
   utils::{BytesName, PathNameBytesExp, ServerNameBytesExp},
@@ -20,20 +28,21 @@ use tokio_rustls::rustls::{
   sign::{any_supported_type, CertifiedKey},
   Certificate, PrivateKey, ServerConfig,
 };
-pub use upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder};
-pub use upstream_opts::UpstreamOption;
 use x509_parser::prelude::*;
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
 #[derive(Builder)]
 pub struct Backend {
   #[builder(setter(into))]
+  /// backend application name, e.g., app1
   pub app_name: String,
   #[builder(setter(custom))]
+  /// server name, e.g., example.com, in String ascii lower case
   pub server_name: String,
+  /// struct of reverse proxy serving incoming request
   pub reverse_proxy: ReverseProxy,
 
-  // tls settings
+  /// tls settings
   #[builder(setter(custom), default)]
   pub tls_cert_path: Option<PathBuf>,
   #[builder(setter(custom), default)]

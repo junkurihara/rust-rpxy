@@ -3,7 +3,9 @@
 ## 0.3.0 (unreleased)
 
 ### Improvement
+
 - Update `h3` with `quinn-0.10` or higher.
+- Implement the session persistance function for load balancing using sticky cookie (initial implementation).
 
 ## 0.2.0
 
