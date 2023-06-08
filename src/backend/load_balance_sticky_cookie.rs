@@ -134,7 +134,7 @@ impl TryInto<String> for StickyCookie {
     let max_age = info.expires - Utc::now().timestamp();
 
     Ok(format!(
-      "{}={}; expires={}; Max-Age={}; path={}; domain={}; HttpOnly",
+      "{}={}; expires={}; Max-Age={}; path={}; domain={}",
       self.value.name, self.value.value, exp_str, max_age, info.path, info.domain
     ))
   }
@@ -184,7 +184,7 @@ mod tests {
     assert_eq!(
       sc_string.unwrap(),
       format!(
-        "{}=test_value; expires={}; Max-Age={}; path=/path; domain=example.com; HttpOnly",
+        "{}=test_value; expires={}; Max-Age={}; path=/path; domain=example.com",
         STICKY_COOKIE_NAME, expires_date_string, 100
       )
     );
@@ -208,7 +208,7 @@ mod tests {
     assert_eq!(
       sc_string.unwrap(),
       format!(
-        "{}=test_value; expires=Thu, 08-Jun-2023 10:46:13 GMT; Max-Age={}; path=/path; domain=example.com; HttpOnly",
+        "{}=test_value; expires=Thu, 08-Jun-2023 10:46:13 GMT; Max-Age={}; path=/path; domain=example.com",
         STICKY_COOKIE_NAME, max_age
       )
     );
