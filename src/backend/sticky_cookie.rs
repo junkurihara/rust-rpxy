@@ -4,14 +4,6 @@ use crate::error::*;
 use chrono::{TimeZone, Utc};
 use derive_builder::Builder;
 
-#[derive(Debug, Clone)]
-/// Struct to handle the sticky cookie string,
-/// - passed from Rp module (http handler) to LB module, manipulated from req, only StickyCookieValue exists.
-/// - passed from LB module to Rp module (http handler), will be inserted into res, StickyCookieValue and Info exist.
-pub struct LbContext {
-  pub sticky_cookie: StickyCookie,
-}
-
 #[derive(Debug, Clone, Builder)]
 /// Cookie value only, used for COOKIE in req
 pub struct StickyCookieValue {

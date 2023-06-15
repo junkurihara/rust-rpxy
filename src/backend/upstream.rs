@@ -1,14 +1,13 @@
-use super::{
-  load_balance::{
-    load_balance_options as lb_opts, LbRandomBuilder, LbRoundRobinBuilder, LbStickyRoundRobinBuilder, LoadBalance,
-  },
-  load_balance_sticky_cookie::LbContext,
-  BytesName, PathNameBytesExp, UpstreamOption,
-};
+#[cfg(feature = "sticky-cookie")]
+use super::load_balance::LbStickyRoundRobinBuilder;
+use super::load_balance::{load_balance_options as lb_opts, LbRandomBuilder, LbRoundRobinBuilder, LoadBalance};
+use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
 use crate::log::*;
+#[cfg(feature = "sticky-cookie")]
 use base64::{engine::general_purpose, Engine as _};
 use derive_builder::Builder;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+#[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 #[derive(Debug, Clone)]
@@ -58,6 +57,7 @@ pub struct Upstream {
   pub uri: hyper::Uri,
 }
 impl Upstream {
+  #[cfg(feature = "sticky-cookie")]
   /// Hashing uri with index to avoid collision
   pub fn calculate_id_with_index(&self, index: usize) -> String {
     let mut hasher = Sha256::new();
@@ -114,8 +114,8 @@ impl UpstreamGroupBuilder {
     v: &Option<String>,
     // upstream_num: &usize,
     upstream_vec: &Vec<Upstream>,
-    server_name: &str,
-    path_opt: &Option<String>,
+    _server_name: &str,
+    _path_opt: &Option<String>,
   ) -> &mut Self {
     let upstream_num = &upstream_vec.len();
     let lb = if let Some(x) = v {
@@ -128,10 +128,11 @@ impl UpstreamGroupBuilder {
             .build()
             .unwrap(),
         ),
+        #[cfg(feature = "sticky-cookie")]
         lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
           LbStickyRoundRobinBuilder::default()
             .num_upstreams(upstream_num)
-            .sticky_config(server_name, path_opt)
+            .sticky_config(_server_name, _path_opt)
             .upstream_maps(upstream_vec) // TODO:
             .build()
             .unwrap(),
@@ -180,7 +181,10 @@ impl UpstreamGroup {
 
 #[cfg(test)]
 mod test {
+  #[allow(unused)]
   use super::*;
+
+  #[cfg(feature = "sticky-cookie")]
   #[test]
   fn calc_id_works() {
     let uri = "https://www.rust-lang.org".parse::<hyper::Uri>().unwrap();

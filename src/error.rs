@@ -22,15 +22,18 @@ pub enum RpxyError {
   #[error("TCP/UDP Proxy Layer Error: {0}")]
   Proxy(String),
 
+  #[allow(unused)]
   #[error("LoadBalance Layer Error: {0}")]
   LoadBalance(String),
 
   #[error("I/O Error")]
   Io(#[from] io::Error),
 
+  #[cfg(feature = "http3")]
   #[error("Quic Connection Error")]
   QuicConn(#[from] quinn::ConnectionError),
 
+  #[cfg(feature = "http3")]
   #[error("H3 Error")]
   H3(#[from] h3::Error),
 

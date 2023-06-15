@@ -6,10 +6,10 @@ use crate::{
   log::*,
   utils::BytesName,
 };
-#[cfg(feature = "http3")]
 use hyper::{client::connect::Connect, server::conn::Http};
 #[cfg(feature = "http3")]
 use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
+#[cfg(feature = "http3")]
 use rustls::ServerConfig;
 use std::sync::Arc;
 use tokio::{
@@ -196,14 +196,14 @@ where
     let (tx, rx) = watch::channel::<Option<Arc<ServerCrypto>>>(None);
     #[cfg(not(feature = "http3"))]
     {
-      select! {
-        _= self.cert_service(tx).fuse() => {
+      tokio::select! {
+        _= self.cert_service(tx) => {
           error!("Cert service for TLS exited");
         },
-        _ = self.listener_service(server, rx).fuse() => {
+        _ = self.listener_service(server, rx) => {
           error!("TCP proxy service for TLS exited");
         },
-        complete => {
+        else => {
           error!("Something went wrong");
           return Ok(())
         }

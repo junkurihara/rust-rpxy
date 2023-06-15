@@ -12,12 +12,13 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3"]
+default = ["http3", "sticky-cookie"]
 http3 = ["quinn", "h3", "h3-quinn"]
+sticky-cookie = ["base64", "sha2", "chrono"]
 
 [dependencies]
 anyhow = "1.0.71"
-clap = { version = "4.3.3", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.3.4", features = ["std", "cargo", "wrap_help"] }
 rand = "0.8.5"
 toml = { version = "0.7.4", default-features = false, features = ["parse"] }
 rustc-hash = "1.1.0"
@@ -51,7 +52,7 @@ hyper-rustls = { version = "0.24.0", default-features = false, features = [
 ] }
 tokio-rustls = { version = "0.24.1", features = ["early-data"] }
 rustls-pemfile = "1.0.2"
-rustls = { version = "0.21.1", default-features = false }
+rustls = { version = "0.21.2", default-features = false }
 webpki = "0.22.0"
 
 # logging
@@ -65,14 +66,14 @@ h3 = { path = "./h3/h3/", optional = true }
 # h3-quinn = { path = "./h3/h3-quinn/", optional = true }
 h3-quinn = { path = "./h3-quinn/", optional = true } # Tentative to support rustls-0.21
 
-# cookie handling
+# cookie handling for sticky cookie
 chrono = { version = "0.4.26", default-features = false, features = [
   "unstable-locales",
   "alloc",
   "clock",
-] }
-base64 = "0.21.2"
-sha2 = { version = "0.10.6", default-features = false }
+], optional = true }
+base64 = { version = "0.21.2", optional = true }
+sha2 = { version = "0.10.6", default-features = false, optional = true }
 
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
