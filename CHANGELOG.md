@@ -5,7 +5,7 @@
 ### Improvement
 
 - Update `h3` with `quinn-0.10` or higher.
-- Implement the session persistance function for load balancing using sticky cookie (initial implementation).
+- Implement the session persistance function for load balancing using sticky cookie (initial implementation). Enabled in `default-features`.
 
 ## 0.2.0
 
