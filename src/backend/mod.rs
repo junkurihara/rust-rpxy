@@ -1,11 +1,15 @@
 mod load_balance;
-mod load_balance_sticky_cookie;
+#[cfg(feature = "sticky-cookie")]
+mod load_balance_sticky;
+#[cfg(feature = "sticky-cookie")]
+mod sticky_cookie;
 mod upstream;
 mod upstream_opts;
 
+#[cfg(feature = "sticky-cookie")]
+pub use self::sticky_cookie::{StickyCookie, StickyCookieValue};
 pub use self::{
-  load_balance::LoadBalance,
-  load_balance_sticky_cookie::{LbContext, StickyCookie, StickyCookieBuilder, StickyCookieValue},
+  load_balance::{LbContext, LoadBalance},
   upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder},
   upstream_opts::UpstreamOption,
 };
@@ -270,15 +274,22 @@ impl Backends {
 
             let mut server_config_local = if client_ca_roots_local.is_empty() {
               // with no client auth, enable http1.1 -- 3
-              let mut sc = ServerConfig::builder()
-                .with_safe_defaults()
-                .with_no_client_auth()
-                .with_cert_resolver(Arc::new(resolver_local));
+              #[cfg(not(feature = "http3"))]
+              {
+                ServerConfig::builder()
+                  .with_safe_defaults()
+                  .with_no_client_auth()
+                  .with_cert_resolver(Arc::new(resolver_local))
+              }
               #[cfg(feature = "http3")]
               {
+                let mut sc = ServerConfig::builder()
+                  .with_safe_defaults()
+                  .with_no_client_auth()
+                  .with_cert_resolver(Arc::new(resolver_local));
                 sc.alpn_protocols = vec![b"h3".to_vec(), b"hq-29".to_vec()]; // TODO: remove hq-29 later?
+                sc
               }
-              sc
             } else {
               // with client auth, enable only http1.1 and 2
               // let client_certs_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(client_ca_roots);
@@ -320,7 +331,7 @@ impl Backends {
     }
     #[cfg(not(feature = "http3"))]
     {
-      server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+      server_crypto_global.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     }
 
     Ok(ServerCrypto {

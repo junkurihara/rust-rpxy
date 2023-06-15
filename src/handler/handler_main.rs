@@ -1,7 +1,7 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
 use super::{utils_headers::*, utils_request::*, utils_synth_response::*, HandlerContext};
 use crate::{
-  backend::{Backend, LoadBalance, UpstreamGroup},
+  backend::{Backend, UpstreamGroup},
   error::*,
   globals::Globals,
   log::*,
@@ -91,7 +91,7 @@ where
     let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
 
     // Build request from destination information
-    let context = match self.generate_request_forwarded(
+    let _context = match self.generate_request_forwarded(
       &client_addr,
       &listen_addr,
       &mut req,
@@ -127,7 +127,8 @@ where
     };
 
     // Process reverse proxy context generated during the forwarding request generation.
-    if let Some(context_from_lb) = context.context_lb {
+    #[cfg(feature = "sticky-cookie")]
+    if let Some(context_from_lb) = _context.context_lb {
       let res_headers = res_backend.headers_mut();
       if let Err(e) = set_sticky_cookie_lb_context(res_headers, &context_from_lb) {
         error!("Failed to append context to the response given from backend: {}", e);
@@ -279,15 +280,24 @@ where
 
     /////////////////////////////////////////////
     // Fix unique upstream destination since there could be multiple ones.
-    let context_to_lb = if let LoadBalance::StickyRoundRobin(lb) = &upstream_group.lb {
-      takeout_sticky_cookie_lb_context(req.headers_mut(), &lb.sticky_config.name)?
-    } else {
-      None
+    #[cfg(feature = "sticky-cookie")]
+    let (upstream_chosen_opt, context_from_lb) = {
+      let context_to_lb = if let crate::backend::LoadBalance::StickyRoundRobin(lb) = &upstream_group.lb {
+        takeout_sticky_cookie_lb_context(req.headers_mut(), &lb.sticky_config.name)?
+      } else {
+        None
+      };
+      upstream_group.get(&context_to_lb)
     };
-    let (upstream_chosen_opt, context_from_lb) = upstream_group.get(&context_to_lb);
+    #[cfg(not(feature = "sticky-cookie"))]
+    let (upstream_chosen_opt, _) = upstream_group.get(&None);
+
     let upstream_chosen = upstream_chosen_opt.ok_or_else(|| anyhow!("Failed to get upstream"))?;
     let context = HandlerContext {
+      #[cfg(feature = "sticky-cookie")]
       context_lb: context_from_lb,
+      #[cfg(not(feature = "sticky-cookie"))]
+      context_lb: None,
     };
     /////////////////////////////////////////////
 

@@ -1,9 +1,8 @@
-use crate::{
-  backend::{LbContext, StickyCookie, StickyCookieValue, UpstreamGroup, UpstreamOption},
-  error::*,
-  log::*,
-  utils::*,
-};
+#[cfg(feature = "sticky-cookie")]
+use crate::backend::{LbContext, StickyCookie, StickyCookieValue};
+use crate::backend::{UpstreamGroup, UpstreamOption};
+
+use crate::{error::*, log::*, utils::*};
 use bytes::BufMut;
 use hyper::{
   header::{self, HeaderMap, HeaderName, HeaderValue},
@@ -14,6 +13,7 @@ use std::net::SocketAddr;
 ////////////////////////////////////////////////////
 // Functions to manipulate headers
 
+#[cfg(feature = "sticky-cookie")]
 /// Take sticky cookie header value from request header,
 /// and returns LbContext to be forwarded to LB if exist and if needed.
 /// Removing sticky cookie is needed and it must not be passed to the upstream.
@@ -55,6 +55,7 @@ pub(super) fn takeout_sticky_cookie_lb_context(
   }
 }
 
+#[cfg(feature = "sticky-cookie")]
 /// Set-Cookie if LB Sticky is enabled and if cookie is newly created/updated.
 /// Set-Cookie response header could be in multiple lines.
 /// https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Set-Cookie
