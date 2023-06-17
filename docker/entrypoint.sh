@@ -133,7 +133,7 @@ fi
 chown -R ${USER_ID}:${USER_ID} /rpxy
 
 # Run rpxy
-echo "rpxy: Start with user: ${USER} (${USER_ID}:${USER_ID})"
+echo "rpxy: Start with user: ${USER} (${USER_ID}:${GROUP_ID})"
 if "${LOGGING}"; then
   echo "rpxy: Start with writing log file"
   gosu ${USER} sh -c "/rpxy/run.sh 2>&1 | tee ${LOG_FILE}"
