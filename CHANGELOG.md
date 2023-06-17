@@ -1,12 +1,16 @@
 # CHANGELOG
 
-## 0.3.0 (unreleased)
+## 0.4.0 (unreleased)
+
+
+## 0.3.0
 
 ### Improvement
 
-- Update `h3` with `quinn-0.10` or higher.
-- Implement the session persistance function for load balancing using sticky cookie (initial implementation). Enabled in `default-features`.
-- Update `Dockerfile`s to change UID and GID to non-root users. Now they can be set as you like by specifying through env vars.
+- HTTP/3 Deps: Update `h3` with `quinn-0.10` or higher. But changed their crates from `crates.io` to `git submodule` as a part of work around. I think this will be back to `crates.io` in a near-future update.
+- Load Balancing: Implement the session persistance function for load balancing using sticky cookie (initial implementation). Enabled in `default-features`.
+- Docker UID:GID: Update `Dockerfile`s to allow arbitrary UID and GID (non-root users) for rpxy. Now they can be set as you like by specifying through env vars.
+- Refactor: Various minor improvements
 
 ## 0.2.0
 
