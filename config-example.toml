@@ -52,6 +52,7 @@ upstream = [
   { location = 'www.yahoo.com', tls = true },
   { location = 'www.yahoo.co.jp', tls = true },
 ]
+load_balance = "round_robin" # or "random" or "sticky" (sticky session) or "none" (fix to the first one, default)
 upstream_options = ["override_host", "convert_https_to_2"]
 
 # Non-default destination in "localhost" app, which is routed by "path"
@@ -60,13 +61,14 @@ path = '/maps'
 # For request path starting with "/maps",
 # this configuration results that any path like "/maps/org/any.ext" is mapped to "/replacing/path1/org/any.ext"
 # by replacing "/maps" with "/replacing/path1" for routing to the locations given in upstream array
-# Note that unless "path_replaced_with" is specified, the "path" is always preserved.
-# "path_replaced_with" must be start from "/" (root path)
+# Note that unless "replace_path" is specified, the "path" is always preserved.
+# "replace_path" must be start from "/" (root path)
 replace_path = "/replacing/path1"
 upstream = [
   { location = 'www.bing.com', tls = true },
   { location = 'www.bing.co.jp', tls = true },
 ]
+load_balance = "random" # or "round_robin" or "sticky" (sticky session) or "none" (fix to the first one, default)
 upstream_options = [
   "override_host",
   "upgrade_insecure_requests",

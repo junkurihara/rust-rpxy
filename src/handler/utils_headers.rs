@@ -1,9 +1,8 @@
-use crate::{
-  backend::{UpstreamGroup, UpstreamOption},
-  error::*,
-  log::*,
-  utils::*,
-};
+#[cfg(feature = "sticky-cookie")]
+use crate::backend::{LbContext, StickyCookie, StickyCookieValue};
+use crate::backend::{UpstreamGroup, UpstreamOption};
+
+use crate::{error::*, log::*, utils::*};
 use bytes::BufMut;
 use hyper::{
   header::{self, HeaderMap, HeaderName, HeaderValue},
@@ -13,6 +12,76 @@ use std::net::SocketAddr;
 
 ////////////////////////////////////////////////////
 // Functions to manipulate headers
+
+#[cfg(feature = "sticky-cookie")]
+/// Take sticky cookie header value from request header,
+/// and returns LbContext to be forwarded to LB if exist and if needed.
+/// Removing sticky cookie is needed and it must not be passed to the upstream.
+pub(super) fn takeout_sticky_cookie_lb_context(
+  headers: &mut HeaderMap,
+  expected_cookie_name: &str,
+) -> Result<Option<LbContext>> {
+  let mut headers_clone = headers.clone();
+
+  match headers_clone.entry(hyper::header::COOKIE) {
+    header::Entry::Vacant(_) => Ok(None),
+    header::Entry::Occupied(entry) => {
+      let cookies_iter = entry
+        .iter()
+        .flat_map(|v| v.to_str().unwrap_or("").split(';').map(|v| v.trim()));
+      let (sticky_cookies, without_sticky_cookies): (Vec<_>, Vec<_>) = cookies_iter
+        .into_iter()
+        .partition(|v| v.starts_with(expected_cookie_name));
+      if sticky_cookies.is_empty() {
+        return Ok(None);
+      }
+      if sticky_cookies.len() > 1 {
+        error!("Multiple sticky cookie values in request");
+        return Err(RpxyError::Other(anyhow!(
+          "Invalid cookie: Multiple sticky cookie values"
+        )));
+      }
+      let cookies_passed_to_upstream = without_sticky_cookies.join("; ");
+      let cookie_passed_to_lb = sticky_cookies.first().unwrap();
+      headers.remove(hyper::header::COOKIE);
+      headers.insert(hyper::header::COOKIE, cookies_passed_to_upstream.parse()?);
+
+      let sticky_cookie = StickyCookie {
+        value: StickyCookieValue::try_from(cookie_passed_to_lb, expected_cookie_name)?,
+        info: None,
+      };
+      Ok(Some(LbContext { sticky_cookie }))
+    }
+  }
+}
+
+#[cfg(feature = "sticky-cookie")]
+/// Set-Cookie if LB Sticky is enabled and if cookie is newly created/updated.
+/// Set-Cookie response header could be in multiple lines.
+/// https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Set-Cookie
+pub(super) fn set_sticky_cookie_lb_context(headers: &mut HeaderMap, context_from_lb: &LbContext) -> Result<()> {
+  let sticky_cookie_string: String = context_from_lb.sticky_cookie.clone().try_into()?;
+  let new_header_val: HeaderValue = sticky_cookie_string.parse()?;
+  let expected_cookie_name = &context_from_lb.sticky_cookie.value.name;
+  match headers.entry(hyper::header::SET_COOKIE) {
+    header::Entry::Vacant(entry) => {
+      entry.insert(new_header_val);
+    }
+    header::Entry::Occupied(mut entry) => {
+      let mut flag = false;
+      for e in entry.iter_mut() {
+        if e.to_str().unwrap_or("").starts_with(expected_cookie_name) {
+          *e = new_header_val.clone();
+          flag = true;
+        }
+      }
+      if !flag {
+        entry.append(new_header_val);
+      }
+    }
+  };
+  Ok(())
+}
 
 pub(super) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,

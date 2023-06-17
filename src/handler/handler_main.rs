@@ -1,5 +1,5 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
-use super::{utils_headers::*, utils_request::*, utils_synth_response::*};
+use super::{utils_headers::*, utils_request::*, utils_synth_response::*, HandlerContext};
 use crate::{
   backend::{Backend, UpstreamGroup},
   error::*,
@@ -91,7 +91,7 @@ where
     let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
 
     // Build request from destination information
-    if let Err(e) = self.generate_request_forwarded(
+    let _context = match self.generate_request_forwarded(
       &client_addr,
       &listen_addr,
       &mut req,
@@ -99,8 +99,11 @@ where
       upstream_group,
       tls_enabled,
     ) {
-      error!("Failed to generate destination uri for reverse proxy: {}", e);
-      return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
+      Err(e) => {
+        error!("Failed to generate destination uri for reverse proxy: {}", e);
+        return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
+      }
+      Ok(v) => v,
     };
     debug!("Request to be forwarded: {:?}", req);
     log_data.xff(&req.headers().get("x-forwarded-for"));
@@ -123,6 +126,16 @@ where
       }
     };
 
+    // Process reverse proxy context generated during the forwarding request generation.
+    #[cfg(feature = "sticky-cookie")]
+    if let Some(context_from_lb) = _context.context_lb {
+      let res_headers = res_backend.headers_mut();
+      if let Err(e) = set_sticky_cookie_lb_context(res_headers, &context_from_lb) {
+        error!("Failed to append context to the response given from backend: {}", e);
+        return self.return_with_error_log(StatusCode::BAD_GATEWAY, &mut log_data);
+      }
+    }
+
     if res_backend.status() != StatusCode::SWITCHING_PROTOCOLS {
       // Generate response to client
       if self.generate_response_forwarded(&mut res_backend, backend).is_ok() {
@@ -141,9 +154,7 @@ where
       false
     } {
       if let Some(request_upgraded) = request_upgraded {
-        let onupgrade = if let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() {
-          onupgrade
-        } else {
+        let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() else {
           error!("Response does not have an upgrade extension");
           return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
         };
@@ -231,7 +242,7 @@ where
     upgrade: &Option<String>,
     upstream_group: &UpstreamGroup,
     tls_enabled: bool,
-  ) -> Result<()> {
+  ) -> Result<HandlerContext> {
     debug!("Generate request to be forwarded");
 
     // Add te: trailer if contained in original request
@@ -267,8 +278,28 @@ where
         .insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
 
+    /////////////////////////////////////////////
     // Fix unique upstream destination since there could be multiple ones.
-    let upstream_chosen = upstream_group.get().ok_or_else(|| anyhow!("Failed to get upstream"))?;
+    #[cfg(feature = "sticky-cookie")]
+    let (upstream_chosen_opt, context_from_lb) = {
+      let context_to_lb = if let crate::backend::LoadBalance::StickyRoundRobin(lb) = &upstream_group.lb {
+        takeout_sticky_cookie_lb_context(req.headers_mut(), &lb.sticky_config.name)?
+      } else {
+        None
+      };
+      upstream_group.get(&context_to_lb)
+    };
+    #[cfg(not(feature = "sticky-cookie"))]
+    let (upstream_chosen_opt, _) = upstream_group.get(&None);
+
+    let upstream_chosen = upstream_chosen_opt.ok_or_else(|| anyhow!("Failed to get upstream"))?;
+    let context = HandlerContext {
+      #[cfg(feature = "sticky-cookie")]
+      context_lb: context_from_lb,
+      #[cfg(not(feature = "sticky-cookie"))]
+      context_lb: None,
+    };
+    /////////////////////////////////////////////
 
     // apply upstream-specific headers given in upstream_option
     let headers = req.headers_mut();
@@ -321,6 +352,6 @@ where
       *req.version_mut() = Version::HTTP_2;
     }
 
-    Ok(())
+    Ok(context)
   }
 }

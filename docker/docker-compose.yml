@@ -3,19 +3,24 @@ services:
   rpxy-rp:
     image: jqtype/rpxy
     container_name: rpxy
+    init: true
     restart: unless-stopped
     ports:
       - 127.0.0.1:8080:8080
       - 127.0.0.1:8443:8443
     build:
       context: ../
-      dockerfile: ./docker/amd64/Dockerfile
+      dockerfile: ./docker/Dockerfile.amd64
     environment:
       - LOG_LEVEL=debug
-      - LOG_TO_FILE=false
+      - LOG_TO_FILE=true
+      - HOST_USER=jun
+      - HOST_UID=501
+      - HOST_GID=501
     tty: false
     privileged: true
     volumes:
+      - ./log:/rpxy/log
       - ../example-certs/server.crt:/certs/server.crt:ro
       - ../example-certs/server.key:/certs/server.key:ro
       - ../config-example.toml:/etc/rpxy.toml:ro

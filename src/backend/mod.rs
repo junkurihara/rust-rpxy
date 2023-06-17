@@ -1,6 +1,18 @@
+mod load_balance;
+#[cfg(feature = "sticky-cookie")]
+mod load_balance_sticky;
+#[cfg(feature = "sticky-cookie")]
+mod sticky_cookie;
 mod upstream;
 mod upstream_opts;
 
+#[cfg(feature = "sticky-cookie")]
+pub use self::sticky_cookie::{StickyCookie, StickyCookieValue};
+pub use self::{
+  load_balance::{LbContext, LoadBalance},
+  upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder},
+  upstream_opts::UpstreamOption,
+};
 use crate::{
   log::*,
   utils::{BytesName, PathNameBytesExp, ServerNameBytesExp},
@@ -20,20 +32,21 @@ use tokio_rustls::rustls::{
   sign::{any_supported_type, CertifiedKey},
   Certificate, PrivateKey, ServerConfig,
 };
-pub use upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder};
-pub use upstream_opts::UpstreamOption;
 use x509_parser::prelude::*;
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
 #[derive(Builder)]
 pub struct Backend {
   #[builder(setter(into))]
+  /// backend application name, e.g., app1
   pub app_name: String,
   #[builder(setter(custom))]
+  /// server name, e.g., example.com, in String ascii lower case
   pub server_name: String,
+  /// struct of reverse proxy serving incoming request
   pub reverse_proxy: ReverseProxy,
 
-  // tls settings
+  /// tls settings
   #[builder(setter(custom), default)]
   pub tls_cert_path: Option<PathBuf>,
   #[builder(setter(custom), default)]
@@ -69,12 +82,9 @@ fn opt_string_to_opt_pathbuf(input: &Option<String>) -> Option<PathBuf> {
 impl Backend {
   pub fn read_certs_and_key(&self) -> io::Result<CertifiedKey> {
     debug!("Read TLS server certificates and private key");
-    let (certs_path, certs_keys_path) =
-      if let (Some(c), Some(k)) = (self.tls_cert_path.as_ref(), self.tls_cert_key_path.as_ref()) {
-        (c, k)
-      } else {
-        return Err(io::Error::new(io::ErrorKind::Other, "Invalid certs and keys paths"));
-      };
+    let (Some(certs_path), Some(certs_keys_path)) = (self.tls_cert_path.as_ref(), self.tls_cert_key_path.as_ref()) else {
+      return Err(io::Error::new(io::ErrorKind::Other, "Invalid certs and keys paths"));
+    };
     let certs: Vec<_> = {
       let certs_path_str = certs_path.display().to_string();
       let mut reader = BufReader::new(File::open(certs_path).map_err(|e| {
@@ -144,11 +154,10 @@ impl Backend {
     debug!("Read CA certificates for client authentication");
     // Reads client certificate and returns client
     let client_ca_cert_path = {
-      if let Some(c) = self.client_ca_cert_path.as_ref() {
-        c
-      } else {
+      let Some(c) = self.client_ca_cert_path.as_ref() else {
         return Err(io::Error::new(io::ErrorKind::Other, "Invalid certs and keys paths"));
-      }
+      };
+      c
     };
     let certs: Vec<_> = {
       let certs_path_str = client_ca_cert_path.display().to_string();
@@ -168,7 +177,8 @@ impl Backend {
     let owned_trust_anchors: Vec<_> = certs
       .iter()
       .map(|v| {
-        let trust_anchor = tokio_rustls::webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
+        // let trust_anchor = tokio_rustls::webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
+        let trust_anchor = webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
         rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
           trust_anchor.subject,
           trust_anchor.spki,
@@ -264,22 +274,29 @@ impl Backends {
 
             let mut server_config_local = if client_ca_roots_local.is_empty() {
               // with no client auth, enable http1.1 -- 3
-              let mut sc = ServerConfig::builder()
-                .with_safe_defaults()
-                .with_no_client_auth()
-                .with_cert_resolver(Arc::new(resolver_local));
+              #[cfg(not(feature = "http3"))]
+              {
+                ServerConfig::builder()
+                  .with_safe_defaults()
+                  .with_no_client_auth()
+                  .with_cert_resolver(Arc::new(resolver_local))
+              }
               #[cfg(feature = "http3")]
               {
+                let mut sc = ServerConfig::builder()
+                  .with_safe_defaults()
+                  .with_no_client_auth()
+                  .with_cert_resolver(Arc::new(resolver_local));
                 sc.alpn_protocols = vec![b"h3".to_vec(), b"hq-29".to_vec()]; // TODO: remove hq-29 later?
+                sc
               }
-              sc
             } else {
               // with client auth, enable only http1.1 and 2
               // let client_certs_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(client_ca_roots);
               let client_certs_verifier = rustls::server::AllowAnyAuthenticatedClient::new(client_ca_roots_local);
               ServerConfig::builder()
                 .with_safe_defaults()
-                .with_client_cert_verifier(client_certs_verifier)
+                .with_client_cert_verifier(Arc::new(client_certs_verifier))
                 .with_cert_resolver(Arc::new(resolver_local))
             };
             server_config_local.alpn_protocols.push(b"h2".to_vec());
@@ -314,7 +331,7 @@ impl Backends {
     }
     #[cfg(not(feature = "http3"))]
     {
-      server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+      server_crypto_global.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     }
 
     Ok(ServerCrypto {

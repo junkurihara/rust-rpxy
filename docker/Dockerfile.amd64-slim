@@ -20,26 +20,27 @@ LABEL maintainer="Jun Kurihara"
 
 ENV TAG_NAME=amd64-slim
 ENV TARGET_DIR=x86_64-unknown-linux-musl
-ENV RUNTIME_DEPS logrotate ca-certificates
+ENV RUNTIME_DEPS logrotate ca-certificates su-exec
 
 RUN apk add --no-cache ${RUNTIME_DEPS} && \
   update-ca-certificates && \
-  mkdir -p /opt/rpxy/sbin &&\
-  mkdir -p /var/log/rpxy && \
-  touch /var/log/rpxy/rpxy.log
+  find / -type d -path /proc -prune -o -type f -perm /u+s -exec chmod u-s {} \; && \
+  find / -type d -path /proc -prune -o -type f -perm /g+s -exec chmod g-s {} \; && \
+  mkdir -p /rpxy/bin &&\
+  mkdir -p /rpxy/log
 
-COPY --from=builder /tmp/target/${TARGET_DIR}/release/rpxy /opt/rpxy/sbin/rpxy
-COPY ./docker/${TAG_NAME}/run.sh /
-COPY ./docker/entrypoint.sh /
+COPY --from=builder /tmp/target/${TARGET_DIR}/release/rpxy /rpxy/bin/rpxy
+COPY ./docker/run.sh /rpxy
+COPY ./docker/entrypoint.sh /rpxy
 
-RUN chmod 755 /run.sh && \
-  chmod 755 /entrypoint.sh
+RUN chmod +x /rpxy/run.sh && \
+  chmod +x /rpxy/entrypoint.sh
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
 EXPOSE 80 443
 
-CMD ["/entrypoint.sh"]
+CMD ["/rpxy/entrypoint.sh"]
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/rpxy/entrypoint.sh"]

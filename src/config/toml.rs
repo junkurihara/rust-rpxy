@@ -57,6 +57,7 @@ pub struct ReverseProxyOption {
   pub replace_path: Option<String>,
   pub upstream: Vec<UpstreamParams>,
   pub upstream_options: Option<Vec<String>>,
+  pub load_balance: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
