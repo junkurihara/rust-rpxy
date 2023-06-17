@@ -38,7 +38,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
-          file: ./docker/amd64/Dockerfile
+          file: ./docker/Dockerfile.amd64
 
       - name: Release build and push x86_64-slim
         if: ${{ env.BRANCH == 'main' }}
@@ -48,7 +48,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:slim, ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest-slim
-          file: ./docker/amd64-slim/Dockerfile
+          file: ./docker/Dockerfile.amd64-slim
 
       - name: Nightly build and push x86_64
         if: ${{ env.BRANCH == 'develop' }}
@@ -58,4 +58,4 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:nightly
-          file: ./docker/amd64/Dockerfile
+          file: ./docker/Dockerfile.amd64
