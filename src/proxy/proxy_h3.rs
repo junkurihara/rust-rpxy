@@ -43,7 +43,7 @@ where
               // We consider the connection count separately from the stream count.
               // Max clients for h1/h2 = max 'stream' for h3.
               let request_count = self.globals.request_count.clone();
-              if request_count.increment() > self.globals.max_clients {
+              if request_count.increment() > self.globals.proxy_config.max_clients {
                 request_count.decrement();
                 h3_conn.shutdown(0).await?;
                 break;
@@ -54,7 +54,7 @@ where
               let tls_server_name_inner = tls_server_name.clone();
               self.globals.runtime_handle.spawn(async move {
                 if let Err(e) = timeout(
-                  self_inner.globals.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
+                  self_inner.globals.proxy_config.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
                   self_inner.stream_serve_h3(req, stream, client_addr, tls_server_name_inner),
                 )
                 .await
@@ -97,7 +97,7 @@ where
 
     // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
     // The underling buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
-    let max_body_size = self.globals.h3_request_max_body_size;
+    let max_body_size = self.globals.proxy_config.h3_request_max_body_size;
     self.globals.runtime_handle.spawn(async move {
       let mut sender = body_sender;
       let mut size = 0usize;

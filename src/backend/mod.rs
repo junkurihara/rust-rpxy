@@ -218,6 +218,15 @@ pub struct Backends {
   pub default_server_name_bytes: Option<ServerNameBytesExp>, // for plaintext http
 }
 
+impl Default for Backends {
+  fn default() -> Self {
+    Self {
+      default_server_name_bytes: None,
+      apps: HashMap::<ServerNameBytesExp, Backend>::default(),
+    }
+  }
+}
+
 pub type SniServerCryptoMap = HashMap<ServerNameBytesExp, Arc<ServerConfig>>;
 pub struct ServerCrypto {
   // For Quic/HTTP3, only servers with no client authentication

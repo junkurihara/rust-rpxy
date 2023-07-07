@@ -16,22 +16,13 @@ mod proxy;
 mod utils;
 
 use crate::{
-  backend::{Backend, Backends},
-  config::parse_opts,
-  constants::*,
-  error::*,
-  globals::*,
-  handler::HttpMessageHandlerBuilder,
-  log::*,
+  backend::Backends, config::parse_opts, error::*, globals::*, handler::HttpMessageHandlerBuilder, log::*,
   proxy::ProxyBuilder,
-  utils::ServerNameBytesExp,
 };
 use futures::future::select_all;
 use hyper::Client;
 // use hyper_trust_dns::TrustDnsResolver;
-use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
-use tokio::time::Duration;
 
 fn main() {
   init_logger();
@@ -43,41 +34,12 @@ fn main() {
 
   runtime.block_on(async {
     let mut globals = Globals {
-      listen_sockets: Vec::new(),
-      http_port: None,
-      https_port: None,
+      // TODO: proxy configはarcに包んでこいつだけ使いまわせばいいように変えていく。backendsも？
+      proxy_config: ProxyConfig::default(),
+      backends: Backends::default(),
 
-      // TODO: Reconsider each timeout values
-      proxy_timeout: Duration::from_secs(PROXY_TIMEOUT_SEC),
-      upstream_timeout: Duration::from_secs(UPSTREAM_TIMEOUT_SEC),
-
-      max_clients: MAX_CLIENTS,
       request_count: Default::default(),
-      max_concurrent_streams: MAX_CONCURRENT_STREAMS,
-      keepalive: true,
-
       runtime_handle: runtime.handle().clone(),
-      backends: Backends {
-        default_server_name_bytes: None,
-        apps: HashMap::<ServerNameBytesExp, Backend>::default(),
-      },
-
-      sni_consistency: true,
-
-      #[cfg(feature = "http3")]
-      http3: false,
-      #[cfg(feature = "http3")]
-      h3_alt_svc_max_age: H3::ALT_SVC_MAX_AGE,
-      #[cfg(feature = "http3")]
-      h3_request_max_body_size: H3::REQUEST_MAX_BODY_SIZE,
-      #[cfg(feature = "http3")]
-      h3_max_concurrent_connections: H3::MAX_CONCURRENT_CONNECTIONS,
-      #[cfg(feature = "http3")]
-      h3_max_concurrent_bidistream: H3::MAX_CONCURRENT_BIDISTREAM.into(),
-      #[cfg(feature = "http3")]
-      h3_max_concurrent_unistream: H3::MAX_CONCURRENT_UNISTREAM.into(),
-      #[cfg(feature = "http3")]
-      h3_max_idle_timeout: Some(quinn::IdleTimeout::try_from(Duration::from_secs(H3::MAX_IDLE_TIMEOUT)).unwrap()),
     };
 
     if let Err(e) = parse_opts(&mut globals) {
@@ -105,10 +67,10 @@ async fn entrypoint(globals: Arc<Globals>) -> Result<()> {
     .globals(globals.clone())
     .build()?;
 
-  let addresses = globals.listen_sockets.clone();
+  let addresses = globals.proxy_config.listen_sockets.clone();
   let futures = select_all(addresses.into_iter().map(|addr| {
     let mut tls_enabled = false;
-    if let Some(https_port) = globals.https_port {
+    if let Some(https_port) = globals.proxy_config.https_port {
       tls_enabled = https_port == addr.port()
     }
 

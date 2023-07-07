@@ -129,13 +129,13 @@ where
 
     let mut transport_config_quic = TransportConfig::default();
     transport_config_quic
-      .max_concurrent_bidi_streams(self.globals.h3_max_concurrent_bidistream)
-      .max_concurrent_uni_streams(self.globals.h3_max_concurrent_unistream)
-      .max_idle_timeout(self.globals.h3_max_idle_timeout);
+      .max_concurrent_bidi_streams(self.globals.proxy_config.h3_max_concurrent_bidistream)
+      .max_concurrent_uni_streams(self.globals.proxy_config.h3_max_concurrent_unistream)
+      .max_idle_timeout(self.globals.proxy_config.h3_max_idle_timeout);
 
     let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(rustls_server_config));
     server_config_h3.transport = Arc::new(transport_config_quic);
-    server_config_h3.concurrent_connections(self.globals.h3_max_concurrent_connections);
+    server_config_h3.concurrent_connections(self.globals.proxy_config.h3_max_concurrent_connections);
     let endpoint = Endpoint::server(server_config_h3, self.listening_on)?;
 
     let mut server_crypto: Option<Arc<ServerCrypto>> = None;
@@ -212,7 +212,7 @@ where
     }
     #[cfg(feature = "http3")]
     {
-      if self.globals.http3 {
+      if self.globals.proxy_config.http3 {
         tokio::select! {
           _= self.cert_service(tx) => {
             error!("Cert service for TLS exited");

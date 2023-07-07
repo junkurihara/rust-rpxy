@@ -30,11 +30,11 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
   };
 
   // listen port and socket
-  globals.http_port = config.listen_port;
-  globals.https_port = config.listen_port_tls;
+  globals.proxy_config.http_port = config.listen_port;
+  globals.proxy_config.https_port = config.listen_port_tls;
   ensure!(
-    { globals.http_port.is_some() || globals.https_port.is_some() } && {
-      if let (Some(p), Some(t)) = (globals.http_port, globals.https_port) {
+    { globals.proxy_config.http_port.is_some() || globals.proxy_config.https_port.is_some() } && {
+      if let (Some(p), Some(t)) = (globals.proxy_config.http_port, globals.proxy_config.https_port) {
         p != t
       } else {
         true
@@ -53,32 +53,32 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
       LISTEN_ADDRESSES_V4.to_vec()
     }
   };
-  globals.listen_sockets = listen_addresses
+  globals.proxy_config.listen_sockets = listen_addresses
     .iter()
     .flat_map(|x| {
       let mut v: Vec<SocketAddr> = vec![];
-      if let Some(p) = globals.http_port {
+      if let Some(p) = globals.proxy_config.http_port {
         v.push(format!("{x}:{p}").parse().unwrap());
       }
-      if let Some(p) = globals.https_port {
+      if let Some(p) = globals.proxy_config.https_port {
         v.push(format!("{x}:{p}").parse().unwrap());
       }
       v
     })
     .collect();
-  if globals.http_port.is_some() {
-    info!("Listen port: {}", globals.http_port.unwrap());
+  if globals.proxy_config.http_port.is_some() {
+    info!("Listen port: {}", globals.proxy_config.http_port.unwrap());
   }
-  if globals.https_port.is_some() {
-    info!("Listen port: {} (for TLS)", globals.https_port.unwrap());
+  if globals.proxy_config.https_port.is_some() {
+    info!("Listen port: {} (for TLS)", globals.proxy_config.https_port.unwrap());
   }
 
   // max values
   if let Some(c) = config.max_clients {
-    globals.max_clients = c as usize;
+    globals.proxy_config.max_clients = c as usize;
   }
   if let Some(c) = config.max_concurrent_streams {
-    globals.max_concurrent_streams = c;
+    globals.proxy_config.max_concurrent_streams = c;
   }
 
   // backend apps
@@ -90,7 +90,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
   for (app_name, app) in apps.0.iter() {
     ensure!(app.server_name.is_some(), "Missing server_name");
     let server_name_string = app.server_name.as_ref().unwrap();
-    if globals.http_port.is_none() {
+    if globals.proxy_config.http_port.is_none() {
       // if only https_port is specified, tls must be configured
       ensure!(app.tls.is_some())
     }
@@ -108,7 +108,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
 
     // TLS settings and build backend instance
     let backend = if app.tls.is_none() {
-      ensure!(globals.http_port.is_some(), "Required HTTP port");
+      ensure!(globals.proxy_config.http_port.is_some(), "Required HTTP port");
       backend_builder.build()?
     } else {
       let tls = app.tls.as_ref().unwrap();
@@ -117,7 +117,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
       let https_redirection = if tls.https_redirection.is_none() {
         Some(true) // Default true
       } else {
-        ensure!(globals.https_port.is_some()); // only when both https ports are configured.
+        ensure!(globals.proxy_config.https_port.is_some()); // only when both https ports are configured.
         tls.https_redirection
       };
 
@@ -159,28 +159,28 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
     #[cfg(feature = "http3")]
     {
       if let Some(h3option) = exp.h3 {
-        globals.http3 = true;
+        globals.proxy_config.http3 = true;
         info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
         if let Some(x) = h3option.alt_svc_max_age {
-          globals.h3_alt_svc_max_age = x;
+          globals.proxy_config.h3_alt_svc_max_age = x;
         }
         if let Some(x) = h3option.request_max_body_size {
-          globals.h3_request_max_body_size = x;
+          globals.proxy_config.h3_request_max_body_size = x;
         }
         if let Some(x) = h3option.max_concurrent_connections {
-          globals.h3_max_concurrent_connections = x;
+          globals.proxy_config.h3_max_concurrent_connections = x;
         }
         if let Some(x) = h3option.max_concurrent_bidistream {
-          globals.h3_max_concurrent_bidistream = x.into();
+          globals.proxy_config.h3_max_concurrent_bidistream = x.into();
         }
         if let Some(x) = h3option.max_concurrent_unistream {
-          globals.h3_max_concurrent_unistream = x.into();
+          globals.proxy_config.h3_max_concurrent_unistream = x.into();
         }
         if let Some(x) = h3option.max_idle_timeout {
           if x == 0u64 {
-            globals.h3_max_idle_timeout = None;
+            globals.proxy_config.h3_max_idle_timeout = None;
           } else {
-            globals.h3_max_idle_timeout =
+            globals.proxy_config.h3_max_idle_timeout =
               Some(quinn::IdleTimeout::try_from(tokio::time::Duration::from_secs(x)).unwrap())
           }
         }
@@ -188,7 +188,7 @@ pub fn parse_opts(globals: &mut Globals) -> std::result::Result<(), anyhow::Erro
     }
 
     if let Some(b) = exp.ignore_sni_consistency {
-      globals.sni_consistency = !b;
+      globals.proxy_config.sni_consistency = !b;
       if b {
         info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
       }
