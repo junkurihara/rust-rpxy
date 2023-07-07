@@ -205,7 +205,7 @@ fn get_reverse_proxy(
   let mut upstream: HashMap<PathNameBytesExp, UpstreamGroup> = HashMap::default();
 
   rp_settings.iter().for_each(|rpo| {
-    let upstream_vec: Vec<Upstream> = rpo.upstream.iter().map(|x| x.to_upstream().unwrap()).collect();
+    let upstream_vec: Vec<Upstream> = rpo.upstream.iter().map(|x| x.try_into().unwrap()).collect();
     // let upstream_iter = rpo.upstream.iter().map(|x| x.to_upstream().unwrap());
     // let lb_upstream_num = vec_upstream.len();
     let elem = UpstreamGroupBuilder::default()

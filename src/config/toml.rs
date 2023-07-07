@@ -65,8 +65,11 @@ pub struct UpstreamParams {
   pub location: String,
   pub tls: Option<bool>,
 }
-impl UpstreamParams {
-  pub fn to_upstream(&self) -> Result<Upstream> {
+
+impl TryInto<Upstream> for &UpstreamParams {
+  type Error = RpxyError;
+
+  fn try_into(self) -> std::result::Result<Upstream, Self::Error> {
     let mut scheme = "http";
     if let Some(t) = self.tls {
       if t {
@@ -81,9 +84,9 @@ impl UpstreamParams {
 }
 
 impl ConfigToml {
-  pub fn new(config_file: &str) -> std::result::Result<Self, anyhow::Error> {
-    let config_str = fs::read_to_string(config_file).context("Failed to read config file")?;
+  pub fn new(config_file: &str) -> std::result::Result<Self, RpxyError> {
+    let config_str = fs::read_to_string(config_file).map_err(RpxyError::Io)?;
 
-    toml::from_str(&config_str).context("Failed to parse toml config")
+    toml::from_str(&config_str).map_err(RpxyError::TomlDe)
   }
 }

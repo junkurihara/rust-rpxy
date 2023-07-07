@@ -29,6 +29,9 @@ pub enum RpxyError {
   #[error("I/O Error")]
   Io(#[from] io::Error),
 
+  #[error("Toml Deserialization Error")]
+  TomlDe(#[from] toml::de::Error),
+
   #[cfg(feature = "http3")]
   #[error("Quic Connection Error")]
   QuicConn(#[from] quinn::ConnectionError),
