@@ -146,29 +146,24 @@ where
             continue;
           }
           let mut conn: quinn::Connecting = new_conn.unwrap();
-          let hsd = match conn.handshake_data().await {
-            Ok(h) => h,
-            Err(_) => continue
+          let Ok(hsd) = conn.handshake_data().await else {
+            continue
           };
 
-          let hsd_downcast = match hsd.downcast::<HandshakeData>() {
-            Ok(d) => d,
-            Err(_) => continue
+          let Ok(hsd_downcast) = hsd.downcast::<HandshakeData>() else {
+            continue
           };
-          let new_server_name = match hsd_downcast.server_name {
-            Some(sn) => sn.to_server_name_vec(),
-            None => {
-              warn!("HTTP/3 no SNI is given");
-              continue;
-            }
+          let Some(new_server_name) = hsd_downcast.server_name else {
+            warn!("HTTP/3 no SNI is given");
+            continue;
           };
           debug!(
             "HTTP/3 connection incoming (SNI {:?})",
-            new_server_name.0
+            new_server_name
           );
           // TODO: server_nameをここで出してどんどん深く投げていくのは効率が悪い。connecting -> connectionsの後でいいのでは？
           // TODO: 通常のTLSと同じenumか何かにまとめたい
-          let fut = self.clone().connection_serve_h3(conn, new_server_name);
+          let fut = self.clone().connection_serve_h3(conn, new_server_name.to_server_name_vec());
           self.globals.runtime_handle.spawn(async move {
             // Timeout is based on underlying quic
             if let Err(e) = fut.await {

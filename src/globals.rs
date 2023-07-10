@@ -12,7 +12,7 @@ pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig, // TODO: proxy configはarcに包んでこいつだけ使いまわせばいいように変えていく。backendsも？
 
-  /// Shared context - Backend application objects to which http request handler forward incoming requests
+  /// Backend application objects to which http request handler forward incoming requests
   pub backends: Backends,
 
   /// Shared context - Counter for serving requests
