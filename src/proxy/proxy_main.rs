@@ -56,7 +56,7 @@ where
     I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
   {
     let request_count = self.globals.request_count.clone();
-    if request_count.increment() > self.globals.max_clients {
+    if request_count.increment() > self.globals.proxy_config.max_clients {
       request_count.decrement();
       return;
     }
@@ -64,7 +64,7 @@ where
 
     self.globals.runtime_handle.clone().spawn(async move {
       timeout(
-        self.globals.proxy_timeout + Duration::from_secs(1),
+        self.globals.proxy_config.proxy_timeout + Duration::from_secs(1),
         server
           .serve_connection(
             stream,
@@ -103,8 +103,8 @@ where
 
   pub async fn start(self) -> Result<()> {
     let mut server = Http::new();
-    server.http1_keep_alive(self.globals.keepalive);
-    server.http2_max_concurrent_streams(self.globals.max_concurrent_streams);
+    server.http1_keep_alive(self.globals.proxy_config.keepalive);
+    server.http2_max_concurrent_streams(self.globals.proxy_config.max_concurrent_streams);
     server.pipeline_flush(true);
     let executor = LocalExecutor::new(self.globals.runtime_handle.clone());
     let server = server.with_executor(executor);

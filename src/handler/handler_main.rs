@@ -56,7 +56,7 @@ where
     };
     // check consistency of between TLS SNI and HOST/Request URI Line.
     #[allow(clippy::collapsible_if)]
-    if tls_enabled && self.globals.sni_consistency {
+    if tls_enabled && self.globals.proxy_config.sni_consistency {
       if server_name != tls_server_name.unwrap_or_default() {
         return self.return_with_error_log(StatusCode::MISDIRECTED_REQUEST, &mut log_data);
       }
@@ -75,7 +75,7 @@ where
     if !tls_enabled && backend.https_redirection.unwrap_or(false) {
       debug!("Redirect to secure connection: {}", &backend.server_name);
       log_data.status_code(&StatusCode::PERMANENT_REDIRECT).output();
-      return secure_redirection(&backend.server_name, self.globals.https_port, &req);
+      return secure_redirection(&backend.server_name, self.globals.proxy_config.https_port, &req);
     }
 
     // Find reverse proxy for given path and choose one of upstream host
@@ -112,7 +112,7 @@ where
 
     // Forward request to
     let mut res_backend = {
-      match timeout(self.globals.upstream_timeout, self.forwarder.request(req)).await {
+      match timeout(self.globals.proxy_config.upstream_timeout, self.forwarder.request(req)).await {
         Err(_) => {
           return self.return_with_error_log(StatusCode::GATEWAY_TIMEOUT, &mut log_data);
         }
@@ -207,14 +207,14 @@ where
     #[cfg(feature = "http3")]
     {
       // TODO: Workaround for avoid h3 for client authentication
-      if self.globals.http3 && chosen_backend.client_ca_cert_path.is_none() {
-        if let Some(port) = self.globals.https_port {
+      if self.globals.proxy_config.http3 && chosen_backend.client_ca_cert_path.is_none() {
+        if let Some(port) = self.globals.proxy_config.https_port {
           add_header_entry_overwrite_if_exist(
             headers,
             header::ALT_SVC.as_str(),
             format!(
               "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
-              port, self.globals.h3_alt_svc_max_age, port, self.globals.h3_alt_svc_max_age
+              port, self.globals.proxy_config.h3_alt_svc_max_age, port, self.globals.proxy_config.h3_alt_svc_max_age
             ),
           )?;
         }
@@ -225,7 +225,7 @@ where
     }
     #[cfg(not(feature = "http3"))]
     {
-      if let Some(port) = self.globals.https_port {
+      if let Some(port) = self.globals.proxy_config.https_port {
         headers.remove(header::ALT_SVC.as_str());
       }
     }

@@ -1,11 +1,9 @@
-use super::proxy_main::{LocalExecutor, Proxy};
-use crate::{
-  backend::{ServerCrypto, SniServerCryptoMap},
-  constants::*,
-  error::*,
-  log::*,
-  utils::BytesName,
+use super::{
+  crypto_service::{CryptoReloader, ServerCrypto, ServerCryptoBase, SniServerCryptoMap},
+  proxy_main::{LocalExecutor, Proxy},
 };
+use crate::{constants::*, error::*, log::*, utils::BytesName};
+use hot_reload::{ReloaderReceiver, ReloaderService};
 use hyper::{client::connect::Connect, server::conn::Http};
 #[cfg(feature = "http3")]
 use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
@@ -14,34 +12,18 @@ use rustls::ServerConfig;
 use std::sync::Arc;
 use tokio::{
   net::TcpListener,
-  sync::watch,
-  time::{sleep, timeout, Duration},
+  time::{timeout, Duration},
 };
 
 impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
 {
-  async fn cert_service(&self, server_crypto_tx: watch::Sender<Option<Arc<ServerCrypto>>>) {
-    info!("Start cert watch service");
-    loop {
-      if let Ok(server_crypto) = self.globals.backends.generate_server_crypto().await {
-        if let Err(_e) = server_crypto_tx.send(Some(Arc::new(server_crypto))) {
-          error!("Failed to populate server crypto");
-          break;
-        }
-      } else {
-        error!("Failed to update certs");
-      }
-      sleep(Duration::from_secs(CERTS_WATCH_DELAY_SECS.into())).await;
-    }
-  }
-
   // TCP Listener Service, i.e., http/2 and http/1.1
   async fn listener_service(
     &self,
     server: Http<LocalExecutor>,
-    mut server_crypto_rx: watch::Receiver<Option<Arc<ServerCrypto>>>,
+    mut server_crypto_rx: ReloaderReceiver<ServerCryptoBase>,
   ) -> Result<()> {
     let tcp_listener = TcpListener::bind(&self.listening_on).await?;
     info!("Start TCP proxy serving with HTTPS request for configured host names");
@@ -105,9 +87,14 @@ where
         }
         _ = server_crypto_rx.changed() => {
           if server_crypto_rx.borrow().is_none() {
+            error!("Reloader is broken");
             break;
           }
-          let server_crypto = server_crypto_rx.borrow().clone().unwrap();
+          let cert_keys_map = server_crypto_rx.borrow().clone().unwrap();
+          let Some(server_crypto): Option<Arc<ServerCrypto>> = (&cert_keys_map).try_into().ok() else {
+            error!("Failed to update server crypto");
+            break;
+          };
           server_crypto_map = Some(server_crypto.inner_local_map.clone());
         }
         else => break
@@ -117,7 +104,7 @@ where
   }
 
   #[cfg(feature = "http3")]
-  async fn listener_service_h3(&self, mut server_crypto_rx: watch::Receiver<Option<Arc<ServerCrypto>>>) -> Result<()> {
+  async fn listener_service_h3(&self, mut server_crypto_rx: ReloaderReceiver<ServerCryptoBase>) -> Result<()> {
     info!("Start UDP proxy serving with HTTP/3 request for configured host names");
     // first set as null config server
     let rustls_server_config = ServerConfig::builder()
@@ -129,13 +116,13 @@ where
 
     let mut transport_config_quic = TransportConfig::default();
     transport_config_quic
-      .max_concurrent_bidi_streams(self.globals.h3_max_concurrent_bidistream)
-      .max_concurrent_uni_streams(self.globals.h3_max_concurrent_unistream)
-      .max_idle_timeout(self.globals.h3_max_idle_timeout);
+      .max_concurrent_bidi_streams(self.globals.proxy_config.h3_max_concurrent_bidistream)
+      .max_concurrent_uni_streams(self.globals.proxy_config.h3_max_concurrent_unistream)
+      .max_idle_timeout(self.globals.proxy_config.h3_max_idle_timeout);
 
     let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(rustls_server_config));
     server_config_h3.transport = Arc::new(transport_config_quic);
-    server_config_h3.concurrent_connections(self.globals.h3_max_concurrent_connections);
+    server_config_h3.concurrent_connections(self.globals.proxy_config.h3_max_concurrent_connections);
     let endpoint = Endpoint::server(server_config_h3, self.listening_on)?;
 
     let mut server_crypto: Option<Arc<ServerCrypto>> = None;
@@ -146,29 +133,24 @@ where
             continue;
           }
           let mut conn: quinn::Connecting = new_conn.unwrap();
-          let hsd = match conn.handshake_data().await {
-            Ok(h) => h,
-            Err(_) => continue
+          let Ok(hsd) = conn.handshake_data().await else {
+            continue
           };
 
-          let hsd_downcast = match hsd.downcast::<HandshakeData>() {
-            Ok(d) => d,
-            Err(_) => continue
+          let Ok(hsd_downcast) = hsd.downcast::<HandshakeData>() else {
+            continue
           };
-          let new_server_name = match hsd_downcast.server_name {
-            Some(sn) => sn.to_server_name_vec(),
-            None => {
-              warn!("HTTP/3 no SNI is given");
-              continue;
-            }
+          let Some(new_server_name) = hsd_downcast.server_name else {
+            warn!("HTTP/3 no SNI is given");
+            continue;
           };
           debug!(
             "HTTP/3 connection incoming (SNI {:?})",
-            new_server_name.0
+            new_server_name
           );
           // TODO: server_nameをここで出してどんどん深く投げていくのは効率が悪い。connecting -> connectionsの後でいいのでは？
           // TODO: 通常のTLSと同じenumか何かにまとめたい
-          let fut = self.clone().connection_serve_h3(conn, new_server_name);
+          let fut = self.clone().connection_serve_h3(conn, new_server_name.to_server_name_vec());
           self.globals.runtime_handle.spawn(async move {
             // Timeout is based on underlying quic
             if let Err(e) = fut.await {
@@ -178,12 +160,18 @@ where
         }
         _ = server_crypto_rx.changed() => {
           if server_crypto_rx.borrow().is_none() {
+            error!("Reloader is broken");
             break;
           }
-          server_crypto = server_crypto_rx.borrow().clone();
-          if server_crypto.is_some(){
-            endpoint.set_server_config(Some(QuicServerConfig::with_crypto(server_crypto.clone().unwrap().inner_global_no_client_auth.clone())));
-          }
+          let cert_keys_map = server_crypto_rx.borrow().clone().unwrap();
+
+          server_crypto = (&cert_keys_map).try_into().ok();
+          let Some(inner) = server_crypto.clone() else {
+            error!("Failed to update server crypto for h3");
+            break;
+          };
+          endpoint.set_server_config(Some(QuicServerConfig::with_crypto(inner.clone().inner_global_no_client_auth.clone())));
+
         }
         else => break
       }
@@ -193,7 +181,14 @@ where
   }
 
   pub async fn start_with_tls(self, server: Http<LocalExecutor>) -> Result<()> {
-    let (tx, rx) = watch::channel::<Option<Arc<ServerCrypto>>>(None);
+    let (cert_reloader_service, cert_reloader_rx) = ReloaderService::<CryptoReloader, ServerCryptoBase>::new(
+      &self.globals.clone(),
+      CERTS_WATCH_DELAY_SECS,
+      !LOAD_CERTS_ONLY_WHEN_UPDATED,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!(e))?;
+
     #[cfg(not(feature = "http3"))]
     {
       tokio::select! {
@@ -212,15 +207,15 @@ where
     }
     #[cfg(feature = "http3")]
     {
-      if self.globals.http3 {
+      if self.globals.proxy_config.http3 {
         tokio::select! {
-          _= self.cert_service(tx) => {
+          _= cert_reloader_service.start() => {
             error!("Cert service for TLS exited");
           },
-          _ = self.listener_service(server, rx.clone()) => {
+          _ = self.listener_service(server, cert_reloader_rx.clone()) => {
             error!("TCP proxy service for TLS exited");
           },
-          _= self.listener_service_h3(rx) => {
+          _= self.listener_service_h3(cert_reloader_rx) => {
             error!("UDP proxy service for QUIC exited");
           },
           else => {
@@ -231,10 +226,10 @@ where
         Ok(())
       } else {
         tokio::select! {
-          _= self.cert_service(tx) => {
+          _= cert_reloader_service.start() => {
             error!("Cert service for TLS exited");
           },
-          _ = self.listener_service(server, rx) => {
+          _ = self.listener_service(server, cert_reloader_rx) => {
             error!("TCP proxy service for TLS exited");
           },
           else => {

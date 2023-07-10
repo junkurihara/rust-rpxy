@@ -8,6 +8,7 @@ pub const TLS_HANDSHAKE_TIMEOUT_SEC: u64 = 15; // default as with firefox browse
 pub const MAX_CLIENTS: usize = 512;
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 pub const CERTS_WATCH_DELAY_SECS: u32 = 60;
+pub const LOAD_CERTS_ONLY_WHEN_UPDATED: bool = true;
 
 // #[cfg(feature = "http3")]
 // pub const H3_RESPONSE_BUF_SIZE: usize = 65_536; // 64KB
