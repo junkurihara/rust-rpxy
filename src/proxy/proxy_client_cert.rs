@@ -10,26 +10,18 @@ pub(super) fn check_client_authentication(
   client_certs: Option<&[Certificate]>,
   client_ca_keyids_set_for_sni: Option<&HashSet<Vec<u8>>>,
 ) -> std::result::Result<(), ClientCertsError> {
-  let client_ca_keyids_set = match client_ca_keyids_set_for_sni {
-    Some(c) => c,
-    None => {
-      // No client cert settings for given server name
-      return Ok(());
-    }
+  let Some(client_ca_keyids_set) = client_ca_keyids_set_for_sni else {
+    // No client cert settings for given server name
+    return Ok(());
   };
 
-  let client_certs = match client_certs {
-    Some(c) => {
-      debug!("Incoming TLS client is (temporarily) authenticated via client cert");
-      c
-    }
-    None => {
-      error!("Client certificate is needed for given server name");
-      return Err(ClientCertsError::ClientCertRequired(
-        "Client certificate is needed for given server name".to_string(),
-      ));
-    }
+  let Some(client_certs) = client_certs else {
+    error!("Client certificate is needed for given server name");
+    return Err(ClientCertsError::ClientCertRequired(
+      "Client certificate is needed for given server name".to_string(),
+    ));
   };
+  debug!("Incoming TLS client is (temporarily) authenticated via client cert");
 
   // Check client certificate key ids
   let mut client_certs_parsed_iter = client_certs.iter().filter_map(|d| parse_x509_certificate(&d.0).ok());
