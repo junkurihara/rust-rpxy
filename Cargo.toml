@@ -35,6 +35,8 @@ tokio = { version = "1.29.1", default-features = false, features = [
   "sync",
   "macros",
 ] }
+async-trait = "0.1.71"
+hot_reload = "0.1.2" # reloading certs
 
 # http and tls
 hyper = { version = "0.14.27", default-features = false, features = [

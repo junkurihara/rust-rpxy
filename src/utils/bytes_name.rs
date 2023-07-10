@@ -7,6 +7,13 @@ impl From<&[u8]> for ServerNameBytesExp {
     Self(b.to_ascii_lowercase())
   }
 }
+impl TryInto<String> for &ServerNameBytesExp {
+  type Error = anyhow::Error;
+  fn try_into(self) -> Result<String, Self::Error> {
+    let s = std::str::from_utf8(&self.0)?;
+    Ok(s.to_string())
+  }
+}
 
 /// Path name, like "/path/ok", represented in bytes-based struct
 /// for searching hashmap or key list by exact or longest-prefix matching
