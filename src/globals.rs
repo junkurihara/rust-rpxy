@@ -10,7 +10,7 @@ use tokio::time::Duration;
 /// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
 pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
-  pub proxy_config: ProxyConfig,
+  pub proxy_config: ProxyConfig, // TODO: proxy configはarcに包んでこいつだけ使いまわせばいいように変えていく。backendsも？
 
   /// Shared context - Backend application objects to which http request handler forward incoming requests
   pub backends: Backends,

@@ -16,8 +16,7 @@ mod proxy;
 mod utils;
 
 use crate::{
-  backend::Backends, config::parse_opts, error::*, globals::*, handler::HttpMessageHandlerBuilder, log::*,
-  proxy::ProxyBuilder,
+  config::build_globals, error::*, globals::*, handler::HttpMessageHandlerBuilder, log::*, proxy::ProxyBuilder,
 };
 use futures::future::select_all;
 use hyper::Client;
@@ -33,23 +32,17 @@ fn main() {
   let runtime = runtime_builder.build().unwrap();
 
   runtime.block_on(async {
-    let mut globals = Globals {
-      // TODO: proxy configはarcに包んでこいつだけ使いまわせばいいように変えていく。backendsも？
-      proxy_config: ProxyConfig::default(),
-      backends: Backends::default(),
-
-      request_count: Default::default(),
-      runtime_handle: runtime.handle().clone(),
-    };
-
-    if let Err(e) = parse_opts(&mut globals) {
-      error!("Invalid configuration: {}", e);
-      std::process::exit(1);
+    let globals = match build_globals(runtime.handle().clone()) {
+      Ok(g) => g,
+      Err(e) => {
+        error!("Invalid configuration: {}", e);
+        std::process::exit(1);
+      }
     };
 
     entrypoint(Arc::new(globals)).await.unwrap()
   });
-  warn!("Exit the program");
+  warn!("rpxy exited!");
 }
 
 // entrypoint creates and spawns tasks of proxy services

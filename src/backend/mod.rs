@@ -212,19 +212,11 @@ impl Backend {
   }
 }
 
+#[derive(Default)]
 /// HashMap and some meta information for multiple Backend structs.
 pub struct Backends {
   pub apps: HashMap<ServerNameBytesExp, Backend>, // hyper::uriで抜いたhostで引っ掛ける
   pub default_server_name_bytes: Option<ServerNameBytesExp>, // for plaintext http
-}
-
-impl Default for Backends {
-  fn default() -> Self {
-    Self {
-      default_server_name_bytes: None,
-      apps: HashMap::<ServerNameBytesExp, Backend>::default(),
-    }
-  }
 }
 
 pub type SniServerCryptoMap = HashMap<ServerNameBytesExp, Arc<ServerConfig>>;
