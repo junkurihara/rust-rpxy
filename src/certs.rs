@@ -11,7 +11,7 @@ pub struct CertsAndKeys {
 
 #[async_trait]
 // Trait to read certs and keys anywhere from KVS, file, sqlite, etc.
-pub trait ReadCerts {
+pub trait CryptoSource {
   type Error;
-  async fn read_crypto_source(&self) -> Result<CertsAndKeys, Self::Error>;
+  async fn read(&self) -> Result<CertsAndKeys, Self::Error>;
 }

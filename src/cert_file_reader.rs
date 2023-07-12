@@ -1,10 +1,34 @@
-use crate::{certs::CertsAndKeys, log::*};
+use crate::{
+  certs::{CertsAndKeys, CryptoSource},
+  log::*,
+};
+use async_trait::async_trait;
 use rustls::{Certificate, PrivateKey};
 use std::{
   fs::File,
   io::{self, BufReader, Cursor, Read},
   path::PathBuf,
 };
+
+/// Crypto-related file reader implementing certs::CryptoRead trait
+pub struct CryptoFileSource {
+  /// tls settings in file
+  pub tls_cert_path: PathBuf,
+  pub tls_cert_key_path: PathBuf,
+  pub client_ca_cert_path: Option<PathBuf>,
+}
+
+#[async_trait]
+impl CryptoSource for CryptoFileSource {
+  type Error = io::Error;
+  async fn read(&self) -> Result<CertsAndKeys, Self::Error> {
+    read_certs_and_keys(
+      &self.tls_cert_path,
+      &self.tls_cert_key_path,
+      self.client_ca_cert_path.as_ref(),
+    )
+  }
+}
 
 /// Read certificates and private keys from file
 pub(crate) fn read_certs_and_keys(
