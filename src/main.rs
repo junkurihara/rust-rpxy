@@ -1,3 +1,4 @@
+use certs::CryptoSource;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -18,7 +19,8 @@ mod proxy;
 mod utils;
 
 use crate::{
-  config::build_globals, error::*, globals::*, handler::HttpMessageHandlerBuilder, log::*, proxy::ProxyBuilder,
+  cert_file_reader::CryptoFileSource, config::build_globals, error::*, globals::*, handler::HttpMessageHandlerBuilder,
+  log::*, proxy::ProxyBuilder,
 };
 use futures::future::select_all;
 use hyper::Client;
@@ -34,7 +36,7 @@ fn main() {
   let runtime = runtime_builder.build().unwrap();
 
   runtime.block_on(async {
-    let globals = match build_globals(runtime.handle().clone()) {
+    let globals: Globals<CryptoFileSource> = match build_globals(runtime.handle().clone()) {
       Ok(g) => g,
       Err(e) => {
         error!("Invalid configuration: {}", e);
@@ -48,7 +50,10 @@ fn main() {
 }
 
 // entrypoint creates and spawns tasks of proxy services
-async fn entrypoint(globals: Arc<Globals>) -> Result<()> {
+async fn entrypoint<T>(globals: Arc<Globals<T>>) -> Result<()>
+where
+  T: CryptoSource + Clone + Send + Sync + 'static,
+{
   // let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
   let connector = hyper_rustls::HttpsConnectorBuilder::new()
     .with_webpki_roots()

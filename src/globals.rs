@@ -1,3 +1,4 @@
+use crate::certs::CryptoSource;
 use crate::{backend::Backends, constants::*};
 use std::net::SocketAddr;
 use std::sync::{
@@ -8,12 +9,15 @@ use tokio::time::Duration;
 
 /// Global object containing proxy configurations and shared object like counters.
 /// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
-pub struct Globals {
+pub struct Globals<T>
+where
+  T: CryptoSource,
+{
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig, // TODO: proxy configはarcに包んでこいつだけ使いまわせばいいように変えていく。backendsも？
 
   /// Backend application objects to which http request handler forward incoming requests
-  pub backends: Backends,
+  pub backends: Backends<T>,
 
   /// Shared context - Counter for serving requests
   pub request_count: RequestCount,

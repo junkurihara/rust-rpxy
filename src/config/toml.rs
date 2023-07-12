@@ -1,5 +1,6 @@
 use crate::{
   backend::{Backend, BackendBuilder, ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption},
+  certs::CryptoSource,
   constants::*,
   error::*,
   globals::ProxyConfig,
@@ -170,10 +171,13 @@ impl ConfigToml {
   }
 }
 
-impl TryInto<Backend> for &Application {
+impl<T> TryInto<Backend<T>> for &Application
+where
+  T: CryptoSource + Clone,
+{
   type Error = anyhow::Error;
 
-  fn try_into(self) -> std::result::Result<Backend, Self::Error> {
+  fn try_into(self) -> std::result::Result<Backend<T>, Self::Error> {
     let server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
 
     // backend builder

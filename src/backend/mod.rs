@@ -13,14 +13,20 @@ pub use self::{
   upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder},
   upstream_opts::UpstreamOption,
 };
-use crate::utils::{BytesName, PathNameBytesExp, ServerNameBytesExp};
+use crate::{
+  certs::CryptoSource,
+  utils::{BytesName, PathNameBytesExp, ServerNameBytesExp},
+};
 use derive_builder::Builder;
 use rustc_hash::FxHashMap as HashMap;
 use std::{borrow::Cow, path::PathBuf};
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
 #[derive(Builder)]
-pub struct Backend {
+pub struct Backend<T>
+where
+  T: CryptoSource,
+{
   #[builder(setter(into))]
   /// backend application name, e.g., app1
   pub app_name: String,
@@ -39,8 +45,14 @@ pub struct Backend {
   pub https_redirection: Option<bool>,
   #[builder(setter(custom), default)]
   pub client_ca_cert_path: Option<PathBuf>,
+
+  #[builder(default)]
+  pub crypto_source: Option<T>,
 }
-impl<'a> BackendBuilder {
+impl<'a, T> BackendBuilder<T>
+where
+  T: CryptoSource,
+{
   pub fn server_name(&mut self, server_name: impl Into<Cow<'a, str>>) -> &mut Self {
     self.server_name = Some(server_name.into().to_ascii_lowercase());
     self
@@ -63,9 +75,23 @@ fn opt_string_to_opt_pathbuf(input: &Option<String>) -> Option<PathBuf> {
   input.to_owned().as_ref().map(PathBuf::from)
 }
 
-#[derive(Default)]
 /// HashMap and some meta information for multiple Backend structs.
-pub struct Backends {
-  pub apps: HashMap<ServerNameBytesExp, Backend>, // hyper::uriで抜いたhostで引っ掛ける
+pub struct Backends<T>
+where
+  T: CryptoSource,
+{
+  pub apps: HashMap<ServerNameBytesExp, Backend<T>>, // hyper::uriで抜いたhostで引っ掛ける
   pub default_server_name_bytes: Option<ServerNameBytesExp>, // for plaintext http
+}
+
+impl<T> Backends<T>
+where
+  T: CryptoSource,
+{
+  pub fn new() -> Self {
+    Backends {
+      apps: HashMap::<ServerNameBytesExp, Backend<T>>::default(),
+      default_server_name_bytes: None,
+    }
+  }
 }

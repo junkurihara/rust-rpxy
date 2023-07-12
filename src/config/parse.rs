@@ -1,9 +1,12 @@
 use super::toml::ConfigToml;
-use crate::{backend::Backends, error::*, globals::*, log::*, utils::BytesName};
+use crate::{backend::Backends, certs::CryptoSource, error::*, globals::*, log::*, utils::BytesName};
 use clap::Arg;
 use tokio::runtime::Handle;
 
-pub fn build_globals(runtime_handle: Handle) -> std::result::Result<Globals, anyhow::Error> {
+pub fn build_globals<T>(runtime_handle: Handle) -> std::result::Result<Globals<T>, anyhow::Error>
+where
+  T: CryptoSource + Clone,
+{
   let _ = include_str!("../../Cargo.toml");
   let options = clap::command!().arg(
     Arg::new("config_file")
@@ -72,7 +75,7 @@ pub fn build_globals(runtime_handle: Handle) -> std::result::Result<Globals, any
   }
 
   // build backends
-  let mut backends = Backends::default();
+  let mut backends = Backends::new();
   for (app_name, app) in apps.0.iter() {
     let server_name_string = app.server_name.as_ref().ok_or(anyhow!("No server name"))?;
     let backend = app.try_into()?;

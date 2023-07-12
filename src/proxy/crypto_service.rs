@@ -1,6 +1,6 @@
 use crate::{
   cert_file_reader::read_certs_and_keys, // TODO: Trait defining read_certs_and_keys and add struct implementing the trait to backend when build backend
-  certs::CertsAndKeys,
+  certs::{CertsAndKeys, CryptoSource},
   globals::Globals,
   log::*,
   utils::ServerNameBytesExp,
@@ -18,8 +18,11 @@ use x509_parser::prelude::*;
 
 #[derive(Clone)]
 /// Reloader service for certificates and keys for TLS
-pub struct CryptoReloader {
-  globals: Arc<Globals>,
+pub struct CryptoReloader<T>
+where
+  T: CryptoSource,
+{
+  globals: Arc<Globals<T>>,
 }
 
 pub type SniServerCryptoMap = HashMap<ServerNameBytesExp, Arc<ServerConfig>>;
@@ -37,8 +40,11 @@ pub struct ServerCryptoBase {
 }
 
 #[async_trait]
-impl Reload<ServerCryptoBase> for CryptoReloader {
-  type Source = Arc<Globals>;
+impl<T> Reload<ServerCryptoBase> for CryptoReloader<T>
+where
+  T: CryptoSource + Sync + Send,
+{
+  type Source = Arc<Globals<T>>;
   async fn new(source: &Self::Source) -> Result<Self, ReloaderError<ServerCryptoBase>> {
     Ok(Self {
       globals: source.clone(),

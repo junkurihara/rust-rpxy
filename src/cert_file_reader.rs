@@ -11,7 +11,7 @@ use std::{
   path::PathBuf,
 };
 
-#[derive(Builder, Debug)]
+#[derive(Builder, Debug, Clone)]
 /// Crypto-related file reader implementing certs::CryptoRead trait
 pub struct CryptoFileSource {
   #[builder(setter(custom))]

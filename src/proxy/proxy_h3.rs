@@ -1,14 +1,15 @@
 use super::Proxy;
-use crate::{error::*, log::*, utils::ServerNameBytesExp};
+use crate::{certs::CryptoSource, error::*, log::*, utils::ServerNameBytesExp};
 use bytes::{Buf, Bytes};
 use h3::{quic::BidiStream, server::RequestStream};
 use hyper::{client::connect::Connect, Body, Request, Response};
 use std::net::SocketAddr;
 use tokio::time::{timeout, Duration};
 
-impl<T> Proxy<T>
+impl<T, U> Proxy<T, U>
 where
   T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn connection_serve_h3(
     self,

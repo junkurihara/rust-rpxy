@@ -1,5 +1,7 @@
 // use super::proxy_handler::handle_request;
-use crate::{error::*, globals::Globals, handler::HttpMessageHandler, log::*, utils::ServerNameBytesExp};
+use crate::{
+  certs::CryptoSource, error::*, globals::Globals, handler::HttpMessageHandler, log::*, utils::ServerNameBytesExp,
+};
 use derive_builder::{self, Builder};
 use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, Body, Request};
 use std::{net::SocketAddr, sync::Arc};
@@ -32,19 +34,21 @@ where
 }
 
 #[derive(Clone, Builder)]
-pub struct Proxy<T>
+pub struct Proxy<T, U>
 where
   T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub listening_on: SocketAddr,
   pub tls_enabled: bool, // TCP待受がTLSかどうか
-  pub msg_handler: HttpMessageHandler<T>,
-  pub globals: Arc<Globals>,
+  pub msg_handler: HttpMessageHandler<T, U>,
+  pub globals: Arc<Globals<U>>,
 }
 
-impl<T> Proxy<T>
+impl<T, U> Proxy<T, U>
 where
   T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send,
 {
   pub(super) fn client_serve<I>(
     self,
