@@ -1,5 +1,4 @@
 use crate::{
-  cert_file_reader::read_certs_and_keys, // TODO: Trait defining read_certs_and_keys and add struct implementing the trait to backend when build backend
   certs::{CertsAndKeys, CryptoSource},
   globals::Globals,
   log::*,
@@ -55,13 +54,11 @@ where
     let mut certs_and_keys_map = ServerCryptoBase::default();
 
     for (server_name_bytes_exp, backend) in self.globals.backends.apps.iter() {
-      if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
-        let tls_cert_key_path = backend.tls_cert_key_path.as_ref().unwrap();
-        let tls_cert_path = backend.tls_cert_path.as_ref().unwrap();
-        let tls_client_ca_cert_path = backend.client_ca_cert_path.as_ref();
-        let certs_and_keys = read_certs_and_keys(tls_cert_path, tls_cert_key_path, tls_client_ca_cert_path)
+      if let Some(crypto_source) = &backend.crypto_source {
+        let certs_and_keys = crypto_source
+          .read()
+          .await
           .map_err(|_e| ReloaderError::<ServerCryptoBase>::Reload("Failed to reload cert, key or ca cert"))?;
-
         certs_and_keys_map
           .inner
           .insert(server_name_bytes_exp.to_owned(), certs_and_keys);

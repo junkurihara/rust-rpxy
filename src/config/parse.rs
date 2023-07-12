@@ -1,12 +1,16 @@
 use super::toml::ConfigToml;
-use crate::{backend::Backends, certs::CryptoSource, error::*, globals::*, log::*, utils::BytesName};
+use crate::{
+  backend::Backends,
+  cert_file_reader::CryptoFileSource,
+  error::{anyhow, ensure},
+  globals::*,
+  log::*,
+  utils::BytesName,
+};
 use clap::Arg;
 use tokio::runtime::Handle;
 
-pub fn build_globals<T>(runtime_handle: Handle) -> std::result::Result<Globals<T>, anyhow::Error>
-where
-  T: CryptoSource + Clone,
-{
+pub fn build_globals(runtime_handle: Handle) -> std::result::Result<Globals<CryptoFileSource>, anyhow::Error> {
   let _ = include_str!("../../Cargo.toml");
   let options = clap::command!().arg(
     Arg::new("config_file")

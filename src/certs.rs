@@ -13,5 +13,10 @@ pub struct CertsAndKeys {
 // Trait to read certs and keys anywhere from KVS, file, sqlite, etc.
 pub trait CryptoSource {
   type Error;
+
+  /// read crypto materials from source
   async fn read(&self) -> Result<CertsAndKeys, Self::Error>;
+
+  /// Returns true when mutual tls is enabled
+  fn is_mutual_tls(&self) -> bool;
 }

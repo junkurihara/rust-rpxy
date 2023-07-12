@@ -1,8 +1,8 @@
 use crate::{
   backend::{Backend, BackendBuilder, ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption},
-  certs::CryptoSource,
+  cert_file_reader::{CryptoFileSource, CryptoFileSourceBuilder},
   constants::*,
-  error::*,
+  error::{anyhow, ensure},
   globals::ProxyConfig,
   utils::PathNameBytesExp,
 };
@@ -164,20 +164,17 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 }
 
 impl ConfigToml {
-  pub fn new(config_file: &str) -> std::result::Result<Self, RpxyError> {
-    let config_str = fs::read_to_string(config_file).map_err(RpxyError::Io)?;
+  pub fn new(config_file: &str) -> std::result::Result<Self, anyhow::Error> {
+    let config_str = fs::read_to_string(config_file)?;
 
-    toml::from_str(&config_str).map_err(RpxyError::TomlDe)
+    toml::from_str(&config_str).map_err(|e| anyhow!(e))
   }
 }
 
-impl<T> TryInto<Backend<T>> for &Application
-where
-  T: CryptoSource + Clone,
-{
+impl TryInto<Backend<CryptoFileSource>> for &Application {
   type Error = anyhow::Error;
 
-  fn try_into(self) -> std::result::Result<Backend<T>, Self::Error> {
+  fn try_into(self) -> std::result::Result<Backend<CryptoFileSource>, Self::Error> {
     let server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
 
     // backend builder
@@ -203,11 +200,15 @@ where
         tls.https_redirection
       };
 
-      backend_builder
-        .tls_cert_path(&tls.tls_cert_path)
-        .tls_cert_key_path(&tls.tls_cert_key_path)
-        .https_redirection(https_redirection)
+      let crypto_source = CryptoFileSourceBuilder::default()
+        .tls_cert_path(tls.tls_cert_path.as_ref().unwrap())
+        .tls_cert_key_path(tls.tls_cert_key_path.as_ref().unwrap())
         .client_ca_cert_path(&tls.client_ca_cert_path)
+        .build()?;
+
+      backend_builder
+        .https_redirection(https_redirection)
+        .crypto_source(Some(crypto_source))
         .build()?
     };
     Ok(backend)
@@ -255,7 +256,7 @@ impl TryInto<ReverseProxy> for &Application {
 }
 
 impl TryInto<Upstream> for &UpstreamParams {
-  type Error = RpxyError;
+  type Error = anyhow::Error;
 
   fn try_into(self) -> std::result::Result<Upstream, Self::Error> {
     let scheme = match self.tls {

@@ -209,7 +209,12 @@ where
     #[cfg(feature = "http3")]
     {
       // TODO: Workaround for avoid h3 for client authentication
-      if self.globals.proxy_config.http3 && chosen_backend.client_ca_cert_path.is_none() {
+      if self.globals.proxy_config.http3
+        && chosen_backend
+          .crypto_source
+          .as_ref()
+          .is_some_and(|v| !v.is_mutual_tls())
+      {
         if let Some(port) = self.globals.proxy_config.https_port {
           add_header_entry_overwrite_if_exist(
             headers,

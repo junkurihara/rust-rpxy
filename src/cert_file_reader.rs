@@ -36,8 +36,8 @@ impl CryptoFileSourceBuilder {
     self.tls_cert_key_path = Some(PathBuf::from(v));
     self
   }
-  pub fn client_ca_cert_path(&mut self, v: &str) -> &mut Self {
-    self.client_ca_cert_path = Some(Some(PathBuf::from(v)));
+  pub fn client_ca_cert_path(&mut self, v: &Option<String>) -> &mut Self {
+    self.client_ca_cert_path = Some(v.to_owned().as_ref().map(PathBuf::from));
     self
   }
 }
@@ -45,6 +45,7 @@ impl CryptoFileSourceBuilder {
 #[async_trait]
 impl CryptoSource for CryptoFileSource {
   type Error = io::Error;
+  /// read crypto materials from source
   async fn read(&self) -> Result<CertsAndKeys, Self::Error> {
     read_certs_and_keys(
       &self.tls_cert_path,
@@ -52,10 +53,14 @@ impl CryptoSource for CryptoFileSource {
       self.client_ca_cert_path.as_ref(),
     )
   }
+  /// Returns true when mutual tls is enabled
+  fn is_mutual_tls(&self) -> bool {
+    self.client_ca_cert_path.is_some()
+  }
 }
 
 /// Read certificates and private keys from file
-pub(crate) fn read_certs_and_keys(
+fn read_certs_and_keys(
   cert_path: &PathBuf,
   cert_key_path: &PathBuf,
   client_ca_cert_path: Option<&PathBuf>,
@@ -162,11 +167,11 @@ mod tests {
   async fn read_server_crt_key_files_with_client_ca_crt() {
     let tls_cert_path = "example-certs/server.crt";
     let tls_cert_key_path = "example-certs/server.key";
-    let client_ca_cert_path = "example-certs/client.ca.crt";
+    let client_ca_cert_path = Some("example-certs/client.ca.crt".to_string());
     let crypto_file_source = CryptoFileSourceBuilder::default()
       .tls_cert_key_path(tls_cert_key_path)
       .tls_cert_path(tls_cert_path)
-      .client_ca_cert_path(client_ca_cert_path)
+      .client_ca_cert_path(&client_ca_cert_path)
       .build();
     assert!(crypto_file_source.is_ok());
 

@@ -19,7 +19,7 @@ use crate::{
 };
 use derive_builder::Builder;
 use rustc_hash::FxHashMap as HashMap;
-use std::{borrow::Cow, path::PathBuf};
+use std::borrow::Cow;
 
 /// Struct serving information to route incoming connections, like server name to be handled and tls certs/keys settings.
 #[derive(Builder)]
@@ -36,16 +36,11 @@ where
   /// struct of reverse proxy serving incoming request
   pub reverse_proxy: ReverseProxy,
 
-  /// tls settings
-  #[builder(setter(custom), default)]
-  pub tls_cert_path: Option<PathBuf>,
-  #[builder(setter(custom), default)]
-  pub tls_cert_key_path: Option<PathBuf>,
+  /// tls settings: https redirection with 30x
   #[builder(default)]
   pub https_redirection: Option<bool>,
-  #[builder(setter(custom), default)]
-  pub client_ca_cert_path: Option<PathBuf>,
 
+  /// TLS settings: source meta for server cert, key, client ca cert
   #[builder(default)]
   pub crypto_source: Option<T>,
 }
@@ -57,22 +52,6 @@ where
     self.server_name = Some(server_name.into().to_ascii_lowercase());
     self
   }
-  pub fn tls_cert_path(&mut self, v: &Option<String>) -> &mut Self {
-    self.tls_cert_path = Some(opt_string_to_opt_pathbuf(v));
-    self
-  }
-  pub fn tls_cert_key_path(&mut self, v: &Option<String>) -> &mut Self {
-    self.tls_cert_key_path = Some(opt_string_to_opt_pathbuf(v));
-    self
-  }
-  pub fn client_ca_cert_path(&mut self, v: &Option<String>) -> &mut Self {
-    self.client_ca_cert_path = Some(opt_string_to_opt_pathbuf(v));
-    self
-  }
-}
-
-fn opt_string_to_opt_pathbuf(input: &Option<String>) -> Option<PathBuf> {
-  input.to_owned().as_ref().map(PathBuf::from)
 }
 
 /// HashMap and some meta information for multiple Backend structs.
