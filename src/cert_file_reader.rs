@@ -1,4 +1,4 @@
-use crate::{log::*, proxy::CertsAndKeys};
+use crate::{certs::CertsAndKeys, log::*};
 use rustls::{Certificate, PrivateKey};
 use std::{
   fs::File,

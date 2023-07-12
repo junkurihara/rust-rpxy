@@ -1,5 +1,6 @@
 use crate::{
-  cert_reader::read_certs_and_keys, // TODO: Trait defining read_certs_and_keys and add struct implementing the trait to backend when build backend
+  cert_file_reader::read_certs_and_keys, // TODO: Trait defining read_certs_and_keys and add struct implementing the trait to backend when build backend
+  certs::CertsAndKeys,
   globals::Globals,
   log::*,
   utils::ServerNameBytesExp,
@@ -10,7 +11,7 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use rustls::{
   server::ResolvesServerCertUsingSni,
   sign::{any_supported_type, CertifiedKey},
-  Certificate, OwnedTrustAnchor, PrivateKey, RootCertStore, ServerConfig,
+  OwnedTrustAnchor, RootCertStore, ServerConfig,
 };
 use std::{io, sync::Arc};
 use x509_parser::prelude::*;
@@ -19,14 +20,6 @@ use x509_parser::prelude::*;
 /// Reloader service for certificates and keys for TLS
 pub struct CryptoReloader {
   globals: Arc<Globals>,
-}
-
-/// Certificates and private keys in rustls loaded from files
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct CertsAndKeys {
-  pub certs: Vec<Certificate>,
-  pub cert_keys: Vec<PrivateKey>,
-  pub client_ca_certs: Option<Vec<Certificate>>,
 }
 
 pub type SniServerCryptoMap = HashMap<ServerNameBytesExp, Arc<ServerConfig>>;

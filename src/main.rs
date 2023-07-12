@@ -6,7 +6,8 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 mod backend;
-mod cert_reader;
+mod cert_file_reader;
+mod certs;
 mod config;
 mod constants;
 mod error;
