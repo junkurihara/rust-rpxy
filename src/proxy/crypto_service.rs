@@ -1,5 +1,5 @@
 use crate::{
-  cert_reader::read_certs_and_keys, // TODO: Trait defining read_certs_and_keys and add struct implementing the trait to backend when build backend
+  certs::{CertsAndKeys, CryptoSource},
   globals::Globals,
   log::*,
   utils::ServerNameBytesExp,
@@ -10,23 +10,18 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use rustls::{
   server::ResolvesServerCertUsingSni,
   sign::{any_supported_type, CertifiedKey},
-  Certificate, OwnedTrustAnchor, PrivateKey, RootCertStore, ServerConfig,
+  OwnedTrustAnchor, RootCertStore, ServerConfig,
 };
 use std::{io, sync::Arc};
 use x509_parser::prelude::*;
 
 #[derive(Clone)]
 /// Reloader service for certificates and keys for TLS
-pub struct CryptoReloader {
-  globals: Arc<Globals>,
-}
-
-/// Certificates and private keys in rustls loaded from files
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct CertsAndKeys {
-  pub certs: Vec<Certificate>,
-  pub cert_keys: Vec<PrivateKey>,
-  pub client_ca_certs: Option<Vec<Certificate>>,
+pub struct CryptoReloader<T>
+where
+  T: CryptoSource,
+{
+  globals: Arc<Globals<T>>,
 }
 
 pub type SniServerCryptoMap = HashMap<ServerNameBytesExp, Arc<ServerConfig>>;
@@ -44,8 +39,11 @@ pub struct ServerCryptoBase {
 }
 
 #[async_trait]
-impl Reload<ServerCryptoBase> for CryptoReloader {
-  type Source = Arc<Globals>;
+impl<T> Reload<ServerCryptoBase> for CryptoReloader<T>
+where
+  T: CryptoSource + Sync + Send,
+{
+  type Source = Arc<Globals<T>>;
   async fn new(source: &Self::Source) -> Result<Self, ReloaderError<ServerCryptoBase>> {
     Ok(Self {
       globals: source.clone(),
@@ -56,13 +54,11 @@ impl Reload<ServerCryptoBase> for CryptoReloader {
     let mut certs_and_keys_map = ServerCryptoBase::default();
 
     for (server_name_bytes_exp, backend) in self.globals.backends.apps.iter() {
-      if backend.tls_cert_key_path.is_some() && backend.tls_cert_path.is_some() {
-        let tls_cert_key_path = backend.tls_cert_key_path.as_ref().unwrap();
-        let tls_cert_path = backend.tls_cert_path.as_ref().unwrap();
-        let tls_client_ca_cert_path = backend.client_ca_cert_path.as_ref();
-        let certs_and_keys = read_certs_and_keys(tls_cert_path, tls_cert_key_path, tls_client_ca_cert_path)
+      if let Some(crypto_source) = &backend.crypto_source {
+        let certs_and_keys = crypto_source
+          .read()
+          .await
           .map_err(|_e| ReloaderError::<ServerCryptoBase>::Reload("Failed to reload cert, key or ca cert"))?;
-
         certs_and_keys_map
           .inner
           .insert(server_name_bytes_exp.to_owned(), certs_and_keys);

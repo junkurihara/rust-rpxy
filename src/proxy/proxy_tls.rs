@@ -2,7 +2,7 @@ use super::{
   crypto_service::{CryptoReloader, ServerCrypto, ServerCryptoBase, SniServerCryptoMap},
   proxy_main::{LocalExecutor, Proxy},
 };
-use crate::{constants::*, error::*, log::*, utils::BytesName};
+use crate::{certs::CryptoSource, constants::*, error::*, log::*, utils::BytesName};
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use hyper::{client::connect::Connect, server::conn::Http};
 #[cfg(feature = "http3")]
@@ -15,9 +15,10 @@ use tokio::{
   time::{timeout, Duration},
 };
 
-impl<T> Proxy<T>
+impl<T, U> Proxy<T, U>
 where
   T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   // TCP Listener Service, i.e., http/2 and http/1.1
   async fn listener_service(
@@ -181,7 +182,7 @@ where
   }
 
   pub async fn start_with_tls(self, server: Http<LocalExecutor>) -> Result<()> {
-    let (cert_reloader_service, cert_reloader_rx) = ReloaderService::<CryptoReloader, ServerCryptoBase>::new(
+    let (cert_reloader_service, cert_reloader_rx) = ReloaderService::<CryptoReloader<U>, ServerCryptoBase>::new(
       &self.globals.clone(),
       CERTS_WATCH_DELAY_SECS,
       !LOAD_CERTS_ONLY_WHEN_UPDATED,

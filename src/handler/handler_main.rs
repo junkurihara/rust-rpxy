@@ -2,6 +2,7 @@
 use super::{utils_headers::*, utils_request::*, utils_synth_response::*, HandlerContext};
 use crate::{
   backend::{Backend, UpstreamGroup},
+  certs::CryptoSource,
   error::*,
   globals::Globals,
   log::*,
@@ -18,17 +19,19 @@ use std::{env, net::SocketAddr, sync::Arc};
 use tokio::{io::copy_bidirectional, time::timeout};
 
 #[derive(Clone, Builder)]
-pub struct HttpMessageHandler<T>
+pub struct HttpMessageHandler<T, U>
 where
   T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone,
 {
   forwarder: Arc<Client<T>>,
-  globals: Arc<Globals>,
+  globals: Arc<Globals<U>>,
 }
 
-impl<T> HttpMessageHandler<T>
+impl<T, U> HttpMessageHandler<T, U>
 where
   T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone,
 {
   fn return_with_error_log(&self, status_code: StatusCode, log_data: &mut MessageLog) -> Result<Response<Body>> {
     log_data.status_code(&status_code).output();
@@ -194,11 +197,10 @@ where
   ////////////////////////////////////////////////////
   // Functions to generate messages
 
-  fn generate_response_forwarded<B: core::fmt::Debug>(
-    &self,
-    response: &mut Response<B>,
-    chosen_backend: &Backend,
-  ) -> Result<()> {
+  fn generate_response_forwarded<B>(&self, response: &mut Response<B>, chosen_backend: &Backend<U>) -> Result<()>
+  where
+    B: core::fmt::Debug,
+  {
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
@@ -207,7 +209,12 @@ where
     #[cfg(feature = "http3")]
     {
       // TODO: Workaround for avoid h3 for client authentication
-      if self.globals.proxy_config.http3 && chosen_backend.client_ca_cert_path.is_none() {
+      if self.globals.proxy_config.http3
+        && chosen_backend
+          .crypto_source
+          .as_ref()
+          .is_some_and(|v| !v.is_mutual_tls())
+      {
         if let Some(port) = self.globals.proxy_config.https_port {
           add_header_entry_overwrite_if_exist(
             headers,
