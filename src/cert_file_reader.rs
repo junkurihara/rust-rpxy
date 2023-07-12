@@ -3,6 +3,7 @@ use crate::{
   log::*,
 };
 use async_trait::async_trait;
+use derive_builder::Builder;
 use rustls::{Certificate, PrivateKey};
 use std::{
   fs::File,
@@ -10,12 +11,35 @@ use std::{
   path::PathBuf,
 };
 
+#[derive(Builder, Debug)]
 /// Crypto-related file reader implementing certs::CryptoRead trait
 pub struct CryptoFileSource {
-  /// tls settings in file
+  #[builder(setter(custom))]
+  /// Always exist
   pub tls_cert_path: PathBuf,
+
+  #[builder(setter(custom))]
+  /// Always exist
   pub tls_cert_key_path: PathBuf,
+
+  #[builder(setter(custom), default)]
+  /// This may not exist
   pub client_ca_cert_path: Option<PathBuf>,
+}
+
+impl CryptoFileSourceBuilder {
+  pub fn tls_cert_path(&mut self, v: &str) -> &mut Self {
+    self.tls_cert_path = Some(PathBuf::from(v));
+    self
+  }
+  pub fn tls_cert_key_path(&mut self, v: &str) -> &mut Self {
+    self.tls_cert_key_path = Some(PathBuf::from(v));
+    self
+  }
+  pub fn client_ca_cert_path(&mut self, v: &str) -> &mut Self {
+    self.client_ca_cert_path = Some(Some(PathBuf::from(v)));
+    self
+  }
 }
 
 #[async_trait]
@@ -114,4 +138,43 @@ pub(crate) fn read_certs_and_keys(
     cert_keys,
     client_ca_certs,
   })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[tokio::test]
+  async fn read_server_crt_key_files() {
+    let tls_cert_path = "example-certs/server.crt";
+    let tls_cert_key_path = "example-certs/server.key";
+    let crypto_file_source = CryptoFileSourceBuilder::default()
+      .tls_cert_key_path(tls_cert_key_path)
+      .tls_cert_path(tls_cert_path)
+      .build();
+    assert!(crypto_file_source.is_ok());
+
+    let crypto_file_source = crypto_file_source.unwrap();
+    let crypto_elem = crypto_file_source.read().await;
+    assert!(crypto_elem.is_ok());
+  }
+
+  #[tokio::test]
+  async fn read_server_crt_key_files_with_client_ca_crt() {
+    let tls_cert_path = "example-certs/server.crt";
+    let tls_cert_key_path = "example-certs/server.key";
+    let client_ca_cert_path = "example-certs/client.ca.crt";
+    let crypto_file_source = CryptoFileSourceBuilder::default()
+      .tls_cert_key_path(tls_cert_key_path)
+      .tls_cert_path(tls_cert_path)
+      .client_ca_cert_path(client_ca_cert_path)
+      .build();
+    assert!(crypto_file_source.is_ok());
+
+    let crypto_file_source = crypto_file_source.unwrap();
+    let crypto_elem = crypto_file_source.read().await;
+    assert!(crypto_elem.is_ok());
+
+    let crypto_elem = crypto_elem.unwrap();
+    assert!(crypto_elem.client_ca_certs.is_some());
+  }
 }
