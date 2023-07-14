@@ -25,6 +25,7 @@ services:
     pull_policy: never
     build:
       context: ../
+      dockerfile: docker/Dockerfile.amd64
     restart: unless-stopped
     environment:
       - LOG_LEVEL=info

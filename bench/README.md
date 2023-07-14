@@ -1,10 +1,23 @@
 # Sample Benchmark Result
 
-Using `rewrk` and Docker on a Macbook Pro 14 to simply measure the performance of several reverse proxy through HTTP1.1.
+Done at Jul. 15, 2023
 
-```
+This test simply measures the performance of several reverse proxy through HTTP/1.1 by the following command using [`rewrk`](https://github.com/lnx-search/rewrk).
+
+```bash
 $ rewrk -c 512 -t 4 -d 15s -h http://localhost:8080 --pct
 ```
+
+## Environment
+
+- `rpxy` commit id: `1da7e5bfb77d1ce4ee8d6cfc59b1c725556fc192`
+- Docker Desktop 4.21.1 (114176)
+- ReWrk 0.3.1
+- Macbook Pro '14 (2021, M1 Max, 64GB RAM)
+
+
+
+## Result
 
 ```
 ----------------------------
@@ -13,23 +26,23 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8080 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    26.81ms  11.96ms  2.96ms   226.04ms
+    19.64ms  8.85ms   0.67ms   113.22ms
   Requests:
-    Total: 285390  Req/Sec: 19032.01
+    Total: 390078  Req/Sec: 26011.25
   Transfer:
-    Total: 222.85 MB Transfer Rate: 14.86 MB/Sec
+    Total: 304.85 MB Transfer Rate: 20.33 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |    145.89ms     |
-|       99%       |     81.33ms     |
-|       95%       |     59.08ms     |
-|       90%       |     51.67ms     |
-|       75%       |     42.45ms     |
-|       50%       |     35.39ms     |
+|      99.9%      |     79.24ms     |
+|       99%       |     54.28ms     |
+|       95%       |     42.50ms     |
+|       90%       |     37.82ms     |
+|       75%       |     31.54ms     |
+|       50%       |     26.37ms     |
 + --------------- + --------------- +
 
-767 Errors: error shutting down connection: Socket is not connected (os error 57)
+721 Errors: error shutting down connection: Socket is not connected (os error 57)
 
 sleep 3 secs
 ----------------------------
@@ -38,23 +51,23 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8090 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    38.39ms  21.06ms  2.91ms   248.32ms
+    33.26ms  15.18ms  1.40ms   118.94ms
   Requests:
-    Total: 199210  Req/Sec: 13288.91
+    Total: 230268  Req/Sec: 15356.08
   Transfer:
-    Total: 161.46 MB Transfer Rate: 10.77 MB/Sec
+    Total: 186.77 MB Transfer Rate: 12.46 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |    164.33ms     |
-|       99%       |    121.55ms     |
-|       95%       |     96.43ms     |
-|       90%       |     85.05ms     |
-|       75%       |     67.80ms     |
-|       50%       |     53.85ms     |
+|      99.9%      |     99.91ms     |
+|       99%       |     83.74ms     |
+|       95%       |     70.67ms     |
+|       90%       |     64.03ms     |
+|       75%       |     54.32ms     |
+|       50%       |     45.19ms     |
 + --------------- + --------------- +
 
-736 Errors: error shutting down connection: Socket is not connected (os error 57)
+677 Errors: error shutting down connection: Socket is not connected (os error 57)
 
 sleep 3 secs
 ----------------------------
@@ -63,21 +76,21 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8100 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    83.17ms  73.71ms  1.24ms   734.67ms
+    48.51ms  50.74ms  0.34ms   554.58ms
   Requests:
-    Total:  91685  Req/Sec: 6114.05
+    Total: 157239  Req/Sec: 10485.98
   Transfer:
-    Total: 73.20 MB Transfer Rate: 4.88 MB/Sec
+    Total: 125.99 MB Transfer Rate: 8.40 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |    642.29ms     |
-|       99%       |    507.21ms     |
-|       95%       |    324.34ms     |
-|       90%       |    249.55ms     |
-|       75%       |    174.62ms     |
-|       50%       |    128.85ms     |
+|      99.9%      |    473.82ms     |
+|       99%       |    307.16ms     |
+|       95%       |    212.28ms     |
+|       90%       |    169.05ms     |
+|       75%       |    115.92ms     |
+|       50%       |     80.24ms     |
 + --------------- + --------------- +
 
-740 Errors: error shutting down connection: Socket is not connected (os error 57)
+708 Errors: error shutting down connection: Socket is not connected (os error 57)
 ```
