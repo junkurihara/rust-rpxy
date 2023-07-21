@@ -125,7 +125,10 @@ where
       backends
         .apps
         .insert(app_config.server_name.clone().to_server_name_vec(), backend);
-      info!("Registering application: ({})", &app_config.server_name);
+      info!(
+        "Registering application {} ({})",
+        &app_config.server_name, &app_config.app_name
+      );
     }
 
     // default backend application for plaintext http requests
@@ -154,6 +157,7 @@ pub struct AppConfig<T>
 where
   T: CryptoSource,
 {
+  pub app_name: String,
   pub server_name: String,
   pub reverse_proxy: Vec<ReverseProxyConfig>,
   pub tls: Option<TlsConfig<T>>,
@@ -171,7 +175,7 @@ where
     let reverse_proxy = self.try_into()?;
 
     backend_builder
-      .app_name(self.server_name.clone())
+      .app_name(self.app_name.clone())
       .server_name(self.server_name.clone())
       .reverse_proxy(reverse_proxy);
 

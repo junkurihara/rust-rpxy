@@ -80,15 +80,15 @@ pub fn build_settings() -> std::result::Result<(ProxyConfig, AppConfigList<Crypt
 
   // let mut backends = Backends::new();
   for (app_name, app) in apps.0.iter() {
-    let server_name_string = app.server_name.as_ref().ok_or(anyhow!("No server name"))?;
-    let app_config = app.try_into()?;
+    let _server_name_string = app.server_name.as_ref().ok_or(anyhow!("No server name"))?;
+    let registered_app_name = app_name.to_ascii_lowercase();
+    let app_config = app.build_app_config(&registered_app_name)?;
     app_config_list_inner.push(app_config);
-    info!("Registering application: {} ({})", app_name, server_name_string);
   }
 
   let app_config_list = AppConfigList {
     inner: app_config_list_inner,
-    default_app: config.default_app, // default backend application for plaintext http requests
+    default_app: config.default_app.map(|v| v.to_ascii_lowercase()), // default backend application for plaintext http requests
   };
 
   Ok((proxy_config, app_config_list))

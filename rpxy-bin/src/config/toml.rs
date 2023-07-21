@@ -168,10 +168,8 @@ impl ConfigToml {
   }
 }
 
-impl TryInto<AppConfig<CryptoFileSource>> for &Application {
-  type Error = anyhow::Error;
-
-  fn try_into(self) -> std::result::Result<AppConfig<CryptoFileSource>, Self::Error> {
+impl Application {
+  pub fn build_app_config(&self, app_name: &str) -> std::result::Result<AppConfig<CryptoFileSource>, anyhow::Error> {
     let server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
 
     // reverse proxy settings
@@ -202,6 +200,7 @@ impl TryInto<AppConfig<CryptoFileSource>> for &Application {
     };
 
     Ok(AppConfig {
+      app_name: app_name.to_owned(),
       server_name: server_name_string.to_owned(),
       reverse_proxy: reverse_proxy_config,
       tls: tls_config,
