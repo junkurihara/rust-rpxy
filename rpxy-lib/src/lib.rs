@@ -8,19 +8,15 @@ mod log;
 mod proxy;
 mod utils;
 
-use crate::{error::*, handler::HttpMessageHandlerBuilder, log::*, proxy::ProxyBuilder};
+use crate::{error::*, globals::Globals, handler::HttpMessageHandlerBuilder, log::*, proxy::ProxyBuilder};
 use futures::future::select_all;
 use hyper::Client;
 // use hyper_trust_dns::TrustDnsResolver;
 use std::sync::Arc;
 
 pub use crate::{
-  backend::{
-    Backend, BackendBuilder, Backends, ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption,
-  },
   certs::{CertsAndKeys, CryptoSource},
-  globals::{Globals, ProxyConfig}, // TODO: BackendConfigに変える
-  utils::{BytesName, PathNameBytesExp},
+  globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
 };
 pub mod reexports {
   pub use hyper::Uri;
@@ -28,10 +24,21 @@ pub mod reexports {
 }
 
 /// Entrypoint that creates and spawns tasks of reverse proxy services
-pub async fn entrypoint<T>(globals: Arc<Globals<T>>) -> Result<()>
+pub async fn entrypoint<T>(
+  proxy_config: ProxyConfig,
+  app_config_list: AppConfigList<T>,
+  runtime_handle: tokio::runtime::Handle,
+) -> Result<()>
 where
   T: CryptoSource + Clone + Send + Sync + 'static,
 {
+  // build global
+  let globals = Arc::new(Globals {
+    proxy_config,
+    backends: app_config_list.try_into()?,
+    request_count: Default::default(),
+    runtime_handle,
+  });
   // let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
   let connector = hyper_rustls::HttpsConnectorBuilder::new()
     .with_webpki_roots()

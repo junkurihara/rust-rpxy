@@ -1,4 +1,4 @@
 mod parse;
 mod toml;
 
-pub use parse::build_globals;
+pub use parse::build_settings;

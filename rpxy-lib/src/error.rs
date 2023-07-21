@@ -10,8 +10,14 @@ pub enum RpxyError {
   #[error("Proxy build error")]
   ProxyBuild(#[from] crate::proxy::ProxyBuilderError),
 
+  #[error("Backend build error")]
+  BackendBuild(#[from] crate::backend::BackendBuilderError),
+
   #[error("MessageHandler build error")]
   HandlerBuild(#[from] crate::handler::HttpMessageHandlerBuilderError),
+
+  #[error("Config builder error: {0}")]
+  ConfigBuild(&'static str),
 
   #[error("Http Message Handler Error: {0}")]
   Handler(&'static str),

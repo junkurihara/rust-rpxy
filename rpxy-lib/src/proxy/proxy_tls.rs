@@ -119,7 +119,13 @@ where
     transport_config_quic
       .max_concurrent_bidi_streams(self.globals.proxy_config.h3_max_concurrent_bidistream)
       .max_concurrent_uni_streams(self.globals.proxy_config.h3_max_concurrent_unistream)
-      .max_idle_timeout(self.globals.proxy_config.h3_max_idle_timeout);
+      .max_idle_timeout(
+        self
+          .globals
+          .proxy_config
+          .h3_max_idle_timeout
+          .map(|v| quinn::IdleTimeout::try_from(v).unwrap()),
+      );
 
     let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(rustls_server_config));
     server_config_h3.transport = Arc::new(transport_config_quic);

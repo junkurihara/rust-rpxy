@@ -150,8 +150,8 @@ mod tests {
   use super::*;
   #[tokio::test]
   async fn read_server_crt_key_files() {
-    let tls_cert_path = "example-certs/server.crt";
-    let tls_cert_key_path = "example-certs/server.key";
+    let tls_cert_path = "../example-certs/server.crt";
+    let tls_cert_key_path = "../example-certs/server.key";
     let crypto_file_source = CryptoFileSourceBuilder::default()
       .tls_cert_key_path(tls_cert_key_path)
       .tls_cert_path(tls_cert_path)
@@ -165,9 +165,9 @@ mod tests {
 
   #[tokio::test]
   async fn read_server_crt_key_files_with_client_ca_crt() {
-    let tls_cert_path = "example-certs/server.crt";
-    let tls_cert_key_path = "example-certs/server.key";
-    let client_ca_cert_path = Some("example-certs/client.ca.crt".to_string());
+    let tls_cert_path = "../example-certs/server.crt";
+    let tls_cert_key_path = "../example-certs/server.key";
+    let client_ca_cert_path = Some("../example-certs/client.ca.crt".to_string());
     let crypto_file_source = CryptoFileSourceBuilder::default()
       .tls_cert_key_path(tls_cert_key_path)
       .tls_cert_path(tls_cert_path)

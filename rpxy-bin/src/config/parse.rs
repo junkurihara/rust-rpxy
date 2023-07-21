@@ -5,10 +5,9 @@ use crate::{
   log::*,
 };
 use clap::Arg;
-use rpxy_lib::{Backends, BytesName, Globals, ProxyConfig};
-use tokio::runtime::Handle;
+use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
 
-pub fn build_globals(runtime_handle: Handle) -> std::result::Result<Globals<CryptoFileSource>, anyhow::Error> {
+pub fn build_settings() -> std::result::Result<(ProxyConfig, AppConfigList<CryptoFileSource>), anyhow::Error> {
   let _ = include_str!("../../Cargo.toml");
   let options = clap::command!().arg(
     Arg::new("config_file")
@@ -76,39 +75,22 @@ pub fn build_globals(runtime_handle: Handle) -> std::result::Result<Globals<Cryp
     );
   }
 
-  // build backends
-  let mut backends = Backends::new();
+  // build applications
+  let mut app_config_list_inner = Vec::<AppConfig<CryptoFileSource>>::new();
+
+  // let mut backends = Backends::new();
   for (app_name, app) in apps.0.iter() {
     let server_name_string = app.server_name.as_ref().ok_or(anyhow!("No server name"))?;
-    let backend = app.try_into()?;
-    backends.apps.insert(server_name_string.to_server_name_vec(), backend);
+    let app_config = app.try_into()?;
+    app_config_list_inner.push(app_config);
     info!("Registering application: {} ({})", app_name, server_name_string);
   }
 
-  // default backend application for plaintext http requests
-  if let Some(d) = config.default_app {
-    let d_sn: Vec<&str> = backends
-      .apps
-      .iter()
-      .filter(|(_k, v)| v.app_name == d)
-      .map(|(_, v)| v.server_name.as_ref())
-      .collect();
-    if !d_sn.is_empty() {
-      info!(
-        "Serving plaintext http for requests to unconfigured server_name by app {} (server_name: {}).",
-        d, d_sn[0]
-      );
-      backends.default_server_name_bytes = Some(d_sn[0].to_server_name_vec());
-    }
-  }
-
-  ///////////////////////////////////
-  let globals = Globals {
-    proxy_config,
-    backends,
-    request_count: Default::default(),
-    runtime_handle,
+  let app_config_list = AppConfigList {
+    inner: app_config_list_inner,
+    default_app: config.default_app, // default backend application for plaintext http requests
   };
 
-  Ok(globals)
+  Ok((proxy_config, app_config_list))
+  // todo!()
 }

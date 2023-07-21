@@ -11,9 +11,8 @@ mod constants;
 mod error;
 mod log;
 
-use crate::{cert_file_reader::CryptoFileSource, config::build_globals, log::*};
-use rpxy_lib::{entrypoint, Globals};
-use std::sync::Arc;
+use crate::{config::build_settings, log::*};
+use rpxy_lib::entrypoint;
 
 fn main() {
   init_logger();
@@ -24,7 +23,7 @@ fn main() {
   let runtime = runtime_builder.build().unwrap();
 
   runtime.block_on(async {
-    let globals: Globals<CryptoFileSource> = match build_globals(runtime.handle().clone()) {
+    let (proxy_conf, app_conf) = match build_settings() {
       Ok(g) => g,
       Err(e) => {
         error!("Invalid configuration: {}", e);
@@ -32,7 +31,9 @@ fn main() {
       }
     };
 
-    entrypoint(Arc::new(globals)).await.unwrap()
+    entrypoint(proxy_conf, app_conf, runtime.handle().clone())
+      .await
+      .unwrap()
   });
   warn!("rpxy exited!");
 }

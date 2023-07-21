@@ -12,6 +12,8 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+default = ["http3"]
+http3 = []
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", features = ["http3", "sticky-cookie"] }
@@ -28,14 +30,12 @@ tokio = { version = "1.29.1", default-features = false, features = [
   "macros",
 ] }
 async-trait = "0.1.72"
+rustls-pemfile = "1.0.3"
 
 # config
 clap = { version = "4.3.17", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.7.6", default-features = false, features = ["parse"] }
-
-# reloading certs
-hot_reload = "0.1.2"
-rustls-pemfile = "1.0.3"
+# hot_reload = "0.1.2"
 
 # logging
 tracing = { version = "0.1.37" }
