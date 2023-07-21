@@ -1,13 +1,11 @@
 use super::toml::ConfigToml;
 use crate::{
-  backend::Backends,
   cert_file_reader::CryptoFileSource,
   error::{anyhow, ensure},
-  globals::*,
   log::*,
-  utils::BytesName,
 };
 use clap::Arg;
+use rpxy_lib::{Backends, BytesName, Globals, ProxyConfig};
 use tokio::runtime::Handle;
 
 pub fn build_globals(runtime_handle: Handle) -> std::result::Result<Globals<CryptoFileSource>, anyhow::Error> {

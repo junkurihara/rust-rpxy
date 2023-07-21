@@ -1,15 +1,5 @@
-use certs::CryptoSource;
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
-
 mod backend;
-mod cert_file_reader;
 mod certs;
-mod config;
 mod constants;
 mod error;
 mod globals;
@@ -18,39 +8,27 @@ mod log;
 mod proxy;
 mod utils;
 
-use crate::{
-  cert_file_reader::CryptoFileSource, config::build_globals, error::*, globals::*, handler::HttpMessageHandlerBuilder,
-  log::*, proxy::ProxyBuilder,
-};
+use crate::{error::*, handler::HttpMessageHandlerBuilder, log::*, proxy::ProxyBuilder};
 use futures::future::select_all;
 use hyper::Client;
 // use hyper_trust_dns::TrustDnsResolver;
 use std::sync::Arc;
 
-fn main() {
-  init_logger();
-
-  let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
-  runtime_builder.enable_all();
-  runtime_builder.thread_name("rpxy");
-  let runtime = runtime_builder.build().unwrap();
-
-  runtime.block_on(async {
-    let globals: Globals<CryptoFileSource> = match build_globals(runtime.handle().clone()) {
-      Ok(g) => g,
-      Err(e) => {
-        error!("Invalid configuration: {}", e);
-        std::process::exit(1);
-      }
-    };
-
-    entrypoint(Arc::new(globals)).await.unwrap()
-  });
-  warn!("rpxy exited!");
+pub use crate::{
+  backend::{
+    Backend, BackendBuilder, Backends, ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption,
+  },
+  certs::{CertsAndKeys, CryptoSource},
+  globals::{Globals, ProxyConfig}, // TODO: BackendConfigに変える
+  utils::{BytesName, PathNameBytesExp},
+};
+pub mod reexports {
+  pub use hyper::Uri;
+  pub use rustls::{Certificate, PrivateKey};
 }
 
-// entrypoint creates and spawns tasks of proxy services
-async fn entrypoint<T>(globals: Arc<Globals<T>>) -> Result<()>
+/// Entrypoint that creates and spawns tasks of reverse proxy services
+pub async fn entrypoint<T>(globals: Arc<Globals<T>>) -> Result<()>
 where
   T: CryptoSource + Clone + Send + Sync + 'static,
 {

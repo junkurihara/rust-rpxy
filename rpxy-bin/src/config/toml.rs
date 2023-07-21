@@ -1,10 +1,11 @@
 use crate::{
-  backend::{Backend, BackendBuilder, ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption},
   cert_file_reader::{CryptoFileSource, CryptoFileSourceBuilder},
   constants::*,
   error::{anyhow, ensure},
-  globals::ProxyConfig,
-  utils::PathNameBytesExp,
+};
+use rpxy_lib::{
+  reexports::Uri, Backend, BackendBuilder, PathNameBytesExp, ProxyConfig, ReverseProxy, Upstream, UpstreamGroup,
+  UpstreamGroupBuilder, UpstreamOption,
 };
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
@@ -265,7 +266,7 @@ impl TryInto<Upstream> for &UpstreamParams {
     };
     let location = format!("{}://{}", scheme, self.location);
     Ok(Upstream {
-      uri: location.parse::<hyper::Uri>().map_err(|e| anyhow!("{}", e))?,
+      uri: location.parse::<Uri>().map_err(|e| anyhow!("{}", e))?,
     })
   }
 }

@@ -1,10 +1,10 @@
-use crate::{
-  certs::{CertsAndKeys, CryptoSource},
-  log::*,
-};
+use crate::log::*;
 use async_trait::async_trait;
 use derive_builder::Builder;
-use rustls::{Certificate, PrivateKey};
+use rpxy_lib::{
+  reexports::{Certificate, PrivateKey},
+  CertsAndKeys, CryptoSource,
+};
 use std::{
   fs::File,
   io::{self, BufReader, Cursor, Read},
