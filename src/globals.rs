@@ -1,5 +1,4 @@
-use crate::certs::CryptoSource;
-use crate::{backend::Backends, constants::*};
+use crate::{backend::Backends, certs::CryptoSource, constants::*};
 use std::net::SocketAddr;
 use std::sync::{
   atomic::{AtomicUsize, Ordering},
