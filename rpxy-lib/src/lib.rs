@@ -25,19 +25,19 @@ pub mod reexports {
 
 /// Entrypoint that creates and spawns tasks of reverse proxy services
 pub async fn entrypoint<T>(
-  proxy_config: ProxyConfig,
-  app_config_list: AppConfigList<T>,
-  runtime_handle: tokio::runtime::Handle,
+  proxy_config: &ProxyConfig,
+  app_config_list: &AppConfigList<T>,
+  runtime_handle: &tokio::runtime::Handle,
 ) -> Result<()>
 where
   T: CryptoSource + Clone + Send + Sync + 'static,
 {
   // build global
   let globals = Arc::new(Globals {
-    proxy_config,
-    backends: app_config_list.try_into()?,
+    proxy_config: proxy_config.clone(),
+    backends: app_config_list.clone().try_into()?,
     request_count: Default::default(),
-    runtime_handle,
+    runtime_handle: runtime_handle.clone(),
   });
   // let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
   let connector = hyper_rustls::HttpsConnectorBuilder::new()
@@ -71,8 +71,8 @@ where
   }));
 
   // wait for all future
-  if let (Ok(_), _, _) = futures.await {
-    error!("Some proxy services are down");
+  if let (Ok(Err(e)), _, _) = futures.await {
+    error!("Some proxy services are down: {:?}", e);
   };
 
   Ok(())

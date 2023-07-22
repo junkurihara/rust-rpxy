@@ -8,11 +8,12 @@ use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
 use std::{fs, net::SocketAddr};
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct ConfigToml {
   pub listen_port: Option<u16>,
   pub listen_port_tls: Option<u16>,
   pub listen_ipv6: Option<bool>,
+  pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
   pub apps: Option<Apps>,
@@ -21,7 +22,7 @@ pub struct ConfigToml {
 }
 
 #[cfg(feature = "http3")]
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Http3Option {
   pub alt_svc_max_age: Option<u32>,
   pub request_max_body_size: Option<usize>,
@@ -31,24 +32,24 @@ pub struct Http3Option {
   pub max_idle_timeout: Option<u64>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Experimental {
   #[cfg(feature = "http3")]
   pub h3: Option<Http3Option>,
   pub ignore_sni_consistency: Option<bool>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Apps(pub HashMap<String, Application>);
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Application {
   pub server_name: Option<String>,
   pub reverse_proxy: Option<Vec<ReverseProxyOption>>,
   pub tls: Option<TlsOption>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct TlsOption {
   pub tls_cert_path: Option<String>,
   pub tls_cert_key_path: Option<String>,
@@ -56,7 +57,7 @@ pub struct TlsOption {
   pub client_ca_cert_path: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct ReverseProxyOption {
   pub path: Option<String>,
   pub replace_path: Option<String>,
@@ -65,7 +66,7 @@ pub struct ReverseProxyOption {
   pub load_balance: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct UpstreamParams {
   pub location: String,
   pub tls: Option<bool>,
@@ -111,6 +112,11 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         v
       })
       .collect();
+
+    // tcp backlog
+    if let Some(backlog) = self.tcp_listen_backlog {
+      proxy_config.tcp_listen_backlog = backlog;
+    }
 
     // max values
     if let Some(c) = self.max_clients {

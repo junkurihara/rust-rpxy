@@ -36,11 +36,12 @@ where
 }
 
 /// Configuration parameters for proxy transport and request handlers
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct ProxyConfig {
   pub listen_sockets: Vec<SocketAddr>, // when instantiate server
   pub http_port: Option<u16>,          // when instantiate server
   pub https_port: Option<u16>,         // when instantiate server
+  pub tcp_listen_backlog: u32,         // when instantiate server
 
   pub proxy_timeout: Duration,    // when serving requests at Proxy
   pub upstream_timeout: Duration, // when serving requests at Handler
@@ -74,6 +75,7 @@ impl Default for ProxyConfig {
       listen_sockets: Vec::new(),
       http_port: None,
       https_port: None,
+      tcp_listen_backlog: TCP_LISTEN_BACKLOG,
 
       // TODO: Reconsider each timeout values
       proxy_timeout: Duration::from_secs(PROXY_TIMEOUT_SEC),
@@ -104,7 +106,7 @@ impl Default for ProxyConfig {
 }
 
 /// Configuration parameters for backend applications
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct AppConfigList<T>
 where
   T: CryptoSource,
@@ -152,7 +154,7 @@ where
 }
 
 /// Configuration parameters for single backend application
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct AppConfig<T>
 where
   T: CryptoSource,
@@ -234,7 +236,7 @@ where
 }
 
 /// Configuration parameters for single reverse proxy corresponding to the path
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct ReverseProxyConfig {
   pub path: Option<String>,
   pub replace_path: Option<String>,
@@ -244,7 +246,7 @@ pub struct ReverseProxyConfig {
 }
 
 /// Configuration parameters for single upstream destination from a reverse proxy
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct UpstreamUri {
   pub inner: hyper::Uri,
 }
@@ -259,7 +261,7 @@ impl TryInto<Upstream> for &UpstreamUri {
 }
 
 /// Configuration parameters on TLS for a single backend application
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct TlsConfig<T>
 where
   T: CryptoSource,

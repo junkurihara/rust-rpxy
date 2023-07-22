@@ -1,5 +1,6 @@
 // pub const LISTEN_ADDRESSES_V4: &[&str] = &["0.0.0.0"];
 // pub const LISTEN_ADDRESSES_V6: &[&str] = &["[::]"];
+pub const TCP_LISTEN_BACKLOG: u32 = 1024;
 // pub const HTTP_LISTEN_PORT: u16 = 8080;
 // pub const HTTPS_LISTEN_PORT: u16 = 8443;
 pub const PROXY_TIMEOUT_SEC: u64 = 60;

@@ -7,28 +7,30 @@ use crate::{
 use clap::Arg;
 use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
 
-pub fn build_settings() -> std::result::Result<(ProxyConfig, AppConfigList<CryptoFileSource>), anyhow::Error> {
+pub fn parse_opts() -> Result<String, anyhow::Error> {
   let _ = include_str!("../../Cargo.toml");
   let options = clap::command!().arg(
     Arg::new("config_file")
       .long("config")
       .short('c')
       .value_name("FILE")
-      .help("Configuration file path like \"./config.toml\""),
+      .required(true)
+      .help("Configuration file path like ./config.toml"),
   );
   let matches = options.get_matches();
 
   ///////////////////////////////////
-  let config = if let Some(config_file_path) = matches.get_one::<String>("config_file") {
-    ConfigToml::new(config_file_path)?
-  } else {
-    // Default config Toml
-    ConfigToml::default()
-  };
+  let config_file_path = matches.get_one::<String>("config_file").unwrap();
 
+  Ok(config_file_path.to_string())
+}
+
+pub fn build_settings(
+  config: &ConfigToml,
+) -> std::result::Result<(ProxyConfig, AppConfigList<CryptoFileSource>), anyhow::Error> {
   ///////////////////////////////////
   // build proxy config
-  let proxy_config: ProxyConfig = (&config).try_into()?;
+  let proxy_config: ProxyConfig = config.try_into()?;
   // For loggings
   if proxy_config.listen_sockets.iter().any(|addr| addr.is_ipv6()) {
     info!("Listen both IPv4 and IPv6")
@@ -50,7 +52,7 @@ pub fn build_settings() -> std::result::Result<(ProxyConfig, AppConfigList<Crypt
 
   ///////////////////////////////////
   // backend_apps
-  let apps = config.apps.ok_or(anyhow!("Missing application spec"))?;
+  let apps = config.apps.clone().ok_or(anyhow!("Missing application spec"))?;
 
   // assertions for all backend apps
   ensure!(!apps.0.is_empty(), "Wrong application spec.");
@@ -88,9 +90,8 @@ pub fn build_settings() -> std::result::Result<(ProxyConfig, AppConfigList<Crypt
 
   let app_config_list = AppConfigList {
     inner: app_config_list_inner,
-    default_app: config.default_app.map(|v| v.to_ascii_lowercase()), // default backend application for plaintext http requests
+    default_app: config.default_app.clone().map(|v| v.to_ascii_lowercase()), // default backend application for plaintext http requests
   };
 
   Ok((proxy_config, app_config_list))
-  // todo!()
 }

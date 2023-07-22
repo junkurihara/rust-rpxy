@@ -30,7 +30,7 @@ tokio = { version = "1.29.1", default-features = false, features = [
   "macros",
 ] }
 async-trait = "0.1.72"
-hot_reload = "0.1.2" # reloading certs
+hot_reload = "0.1.4" # reloading certs
 
 # Error handling
 anyhow = "1.0.72"
@@ -63,6 +63,8 @@ quinn = { path = "../quinn/quinn", optional = true } # Tentative to support rust
 h3 = { path = "../h3/h3/", optional = true }
 # h3-quinn = { path = "./h3/h3-quinn/", optional = true }
 h3-quinn = { path = "../h3-quinn/", optional = true } # Tentative to support rustls-0.21
+# for UDP socket wit SO_REUSEADDR
+socket2 = { version = "0.5.3", features = ["all"] }
 
 # cookie handling for sticky cookie
 chrono = { version = "0.4.26", default-features = false, features = [

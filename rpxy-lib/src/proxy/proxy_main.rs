@@ -1,4 +1,4 @@
-// use super::proxy_handler::handle_request;
+use super::socket::bind_tcp_socket;
 use crate::{
   certs::CryptoSource, error::*, globals::Globals, handler::HttpMessageHandler, log::*, utils::ServerNameBytesExp,
 };
@@ -7,7 +7,6 @@ use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, B
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
   io::{AsyncRead, AsyncWrite},
-  net::TcpListener,
   runtime::Handle,
   time::{timeout, Duration},
 };
@@ -94,7 +93,9 @@ where
 
   async fn start_without_tls(self, server: Http<LocalExecutor>) -> Result<()> {
     let listener_service = async {
-      let tcp_listener = TcpListener::bind(&self.listening_on).await?;
+      let tcp_socket = bind_tcp_socket(&self.listening_on)?;
+      let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
+      // let tcp_listener = TcpListener::bind(&self.listening_on).await?;
       info!("Start TCP proxy serving with HTTP request for configured host names");
       while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
         self.clone().client_serve(stream, server.clone(), _client_addr, None);
