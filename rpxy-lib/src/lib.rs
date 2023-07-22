@@ -32,6 +32,25 @@ pub async fn entrypoint<T>(
 where
   T: CryptoSource + Clone + Send + Sync + 'static,
 {
+  // For initial message logging
+  if proxy_config.listen_sockets.iter().any(|addr| addr.is_ipv6()) {
+    info!("Listen both IPv4 and IPv6")
+  } else {
+    info!("Listen IPv4")
+  }
+  if proxy_config.http_port.is_some() {
+    info!("Listen port: {}", proxy_config.http_port.unwrap());
+  }
+  if proxy_config.https_port.is_some() {
+    info!("Listen port: {} (for TLS)", proxy_config.https_port.unwrap());
+  }
+  if proxy_config.http3 {
+    info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
+  }
+  if !proxy_config.sni_consistency {
+    info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
+  }
+
   // build global
   let globals = Arc::new(Globals {
     proxy_config: proxy_config.clone(),

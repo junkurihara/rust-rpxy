@@ -53,6 +53,7 @@ async fn rpxy_service(
   mut config_rx: ReloaderReceiver<ConfigToml>,
   runtime_handle: tokio::runtime::Handle,
 ) -> Result<(), anyhow::Error> {
+  info!("Start rpxy service");
   // Initial loading
   config_rx.changed().await?;
   let config_toml = config_rx.borrow().clone().unwrap();
