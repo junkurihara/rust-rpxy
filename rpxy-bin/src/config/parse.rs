@@ -2,7 +2,6 @@ use super::toml::ConfigToml;
 use crate::{
   cert_file_reader::CryptoFileSource,
   error::{anyhow, ensure},
-  log::*,
 };
 use clap::Arg;
 use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
