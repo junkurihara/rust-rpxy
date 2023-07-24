@@ -1,5 +1,5 @@
 ########################################
-FROM messense/rust-musl-cross:aarch64-musl as builder
+FROM --platform=$BUILDPLATFORM messense/rust-musl-cross:aarch64-musl AS builder
 
 ENV TARGET_DIR=aarch64-unknown-linux-musl
 ENV CFLAGS=-Ofast
@@ -15,7 +15,7 @@ RUN echo "Building rpxy from source" && \
   musl-strip --strip-all /tmp/target/${TARGET_DIR}/release/rpxy
 
 ########################################
-FROM alpine:latest as runner
+FROM --platform=$TARGETPLATFORM alpine:latest AS runner
 LABEL maintainer="Jun Kurihara"
 
 ENV TARGET_DIR=aarch64-unknown-linux-musl

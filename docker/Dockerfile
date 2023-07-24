@@ -6,7 +6,7 @@ SHELL ["/bin/sh", "-x", "-c"]
 ENV SERIAL 2
 
 ########################################
-FROM base as builder
+FROM --platform=$BUILDPLATFORM base AS builder
 
 ENV CFLAGS=-Ofast
 ENV BUILD_DEPS curl make ca-certificates build-essential
@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
   strip --strip-all /tmp/target/release/rpxy
 
 ########################################
-FROM base AS runner
+FROM --platform=$TARGETPLATFORM base AS runner
 
 ENV RUNTIME_DEPS logrotate ca-certificates gosu
 
