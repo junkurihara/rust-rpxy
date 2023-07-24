@@ -1,4 +1,4 @@
-name: Build and Publish Docker x86_64
+name: Build and Publish Docker
 
 on:
   push:
