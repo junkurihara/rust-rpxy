@@ -1,6 +1,8 @@
 ########################################
 FROM --platform=$BUILDPLATFORM messense/rust-musl-cross:${TARGETARCH}-musl AS builder
 
+LABEL maintainer="Jun Kurihara"
+
 ARG TARGETARCH
 
 RUN if [ $TARGETARCH = "amd64" ]; then \

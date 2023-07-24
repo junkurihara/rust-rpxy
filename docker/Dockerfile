@@ -1,4 +1,3 @@
-
 FROM ubuntu:22.04 AS base
 LABEL maintainer="Jun Kurihara"
 
