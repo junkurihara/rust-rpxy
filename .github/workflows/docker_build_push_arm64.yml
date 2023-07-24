@@ -41,7 +41,7 @@ jobs:
           file: ./docker/Dockerfile
           platforms: linux/arm64
 
-      - name: Release build and push x86_64-slim
+      - name: Release build and push aarch64-slim
         if: ${{ env.BRANCH == 'main' }}
         uses: docker/build-push-action@v4
         with:
