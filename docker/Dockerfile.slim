@@ -1,7 +1,17 @@
 ########################################
-FROM --platform=$BUILDPLATFORM messense/rust-musl-cross:x86_64-musl AS builder
+FROM --platform=$BUILDPLATFORM messense/rust-musl-cross:${TARGETARCH}-musl AS builder
 
-ENV TARGET_DIR=x86_64-unknown-linux-musl
+ARG TARGETARCH
+
+RUN if [ $TARGETARCH = "amd64" ]; then \
+  echo "x86_64" > /arch; \
+  elif [ $TARGETARCH = "arm64" ]; then \
+  echo "aarch64" > /arch; \
+  else \
+  echo "Unsupported platform: $TARGETARCH"; \
+  exit 1; \
+  fi
+
 ENV CFLAGS=-Ofast
 
 WORKDIR /tmp
@@ -11,14 +21,14 @@ COPY . /tmp/
 ENV RUSTFLAGS "-C link-arg=-s"
 
 RUN echo "Building rpxy from source" && \
-  cargo build --release && \
-  musl-strip --strip-all /tmp/target/${TARGET_DIR}/release/rpxy
+  cargo build --release --target $(cat /arch)-unknown-linux-musl && \
+  musl-strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy && \
+  cp /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy /tmp/target/release/rpxy
 
 ########################################
 FROM --platform=$TARGETPLATFORM alpine:latest AS runner
 LABEL maintainer="Jun Kurihara"
 
-ENV TARGET_DIR=x86_64-unknown-linux-musl
 ENV RUNTIME_DEPS logrotate ca-certificates su-exec
 
 RUN apk add --no-cache ${RUNTIME_DEPS} && \
@@ -28,7 +38,7 @@ RUN apk add --no-cache ${RUNTIME_DEPS} && \
   mkdir -p /rpxy/bin &&\
   mkdir -p /rpxy/log
 
-COPY --from=builder /tmp/target/${TARGET_DIR}/release/rpxy /rpxy/bin/rpxy
+COPY --from=builder /tmp/target/release/rpxy /rpxy/bin/rpxy
 COPY ./docker/run.sh /rpxy
 COPY ./docker/entrypoint.sh /rpxy
 

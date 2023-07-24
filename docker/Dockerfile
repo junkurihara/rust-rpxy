@@ -15,6 +15,17 @@ WORKDIR /tmp
 
 COPY . /tmp/
 
+ARG TARGETARCH
+
+RUN if [ $TARGETARCH = "amd64" ]; then \
+  echo "x86_64" > /arch; \
+  elif [ $TARGETARCH = "arm64" ]; then \
+  echo "aarch64" > /arch; \
+  else \
+  echo "Unsupported platform: $TARGETARCH"; \
+  exit 1; \
+  fi
+
 ENV RUSTFLAGS "-C link-arg=-s"
 
 RUN update-ca-certificates 2> /dev/null || true
@@ -22,9 +33,12 @@ RUN update-ca-certificates 2> /dev/null || true
 RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS && \
   curl -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain stable && \
   export PATH="$HOME/.cargo/bin:$PATH" && \
+  echo "Install toolchain" && \
+  rustup target add $(cat /arch)-unknown-linux-gnu &&\
   echo "Building rpxy from source" && \
-  cargo build --release && \
-  strip --strip-all /tmp/target/release/rpxy
+  cargo build --release --target=$(cat /arch)-unknown-linux-gnu && \
+  strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-gnu/release/rpxy &&\
+  cp /tmp/target/$(cat /arch)-unknown-linux-gnu/release/rpxy /tmp/target/release/rpxy
 
 ########################################
 FROM --platform=$TARGETPLATFORM base AS runner

@@ -9,6 +9,12 @@ on:
 jobs:
   build_and_push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
     env:
       IMAGE_NAME: rpxy
 
@@ -44,7 +50,7 @@ jobs:
           file: ./docker/Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
 
       - name: Release build and push slim
         if: ${{ env.BRANCH == 'main' }}
@@ -54,10 +60,13 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:slim, ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest-slim
-          file: ./docker/Dockerfile.amd64-slim
+          build-contexts: |
+            messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
+            messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
+          file: ./docker/Dockerfile.slim
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
 
       - name: Nightly build and push
         if: ${{ env.BRANCH == 'develop' }}
@@ -70,4 +79,20 @@ jobs:
           file: ./docker/Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
+
+      - name: Release build and push slim
+        if: ${{ env.BRANCH == 'develop' }}
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:nightly-slim
+          build-contexts: |
+            messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
+            messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
+          file: ./docker/Dockerfile.slim
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.platform }}
