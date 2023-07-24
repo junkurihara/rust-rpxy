@@ -1,0 +1,16 @@
+log_level = "info"
+log_target = "stdout"
+max_connections = 512
+activate_listeners = true
+
+[[listeners]]
+protocol = "http"
+# listening address
+address = "0.0.0.0:80"
+
+[clusters]
+
+[clusters.backend]
+protocol = "http"
+frontends = [{ address = "0.0.0.0:80", hostname = "localhost" }]
+backends = [{ address = "192.168.100.100:80" }]

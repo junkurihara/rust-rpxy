@@ -29,7 +29,6 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS &&
 ########################################
 FROM base AS runner
 
-ENV TAG_NAME=amd64
 ENV RUNTIME_DEPS logrotate ca-certificates gosu
 
 RUN apt-get update && \
