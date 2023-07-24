@@ -1,4 +1,4 @@
-name: Build and Publish Docker Aarch64
+name: Build and Publish Docker x86_64
 
 on:
   push:
@@ -21,6 +21,9 @@ jobs:
       - name: GitHub Environment
         run: echo "BRANCH=${GITHUB_REF##*/}" >> $GITHUB_ENV
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
@@ -39,9 +42,11 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
           file: ./docker/Dockerfile
-          platforms: linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
 
-      - name: Release build and push aarch64-slim
+      - name: Release build and push slim
         if: ${{ env.BRANCH == 'main' }}
         uses: docker/build-push-action@v4
         with:
@@ -49,8 +54,10 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:slim, ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest-slim
-          file: ./docker/Dockerfile.arm64-slim
-          platforms: linux/arm64
+          file: ./docker/Dockerfile.amd64-slim
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
 
       - name: Nightly build and push
         if: ${{ env.BRANCH == 'develop' }}
@@ -61,4 +68,6 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:nightly
           file: ./docker/Dockerfile
-          platforms: linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
