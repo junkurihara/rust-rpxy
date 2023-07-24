@@ -28,32 +28,69 @@ fn main() {
   let runtime = runtime_builder.build().unwrap();
 
   runtime.block_on(async {
-    // Initially load config
-    let Ok(config_path) = parse_opts() else {
+    // Initially load options
+    let Ok(parsed_opts) = parse_opts() else {
         error!("Invalid toml file");
         std::process::exit(1);
     };
-    let (config_service, config_rx) =
-      ReloaderService::<ConfigTomlReloader, ConfigToml>::new(&config_path, CONFIG_WATCH_DELAY_SECS, false)
-        .await
-        .unwrap();
 
-    tokio::select! {
-      _ = config_service.start() => {
-        error!("config reloader service exited");
+    if !parsed_opts.watch {
+      if let Err(e) = rpxy_service_without_watcher(&parsed_opts.config_file_path, runtime.handle().clone()).await {
+        error!("rpxy service existed: {e}");
+        std::process::exit(1);
       }
-      _ = rpxy_service(config_rx, runtime.handle().clone()) => {
-        error!("rpxy service existed");
+    } else {
+      let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml>::new(
+        &parsed_opts.config_file_path,
+        CONFIG_WATCH_DELAY_SECS,
+        false,
+      )
+      .await
+      .unwrap();
+
+      tokio::select! {
+        Err(e) = config_service.start() => {
+          error!("config reloader service exited: {e}");
+          std::process::exit(1);
+        }
+        Err(e) = rpxy_service_with_watcher(config_rx, runtime.handle().clone()) => {
+          error!("rpxy service existed: {e}");
+          std::process::exit(1);
+        }
       }
     }
   });
 }
 
-async fn rpxy_service(
-  mut config_rx: ReloaderReceiver<ConfigToml>,
+async fn rpxy_service_without_watcher(
+  config_file_path: &str,
   runtime_handle: tokio::runtime::Handle,
 ) -> Result<(), anyhow::Error> {
   info!("Start rpxy service");
+  let config_toml = match ConfigToml::new(config_file_path) {
+    Ok(v) => v,
+    Err(e) => {
+      error!("Invalid toml file: {e}");
+      std::process::exit(1);
+    }
+  };
+  let (proxy_conf, app_conf) = match build_settings(&config_toml) {
+    Ok(v) => v,
+    Err(e) => {
+      error!("Invalid configuration: {e}");
+      return Err(anyhow::anyhow!(e));
+    }
+  };
+  entrypoint(&proxy_conf, &app_conf, &runtime_handle)
+    .await
+    .map_err(|e| anyhow::anyhow!(e))
+}
+
+async fn rpxy_service_with_watcher(
+  mut config_rx: ReloaderReceiver<ConfigToml>,
+  runtime_handle: tokio::runtime::Handle,
+) -> Result<(), anyhow::Error> {
+  info!("Start rpxy service with dynamic config reloader");
   // Initial loading
   config_rx.changed().await?;
   let config_toml = config_rx.borrow().clone().unwrap();
@@ -92,5 +129,6 @@ async fn rpxy_service(
       else => break
     }
   }
-  Ok(())
+
+  Err(anyhow::anyhow!("rpxy or continuous monitoring service exited"))
 }

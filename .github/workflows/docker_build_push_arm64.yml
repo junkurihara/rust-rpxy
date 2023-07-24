@@ -1,4 +1,4 @@
-name: Build and Publish Docker
+name: Build and Publish Docker Aarch64
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
           file: ./docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
 
       - name: Release build and push x86_64-slim
         if: ${{ env.BRANCH == 'main' }}
@@ -49,8 +49,8 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:slim, ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest-slim
-          file: ./docker/Dockerfile.amd64-slim
-          platforms: linux/amd64
+          file: ./docker/Dockerfile.arm64-slim
+          platforms: linux/arm64
 
       - name: Nightly build and push
         if: ${{ env.BRANCH == 'develop' }}
@@ -61,4 +61,4 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:nightly
           file: ./docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64

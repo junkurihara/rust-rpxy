@@ -6,6 +6,8 @@
 
 - Feat: Continuous watching on a specified config file and hot-reloading the file when updated
 - Feat: Enabled to specify TCP listen backlog in the config file
+- Feat: Add a GitHub action to build `arm64` docker image.
+- Bench: Add benchmark result on `amd64` architecture.
 - Refactor: Split `rpxy` into `rpxy-lib` and `rpxy-bin`
 - Refactor: lots of minor improvements
 

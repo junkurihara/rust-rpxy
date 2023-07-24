@@ -6,6 +6,8 @@ use std::net::SocketAddr;
 use std::net::UdpSocket;
 use tokio::net::TcpSocket;
 
+/// Bind TCP socket to the given `SocketAddr`, and returns the TCP socket with `SO_REUSEADDR` and `SO_REUSEPORT` options.
+/// This option is required to re-bind the socket address when the proxy instance is reconstructed.
 pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> Result<TcpSocket> {
   let tcp_socket = if listening_on.is_ipv6() {
     TcpSocket::new_v6()
@@ -22,6 +24,8 @@ pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> Result<TcpSocket> {
 }
 
 #[cfg(feature = "http3")]
+/// Bind UDP socket to the given `SocketAddr`, and returns the UDP socket with `SO_REUSEADDR` and `SO_REUSEPORT` options.
+/// This option is required to re-bind the socket address when the proxy instance is reconstructed.
 pub(super) fn bind_udp_socket(listening_on: &SocketAddr) -> Result<UdpSocket> {
   let socket = if listening_on.is_ipv6() {
     Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))
