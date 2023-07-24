@@ -68,6 +68,24 @@ services:
     networks:
       bench-nw:
 
+  # Sozu wokrs only in X86_64 (amd64) environment
+  # Official image from sozu developers is still version 0.11.0.
+  # So we built it by ourselves locally.
+  sozu-rp:
+    image: jqtype/sozu
+    container_name: proxy-sozu
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8110:80
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./sozu-config.toml:/etc/sozu/config.toml
+    networks:
+      bench-nw:
+
 networks:
   bench-nw:
     name: bench-nw

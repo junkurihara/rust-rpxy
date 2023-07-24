@@ -30,7 +30,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Release build and push x86_64
+      - name: Release build and push
         if: ${{ env.BRANCH == 'main' }}
         uses: docker/build-push-action@v4
         with:
@@ -38,7 +38,8 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
-          file: ./docker/Dockerfile.amd64
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
 
       - name: Release build and push x86_64-slim
         if: ${{ env.BRANCH == 'main' }}
@@ -49,8 +50,9 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:slim, ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest-slim
           file: ./docker/Dockerfile.amd64-slim
+          platforms: linux/amd64
 
-      - name: Nightly build and push x86_64
+      - name: Nightly build and push
         if: ${{ env.BRANCH == 'develop' }}
         uses: docker/build-push-action@v4
         with:
@@ -58,4 +60,5 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:nightly
-          file: ./docker/Dockerfile.amd64
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
