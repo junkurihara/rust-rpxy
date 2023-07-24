@@ -48,6 +48,20 @@ You can run `rpxy` with a configuration file like
 % ./target/release/rpxy --config config.toml
 ```
 
+If you specify `-w` option along with the config file path, `rpxy` tracks the change of `config.toml` in the real-time manner and apply the change immediately without restarting the process.
+
+The full help messages are given follows.
+
+```bash:
+usage: rpxy [OPTIONS] --config <FILE>
+
+Options:
+  -c, --config <FILE>  Configuration file path like ./config.toml
+  -w, --watch          Activate dynamic reloading of the config file via continuous monitoring
+  -h, --help           Print help
+  -V, --version        Print version
+```
+
 That's all!
 
 ## Basic Configuration
@@ -217,7 +231,7 @@ Since it is currently a work-in-progress project, we are frequently adding new o
 
 ## Using Docker Image
 
-You can also use [docker image](https://hub.docker.com/r/jqtype/rpxy) instead of directly executing the binary. There are only two docker-specific environment variables.
+You can also use [docker image](https://hub.docker.com/r/jqtype/rpxy) instead of directly executing the binary. There are only several docker-specific environment variables.
 
 - `HOST_USER` (default: `user`): User name executing `rpxy` inside the container.
 - `HOST_UID` (default: `900`): `UID` of `HOST_USER`.

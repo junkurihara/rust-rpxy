@@ -1,20 +1,19 @@
 use crate::{
-  backend::{Backend, BackendBuilder, ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption},
   cert_file_reader::{CryptoFileSource, CryptoFileSourceBuilder},
   constants::*,
   error::{anyhow, ensure},
-  globals::ProxyConfig,
-  utils::PathNameBytesExp,
 };
+use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
 use std::{fs, net::SocketAddr};
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct ConfigToml {
   pub listen_port: Option<u16>,
   pub listen_port_tls: Option<u16>,
   pub listen_ipv6: Option<bool>,
+  pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
   pub apps: Option<Apps>,
@@ -23,7 +22,7 @@ pub struct ConfigToml {
 }
 
 #[cfg(feature = "http3")]
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Http3Option {
   pub alt_svc_max_age: Option<u32>,
   pub request_max_body_size: Option<usize>,
@@ -33,24 +32,24 @@ pub struct Http3Option {
   pub max_idle_timeout: Option<u64>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Experimental {
   #[cfg(feature = "http3")]
   pub h3: Option<Http3Option>,
   pub ignore_sni_consistency: Option<bool>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Apps(pub HashMap<String, Application>);
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Application {
   pub server_name: Option<String>,
   pub reverse_proxy: Option<Vec<ReverseProxyOption>>,
   pub tls: Option<TlsOption>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct TlsOption {
   pub tls_cert_path: Option<String>,
   pub tls_cert_key_path: Option<String>,
@@ -58,7 +57,7 @@ pub struct TlsOption {
   pub client_ca_cert_path: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct ReverseProxyOption {
   pub path: Option<String>,
   pub replace_path: Option<String>,
@@ -67,7 +66,7 @@ pub struct ReverseProxyOption {
   pub load_balance: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct UpstreamParams {
   pub location: String,
   pub tls: Option<bool>,
@@ -114,6 +113,11 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       })
       .collect();
 
+    // tcp backlog
+    if let Some(backlog) = self.tcp_listen_backlog {
+      proxy_config.tcp_listen_backlog = backlog;
+    }
+
     // max values
     if let Some(c) = self.max_clients {
       proxy_config.max_clients = c as usize;
@@ -147,8 +151,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
             if x == 0u64 {
               proxy_config.h3_max_idle_timeout = None;
             } else {
-              proxy_config.h3_max_idle_timeout =
-                Some(quinn::IdleTimeout::try_from(tokio::time::Duration::from_secs(x)).unwrap())
+              proxy_config.h3_max_idle_timeout = Some(tokio::time::Duration::from_secs(x))
             }
           }
         }
@@ -171,101 +174,86 @@ impl ConfigToml {
   }
 }
 
-impl TryInto<Backend<CryptoFileSource>> for &Application {
-  type Error = anyhow::Error;
-
-  fn try_into(self) -> std::result::Result<Backend<CryptoFileSource>, Self::Error> {
+impl Application {
+  pub fn build_app_config(&self, app_name: &str) -> std::result::Result<AppConfig<CryptoFileSource>, anyhow::Error> {
     let server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
 
-    // backend builder
-    let mut backend_builder = BackendBuilder::default();
     // reverse proxy settings
-    let reverse_proxy = self.try_into()?;
+    let reverse_proxy_config: Vec<ReverseProxyConfig> = self.try_into()?;
 
-    backend_builder
-      .app_name(server_name_string)
-      .server_name(server_name_string)
-      .reverse_proxy(reverse_proxy);
-
-    // TLS settings and build backend instance
-    let backend = if self.tls.is_none() {
-      backend_builder.build()?
-    } else {
+    // tls settings
+    let tls_config = if self.tls.is_some() {
       let tls = self.tls.as_ref().unwrap();
       ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
-
-      let https_redirection = if tls.https_redirection.is_none() {
-        Some(true) // Default true
-      } else {
-        tls.https_redirection
-      };
-
-      let crypto_source = CryptoFileSourceBuilder::default()
+      let inner = CryptoFileSourceBuilder::default()
         .tls_cert_path(tls.tls_cert_path.as_ref().unwrap())
         .tls_cert_key_path(tls.tls_cert_key_path.as_ref().unwrap())
         .client_ca_cert_path(&tls.client_ca_cert_path)
         .build()?;
 
-      backend_builder
-        .https_redirection(https_redirection)
-        .crypto_source(Some(crypto_source))
-        .build()?
+      let https_redirection = if tls.https_redirection.is_none() {
+        true // Default true
+      } else {
+        tls.https_redirection.unwrap()
+      };
+
+      Some(TlsConfig {
+        inner,
+        https_redirection,
+      })
+    } else {
+      None
     };
-    Ok(backend)
+
+    Ok(AppConfig {
+      app_name: app_name.to_owned(),
+      server_name: server_name_string.to_owned(),
+      reverse_proxy: reverse_proxy_config,
+      tls: tls_config,
+    })
   }
 }
 
-impl TryInto<ReverseProxy> for &Application {
+impl TryInto<Vec<ReverseProxyConfig>> for &Application {
   type Error = anyhow::Error;
 
-  fn try_into(self) -> std::result::Result<ReverseProxy, Self::Error> {
-    let server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
+  fn try_into(self) -> std::result::Result<Vec<ReverseProxyConfig>, Self::Error> {
+    let _server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
     let rp_settings = self.reverse_proxy.as_ref().ok_or(anyhow!("Missing reverse_proxy"))?;
 
-    let mut upstream: HashMap<PathNameBytesExp, UpstreamGroup> = HashMap::default();
+    let mut reverse_proxies: Vec<ReverseProxyConfig> = Vec::new();
 
-    rp_settings.iter().for_each(|rpo| {
-      let upstream_vec: Vec<Upstream> = rpo.upstream.iter().map(|x| x.try_into().unwrap()).collect();
-      // let upstream_iter = rpo.upstream.iter().map(|x| x.to_upstream().unwrap());
-      // let lb_upstream_num = vec_upstream.len();
-      let elem = UpstreamGroupBuilder::default()
-        .upstream(&upstream_vec)
-        .path(&rpo.path)
-        .replace_path(&rpo.replace_path)
-        .lb(&rpo.load_balance, &upstream_vec, server_name_string, &rpo.path)
-        .opts(&rpo.upstream_options)
-        .build()
-        .unwrap();
+    for rpo in rp_settings.iter() {
+      let upstream_res: Vec<Option<UpstreamUri>> = rpo.upstream.iter().map(|v| v.try_into().ok()).collect();
+      if !upstream_res.iter().all(|v| v.is_some()) {
+        return Err(anyhow!("[{}] Upstream uri is invalid", &_server_name_string));
+      }
+      let upstream = upstream_res.into_iter().map(|v| v.unwrap()).collect();
 
-      upstream.insert(elem.path.clone(), elem);
-    });
-    ensure!(
-      rp_settings.iter().filter(|rpo| rpo.path.is_none()).count() < 2,
-      "Multiple default reverse proxy setting"
-    );
-    ensure!(
-      upstream
-        .iter()
-        .all(|(_, elem)| !(elem.opts.contains(&UpstreamOption::ConvertHttpsTo11)
-          && elem.opts.contains(&UpstreamOption::ConvertHttpsTo2))),
-      "either one of force_http11 or force_http2 can be enabled"
-    );
+      reverse_proxies.push(ReverseProxyConfig {
+        path: rpo.path.clone(),
+        replace_path: rpo.replace_path.clone(),
+        upstream,
+        upstream_options: rpo.upstream_options.clone(),
+        load_balance: rpo.load_balance.clone(),
+      })
+    }
 
-    Ok(ReverseProxy { upstream })
+    Ok(reverse_proxies)
   }
 }
 
-impl TryInto<Upstream> for &UpstreamParams {
+impl TryInto<UpstreamUri> for &UpstreamParams {
   type Error = anyhow::Error;
 
-  fn try_into(self) -> std::result::Result<Upstream, Self::Error> {
+  fn try_into(self) -> std::result::Result<UpstreamUri, Self::Error> {
     let scheme = match self.tls {
       Some(true) => "https",
       _ => "http",
     };
     let location = format!("{}://{}", scheme, self.location);
-    Ok(Upstream {
-      uri: location.parse::<hyper::Uri>().map_err(|e| anyhow!("{}", e))?,
+    Ok(UpstreamUri {
+      inner: location.parse::<Uri>().map_err(|e| anyhow!("{}", e))?,
     })
   }
 }

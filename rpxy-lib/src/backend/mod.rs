@@ -67,6 +67,7 @@ impl<T> Backends<T>
 where
   T: CryptoSource,
 {
+  #[allow(clippy::new_without_default)]
   pub fn new() -> Self {
     Backends {
       apps: HashMap::<ServerNameBytesExp, Backend<T>>::default(),

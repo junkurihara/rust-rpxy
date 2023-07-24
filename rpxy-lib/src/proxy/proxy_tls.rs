@@ -1,6 +1,9 @@
+#[cfg(feature = "http3")]
+use super::socket::bind_udp_socket;
 use super::{
   crypto_service::{CryptoReloader, ServerCrypto, ServerCryptoBase, SniServerCryptoMap},
   proxy_main::{LocalExecutor, Proxy},
+  socket::bind_tcp_socket,
 };
 use crate::{certs::CryptoSource, constants::*, error::*, log::*, utils::BytesName};
 use hot_reload::{ReloaderReceiver, ReloaderService};
@@ -10,10 +13,7 @@ use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerC
 #[cfg(feature = "http3")]
 use rustls::ServerConfig;
 use std::sync::Arc;
-use tokio::{
-  net::TcpListener,
-  time::{timeout, Duration},
-};
+use tokio::time::{timeout, Duration};
 
 impl<T, U> Proxy<T, U>
 where
@@ -26,7 +26,8 @@ where
     server: Http<LocalExecutor>,
     mut server_crypto_rx: ReloaderReceiver<ServerCryptoBase>,
   ) -> Result<()> {
-    let tcp_listener = TcpListener::bind(&self.listening_on).await?;
+    let tcp_socket = bind_tcp_socket(&self.listening_on)?;
+    let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
     info!("Start TCP proxy serving with HTTPS request for configured host names");
 
     let mut server_crypto_map: Option<Arc<SniServerCryptoMap>> = None;
@@ -119,12 +120,28 @@ where
     transport_config_quic
       .max_concurrent_bidi_streams(self.globals.proxy_config.h3_max_concurrent_bidistream)
       .max_concurrent_uni_streams(self.globals.proxy_config.h3_max_concurrent_unistream)
-      .max_idle_timeout(self.globals.proxy_config.h3_max_idle_timeout);
+      .max_idle_timeout(
+        self
+          .globals
+          .proxy_config
+          .h3_max_idle_timeout
+          .map(|v| quinn::IdleTimeout::try_from(v).unwrap()),
+      );
 
     let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(rustls_server_config));
     server_config_h3.transport = Arc::new(transport_config_quic);
     server_config_h3.concurrent_connections(self.globals.proxy_config.h3_max_concurrent_connections);
-    let endpoint = Endpoint::server(server_config_h3, self.listening_on)?;
+
+    // To reuse address
+    let udp_socket = bind_udp_socket(&self.listening_on)?;
+    let runtime = quinn::default_runtime()
+      .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No async runtime found"))?;
+    let endpoint = Endpoint::new(
+      quinn::EndpointConfig::default(),
+      Some(server_config_h3),
+      udp_socket,
+      runtime,
+    )?;
 
     let mut server_crypto: Option<Arc<ServerCrypto>> = None;
     loop {
@@ -193,10 +210,10 @@ where
     #[cfg(not(feature = "http3"))]
     {
       tokio::select! {
-        _= self.cert_service(tx) => {
+        _= cert_reloader_service.start() => {
           error!("Cert service for TLS exited");
         },
-        _ = self.listener_service(server, rx) => {
+        _ = self.listener_service(server, cert_reloader_rx) => {
           error!("TCP proxy service for TLS exited");
         },
         else => {
