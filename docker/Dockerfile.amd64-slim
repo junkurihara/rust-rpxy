@@ -18,7 +18,6 @@ RUN echo "Building rpxy from source" && \
 FROM alpine:latest as runner
 LABEL maintainer="Jun Kurihara"
 
-ENV TAG_NAME=amd64-slim
 ENV TARGET_DIR=x86_64-unknown-linux-musl
 ENV RUNTIME_DEPS logrotate ca-certificates su-exec
 
