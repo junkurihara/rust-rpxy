@@ -238,6 +238,7 @@ You can also use [docker image](https://hub.docker.com/r/jqtype/rpxy) instead of
 - `HOST_GID` (default: `900`): `GID` of `HOST_USER`
 - `LOG_LEVEL=debug|info|warn|error`: Log level
 - `LOG_TO_FILE=true|false`: Enable logging to the log file `/rpxy/log/rpxy.log` using `logrotate`. You should mount `/rpxy/log` via docker volume option if enabled. The log dir and file will be owned by the `HOST_USER` with `HOST_UID:HOST_GID` on the host machine. Hence, `HOST_USER`, `HOST_UID` and `HOST_GID` should be the same as ones of the user who executes the `rpxy` docker container on the host.
+- `WATCH=true|false` (default: `false`): Activate continuous watching of the config file if true.
 
 Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the docker volume option. See [`docker/docker-compose.yml`](./docker/docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
 
