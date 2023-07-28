@@ -11,12 +11,16 @@ services:
     build:
       context: ../
       dockerfile: ./docker/Dockerfile
+      platforms: # Choose your platforms
+        - "linux/amd64"
+        # - "linux/arm64"
     environment:
       - LOG_LEVEL=debug
       - LOG_TO_FILE=true
       - HOST_USER=jun
       - HOST_UID=501
       - HOST_GID=501
+      # - WATCH=true
     tty: false
     privileged: true
     volumes:
