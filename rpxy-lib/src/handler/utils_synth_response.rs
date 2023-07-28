@@ -5,11 +5,13 @@ use hyper::{Body, Request, Response, StatusCode, Uri};
 ////////////////////////////////////////////////////
 // Functions to create response (error or redirect)
 
+/// Generate a synthetic response  message of a certain error status code
 pub(super) fn http_error(status_code: StatusCode) -> Result<Response<Body>> {
   let response = Response::builder().status(status_code).body(Body::empty())?;
   Ok(response)
 }
 
+/// Generate synthetic response message of a redirection to https host with 301
 pub(super) fn secure_redirection<B>(
   server_name: &str,
   tls_port: Option<u16>,

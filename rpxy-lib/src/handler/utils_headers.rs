@@ -8,7 +8,7 @@ use hyper::{
   header::{self, HeaderMap, HeaderName, HeaderValue},
   Uri,
 };
-use std::net::SocketAddr;
+use std::{borrow::Cow, net::SocketAddr};
 
 ////////////////////////////////////////////////////
 // Functions to manipulate headers
@@ -83,6 +83,7 @@ pub(super) fn set_sticky_cookie_lb_context(headers: &mut HeaderMap, context_from
   Ok(())
 }
 
+/// Apply options to request header, which are specified in the configuration
 pub(super) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
   _client_addr: &SocketAddr,
@@ -113,7 +114,7 @@ pub(super) fn apply_upstream_options_to_header(
   Ok(())
 }
 
-// https://datatracker.ietf.org/doc/html/rfc9110
+/// Append header entry with comma according to [RFC9110](https://datatracker.ietf.org/doc/html/rfc9110)
 pub(super) fn append_header_entry_with_comma(headers: &mut HeaderMap, key: &str, value: &str) -> Result<()> {
   match headers.entry(HeaderName::from_bytes(key.as_bytes())?) {
     header::Entry::Vacant(entry) => {
@@ -132,10 +133,11 @@ pub(super) fn append_header_entry_with_comma(headers: &mut HeaderMap, key: &str,
   Ok(())
 }
 
+/// Add header entry if not exist
 pub(super) fn add_header_entry_if_not_exist(
   headers: &mut HeaderMap,
-  key: impl Into<std::borrow::Cow<'static, str>>,
-  value: impl Into<std::borrow::Cow<'static, str>>,
+  key: impl Into<Cow<'static, str>>,
+  value: impl Into<Cow<'static, str>>,
 ) -> Result<()> {
   match headers.entry(HeaderName::from_bytes(key.into().as_bytes())?) {
     header::Entry::Vacant(entry) => {
@@ -147,10 +149,11 @@ pub(super) fn add_header_entry_if_not_exist(
   Ok(())
 }
 
+/// Overwrite header entry if exist
 pub(super) fn add_header_entry_overwrite_if_exist(
   headers: &mut HeaderMap,
-  key: impl Into<std::borrow::Cow<'static, str>>,
-  value: impl Into<std::borrow::Cow<'static, str>>,
+  key: impl Into<Cow<'static, str>>,
+  value: impl Into<Cow<'static, str>>,
 ) -> Result<()> {
   match headers.entry(HeaderName::from_bytes(key.into().as_bytes())?) {
     header::Entry::Vacant(entry) => {
@@ -164,11 +167,10 @@ pub(super) fn add_header_entry_overwrite_if_exist(
   Ok(())
 }
 
+/// Align cookie values in single line
+/// Sometimes violates [RFC6265](https://www.rfc-editor.org/rfc/rfc6265#section-5.4) (for http/1.1).
+/// This is allowed in RFC7540 (for http/2) as mentioned [here](https://stackoverflow.com/questions/4843556/in-http-specification-what-is-the-string-that-separates-cookies).
 pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
-  // Sometimes violates RFC6265 (for http/1.1).
-  // https://www.rfc-editor.org/rfc/rfc6265#section-5.4
-  // This is allowed in RFC7540 (for http/2).
-  // https://stackoverflow.com/questions/4843556/in-http-specification-what-is-the-string-that-separates-cookies
   let cookies = headers
     .iter()
     .filter(|(k, _)| **k == hyper::header::COOKIE)
@@ -182,6 +184,7 @@ pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
   Ok(())
 }
 
+/// Add forwarding headers like `x-forwarded-for`.
 pub(super) fn add_forwarding_header(
   headers: &mut HeaderMap,
   client_addr: &SocketAddr,
@@ -219,6 +222,7 @@ pub(super) fn add_forwarding_header(
   Ok(())
 }
 
+/// Remove connection header
 pub(super) fn remove_connection_header(headers: &mut HeaderMap) {
   if let Some(values) = headers.get(header::CONNECTION) {
     if let Ok(v) = values.clone().to_str() {
@@ -231,6 +235,7 @@ pub(super) fn remove_connection_header(headers: &mut HeaderMap) {
   }
 }
 
+/// Hop header values which are removed at proxy
 const HOP_HEADERS: &[&str] = &[
   "connection",
   "te",
@@ -243,12 +248,14 @@ const HOP_HEADERS: &[&str] = &[
   "upgrade",
 ];
 
+/// Remove hop headers
 pub(super) fn remove_hop_header(headers: &mut HeaderMap) {
   HOP_HEADERS.iter().for_each(|key| {
     headers.remove(*key);
   });
 }
 
+/// Extract upgrade header value if exist
 pub(super) fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
   if let Some(c) = headers.get(header::CONNECTION) {
     if c

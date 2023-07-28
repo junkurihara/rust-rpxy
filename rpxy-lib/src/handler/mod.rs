@@ -9,6 +9,7 @@ pub use handler_main::{HttpMessageHandler, HttpMessageHandlerBuilder, HttpMessag
 
 #[allow(dead_code)]
 #[derive(Debug)]
+/// Context object to handle sticky cookies at HTTP message handler
 struct HandlerContext {
   #[cfg(feature = "sticky-cookie")]
   context_lb: Option<LbContext>,
