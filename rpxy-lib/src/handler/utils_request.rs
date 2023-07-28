@@ -7,6 +7,7 @@ use hyper::{header, Request};
 ////////////////////////////////////////////////////
 // Functions to manipulate request line
 
+/// Apply upstream options in request line, specified in the configuration
 pub(super) fn apply_upstream_options_to_request_line<B>(req: &mut Request<B>, upstream: &UpstreamGroup) -> Result<()> {
   for opt in upstream.opts.iter() {
     match opt {
@@ -19,10 +20,12 @@ pub(super) fn apply_upstream_options_to_request_line<B>(req: &mut Request<B>, up
   Ok(())
 }
 
+/// Trait defining parser of hostname
 pub trait ParseHost {
   fn parse_host(&self) -> Result<&[u8]>;
 }
 impl<B> ParseHost for Request<B> {
+  /// Extract hostname from either the request HOST header or request line
   fn parse_host(&self) -> Result<&[u8]> {
     let headers_host = self.headers().get(header::HOST);
     let uri_host = self.uri().host();
