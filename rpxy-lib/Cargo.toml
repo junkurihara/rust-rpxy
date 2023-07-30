@@ -12,8 +12,7 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3", "sticky-cookie"]
-http3 = ["http3-s2n"]
+default = ["http3-quinn", "sticky-cookie"]
 http3-quinn = ["quinn", "h3", "h3-quinn", "socket2"]
 http3-s2n = ["h3", "s2n-quic", "s2n-quic-rustls", "s2n-quic-h3"]
 sticky-cookie = ["base64", "sha2", "chrono"]
@@ -67,7 +66,7 @@ h3 = { path = "../h3/h3/", optional = true }
 h3-quinn = { path = "../h3-quinn/", optional = true } # Tentative to support rustls-0.21
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
 socket2 = { version = "0.5.3", features = ["all"], optional = true }
-s2n-quic = { path = "../s2n-quic/quic/s2n-quic/", features = [
+s2n-quic = { path = "../s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
 s2n-quic-h3 = { path = "../s2n-quic/quic/s2n-quic-h3/", optional = true }
