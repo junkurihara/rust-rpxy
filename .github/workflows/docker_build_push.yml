@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - "feat/s2n-quic"
 
 env:
   REGISTRY_IMAGE: jqtype/rpxy
@@ -83,6 +84,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Nightly build and push s2n-quic
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          build-args: |
+            "CARGO_FEATURES=--no-default-features --features http3-s2n"
+            "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
+          push: true
+          tags: |
+            ${{ env.REGISTRY_IMAGE }}:nightly-s2n
+          file: ./docker/Dockerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Nightly build and push slim
