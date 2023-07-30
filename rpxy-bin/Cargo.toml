@@ -13,7 +13,7 @@ publish = false
 
 [features]
 default = ["http3"]
-http3 = []
+http3 = ["rpxy-lib/http3"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", features = ["http3", "sticky-cookie"] }

@@ -44,6 +44,7 @@ where
   if proxy_config.https_port.is_some() {
     info!("Listen port: {} (for TLS)", proxy_config.https_port.unwrap());
   }
+  #[cfg(feature = "http3")]
   if proxy_config.http3 {
     info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
   }

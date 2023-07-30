@@ -4,3 +4,6 @@
 [submodule "quinn"]
 	path = quinn
 	url = git@github.com:junkurihara/quinn.git
+[submodule "s2n-quic"]
+	path = s2n-quic
+	url = git@github.com:junkurihara/s2n-quic.git
