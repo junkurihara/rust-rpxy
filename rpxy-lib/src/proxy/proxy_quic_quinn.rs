@@ -19,7 +19,7 @@ where
     &self,
     mut server_crypto_rx: ReloaderReceiver<ServerCryptoBase>,
   ) -> Result<()> {
-    info!("Start UDP proxy serving with HTTP/3 request for configured host names");
+    info!("Start UDP proxy serving with HTTP/3 request for configured host names [quinn]");
     // first set as null config server
     let rustls_server_config = ServerConfig::builder()
       .with_safe_default_cipher_suites()
@@ -30,8 +30,8 @@ where
 
     let mut transport_config_quic = TransportConfig::default();
     transport_config_quic
-      .max_concurrent_bidi_streams(self.globals.proxy_config.h3_max_concurrent_bidistream)
-      .max_concurrent_uni_streams(self.globals.proxy_config.h3_max_concurrent_unistream)
+      .max_concurrent_bidi_streams(self.globals.proxy_config.h3_max_concurrent_bidistream.into())
+      .max_concurrent_uni_streams(self.globals.proxy_config.h3_max_concurrent_unistream.into())
       .max_idle_timeout(
         self
           .globals

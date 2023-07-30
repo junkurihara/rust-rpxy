@@ -1,8 +1,8 @@
 use crate::{error::*, log::*};
-#[cfg(feature = "http3")]
+#[cfg(feature = "http3-quinn")]
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::SocketAddr;
-#[cfg(feature = "http3")]
+#[cfg(feature = "http3-quinn")]
 use std::net::UdpSocket;
 use tokio::net::TcpSocket;
 
@@ -23,7 +23,7 @@ pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> Result<TcpSocket> {
   Ok(tcp_socket)
 }
 
-#[cfg(feature = "http3")]
+#[cfg(feature = "http3-quinn")]
 /// Bind UDP socket to the given `SocketAddr`, and returns the UDP socket with `SO_REUSEADDR` and `SO_REUSEPORT` options.
 /// This option is required to re-bind the socket address when the proxy instance is reconstructed.
 pub(super) fn bind_udp_socket(listening_on: &SocketAddr) -> Result<UdpSocket> {

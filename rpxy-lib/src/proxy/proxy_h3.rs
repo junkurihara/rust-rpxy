@@ -1,8 +1,11 @@
 use super::Proxy;
 use crate::{certs::CryptoSource, error::*, log::*, utils::ServerNameBytesExp};
 use bytes::{Buf, Bytes};
+#[cfg(feature = "http3-quinn")]
 use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 use hyper::{client::connect::Connect, Body, Request, Response};
+#[cfg(feature = "http3-s2n")]
+use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 use std::net::SocketAddr;
 use tokio::time::{timeout, Duration};
 

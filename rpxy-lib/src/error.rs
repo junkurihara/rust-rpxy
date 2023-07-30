@@ -37,13 +37,21 @@ pub enum RpxyError {
 
   // #[error("Toml Deserialization Error")]
   // TomlDe(#[from] toml::de::Error),
-  #[cfg(feature = "http3")]
+  #[cfg(feature = "http3-quinn")]
   #[error("Quic Connection Error")]
   QuicConn(#[from] quinn::ConnectionError),
 
-  #[cfg(feature = "http3")]
+  #[cfg(feature = "http3-s2n")]
+  #[error("Quic Connection Error [s2n-quic]")]
+  QUicConn(#[from] s2n_quic::connection::Error),
+
+  #[cfg(feature = "http3-quinn")]
   #[error("H3 Error")]
   H3(#[from] h3::Error),
+
+  #[cfg(feature = "http3-s2n")]
+  #[error("H3 Error [s2n-quic]")]
+  H3(#[from] s2n_quic_h3::h3::Error),
 
   #[error("rustls Connection Error")]
   Rustls(#[from] rustls::Error),

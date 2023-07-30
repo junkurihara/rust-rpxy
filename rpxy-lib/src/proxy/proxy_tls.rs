@@ -108,7 +108,7 @@ where
     .await
     .map_err(|e| anyhow::anyhow!(e))?;
 
-    #[cfg(not(feature = "http3"))]
+    #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
     {
       tokio::select! {
         _= cert_reloader_service.start() => {
@@ -124,7 +124,7 @@ where
       };
       Ok(())
     }
-    #[cfg(feature = "http3")]
+    #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
       if self.globals.proxy_config.http3 {
         tokio::select! {

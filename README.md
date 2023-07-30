@@ -12,7 +12,9 @@
 
 `rpxy` [ahr-pik-see] is an implementation of simple and lightweight reverse-proxy with some additional features. The implementation is based on [`hyper`](https://github.com/hyperium/hyper), [`rustls`](https://github.com/rustls/rustls) and [`tokio`](https://github.com/tokio-rs/tokio), i.e., written in pure Rust. Our `rpxy` routes multiple host names to appropriate backend application servers while serving TLS connections.
 
- As default, `rpxy` provides the *TLS connection sanitization* by correctly binding a certificate used to establish a secure channel with the backend application. Specifically, it always keeps the consistency between the given SNI (server name indication) in `ClientHello` of the underlying TLS and the domain name given by the overlaid HTTP HOST header (or URL in Request line) [^1]. Additionally, as a somewhat unstable feature, our `rpxy` can handle the brand-new HTTP/3 connection thanks to [`quinn`](https://github.com/quinn-rs/quinn) and [`hyperium/h3`](https://github.com/hyperium/h3).
+ As default, `rpxy` provides the *TLS connection sanitization* by correctly binding a certificate used to establish a secure channel with the backend application. Specifically, it always keeps the consistency between the given SNI (server name indication) in `ClientHello` of the underlying TLS and the domain name given by the overlaid HTTP HOST header (or URL in Request line) [^1]. Additionally, as a somewhat unstable feature, our `rpxy` can handle the brand-new HTTP/3 connection thanks to [`quinn`](https://github.com/quinn-rs/quinn), [`s2n-quic`](https://github.com/aws/s2n-quic) and [`hyperium/h3`](https://github.com/hyperium/h3).[^h3lib]
+
+ [^h3lib]: HTTP/3 libraries are mutually exclusive. You need to explicitly specify `s2n-quic` with `--no-default-features` flag.
 
  This project is still *work-in-progress*. But it is already working in some production environments and serves a number of domain names. Furthermore it *significantly outperforms* NGINX and Caddy, e.g., *1.5x faster than NGINX*, in the setting of a very simple HTTP reverse-proxy scenario (See [`bench`](./bench/) directory).
 
@@ -27,11 +29,14 @@ You can build an executable binary yourself by checking out this Git repository.
 % git clone https://github.com/junkurihara/rust-rpxy
 % cd rust-rpxy
 
-# Update submodule hyperium/h3
+# Update submodules
 % git submodule update --init
 
-# Build
+# Build (default: QUIC and HTTP/3 is enabled using `quinn`)
 % cargo build --release
+
+# If you want to use `s2n-quic`, build as follows.
+% cargo build --no-default-features --features http3-s2n --release
 ```
 
 Then you have an executive binary `rust-rpxy/target/release/rpxy`.
