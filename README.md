@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
-![Build and Publish Docker](https://github.com/junkurihara/rust-rpxy/actions/workflows/docker_build_push.yml/badge.svg)
+![Docker](https://github.com/junkurihara/rust-rpxy/actions/workflows/docker_build_push.yml/badge.svg)
 ![ShiftLeft Scan](https://github.com/junkurihara/rust-rpxy/actions/workflows/shift_left.yml/badge.svg)
 [![Docker Image Size (latest by date)](https://img.shields.io/docker/image-size/jqtype/rpxy)](https://hub.docker.com/r/jqtype/rpxy)
 
@@ -46,6 +46,20 @@ You can run `rpxy` with a configuration file like
 
 ```bash
 % ./target/release/rpxy --config config.toml
+```
+
+If you specify `-w` option along with the config file path, `rpxy` tracks the change of `config.toml` in the real-time manner and apply the change immediately without restarting the process.
+
+The full help messages are given follows.
+
+```bash:
+usage: rpxy [OPTIONS] --config <FILE>
+
+Options:
+  -c, --config <FILE>  Configuration file path like ./config.toml
+  -w, --watch          Activate dynamic reloading of the config file via continuous monitoring
+  -h, --help           Print help
+  -V, --version        Print version
 ```
 
 That's all!
@@ -217,13 +231,14 @@ Since it is currently a work-in-progress project, we are frequently adding new o
 
 ## Using Docker Image
 
-You can also use [docker image](https://hub.docker.com/r/jqtype/rpxy) instead of directly executing the binary. There are only two docker-specific environment variables.
+You can also use [docker image](https://hub.docker.com/r/jqtype/rpxy) instead of directly executing the binary. There are only several docker-specific environment variables.
 
 - `HOST_USER` (default: `user`): User name executing `rpxy` inside the container.
 - `HOST_UID` (default: `900`): `UID` of `HOST_USER`.
 - `HOST_GID` (default: `900`): `GID` of `HOST_USER`
 - `LOG_LEVEL=debug|info|warn|error`: Log level
 - `LOG_TO_FILE=true|false`: Enable logging to the log file `/rpxy/log/rpxy.log` using `logrotate`. You should mount `/rpxy/log` via docker volume option if enabled. The log dir and file will be owned by the `HOST_USER` with `HOST_UID:HOST_GID` on the host machine. Hence, `HOST_USER`, `HOST_UID` and `HOST_GID` should be the same as ones of the user who executes the `rpxy` docker container on the host.
+- `WATCH=true|false` (default: `false`): Activate continuous watching of the config file if true.
 
 Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the docker volume option. See [`docker/docker-compose.yml`](./docker/docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
 

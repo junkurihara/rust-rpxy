@@ -7,4 +7,19 @@ if [ -z $LOG_LEVEL ]; then
 fi
 echo "rpxy: Logging with level ${LOG_LEVEL}"
 
-RUST_LOG=${LOG_LEVEL} /rpxy/bin/rpxy --config ${CONFIG_FILE}
+# continuously watch and reload the config file
+if [ -z $WATCH ]; then
+  WATCH=false
+else
+  if [ "$WATCH" = "true" ]; then
+    WATCH=true
+  else
+    WATCH=false
+  fi
+fi
+
+if  $WATCH ; then
+  RUST_LOG=${LOG_LEVEL} /rpxy/bin/rpxy --config ${CONFIG_FILE} -w
+else
+  RUST_LOG=${LOG_LEVEL} /rpxy/bin/rpxy --config ${CONFIG_FILE}
+fi

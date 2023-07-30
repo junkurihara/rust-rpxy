@@ -12,6 +12,8 @@
 # echo "Benchmark on caddy"
 # ab -c 100 -n 10000  http://127.0.0.1:8100/index.html
 
+echo "----------------------------"
+echo "Benchmark [Any Arch]"
 
 echo "----------------------------"
 echo "Benchmark on rpxy"

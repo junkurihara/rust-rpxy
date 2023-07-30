@@ -1,0 +1,49 @@
+[package]
+name = "rpxy"
+version = "0.4.0"
+authors = ["Jun Kurihara"]
+homepage = "https://github.com/junkurihara/rust-rpxy"
+repository = "https://github.com/junkurihara/rust-rpxy"
+license = "MIT"
+readme = "../README.md"
+edition = "2021"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["http3"]
+http3 = []
+
+[dependencies]
+rpxy-lib = { path = "../rpxy-lib/", features = ["http3", "sticky-cookie"] }
+
+anyhow = "1.0.72"
+rustc-hash = "1.1.0"
+serde = { version = "1.0.178", default-features = false, features = ["derive"] }
+derive_builder = "0.12.0"
+tokio = { version = "1.29.1", default-features = false, features = [
+  "net",
+  "rt-multi-thread",
+  "time",
+  "sync",
+  "macros",
+] }
+async-trait = "0.1.72"
+rustls-pemfile = "1.0.3"
+
+# config
+clap = { version = "4.3.19", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.7.6", default-features = false, features = ["parse"] }
+hot_reload = "0.1.4"
+
+# logging
+tracing = { version = "0.1.37" }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5.4"
+
+
+[dev-dependencies]
