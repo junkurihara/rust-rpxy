@@ -21,7 +21,7 @@ pub struct ConfigToml {
   pub experimental: Option<Experimental>,
 }
 
-#[cfg(feature = "http3")]
+#[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Http3Option {
   pub alt_svc_max_age: Option<u32>,
@@ -34,7 +34,7 @@ pub struct Http3Option {
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Experimental {
-  #[cfg(feature = "http3")]
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3: Option<Http3Option>,
   pub ignore_sni_consistency: Option<bool>,
 }
@@ -128,7 +128,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 
     // experimental
     if let Some(exp) = &self.experimental {
-      #[cfg(feature = "http3")]
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       {
         if let Some(h3option) = &exp.h3 {
           proxy_config.http3 = true;

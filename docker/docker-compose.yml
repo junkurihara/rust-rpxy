@@ -10,10 +10,13 @@ services:
       - 127.0.0.1:8443:8443
     build:
       context: ../
+      args:
+        - "CARGO_FEATURES=--no-default-features --features http3-s2n"
+        - "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
       dockerfile: ./docker/Dockerfile
       platforms: # Choose your platforms
-        - "linux/amd64"
-        # - "linux/arm64"
+        # - "linux/amd64"
+        - "linux/arm64"
     environment:
       - LOG_LEVEL=debug
       - LOG_TO_FILE=true
