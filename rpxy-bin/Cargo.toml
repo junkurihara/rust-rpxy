@@ -1,6 +1,6 @@
 [package]
 name = "rpxy"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -14,9 +14,13 @@ publish = false
 [features]
 default = ["http3"]
 http3 = ["rpxy-lib/http3"]
+http3-quinn = ["rpxy-lib/http3-quinn"]
+http3-s2n = ["rpxy-lib/http3-s2n"]
 
 [dependencies]
-rpxy-lib = { path = "../rpxy-lib/", features = ["http3", "sticky-cookie"] }
+rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
+  "sticky-cookie",
+] }
 
 anyhow = "1.0.72"
 rustc-hash = "1.1.0"

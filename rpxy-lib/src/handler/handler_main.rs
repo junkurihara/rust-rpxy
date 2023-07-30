@@ -210,7 +210,7 @@ where
     remove_hop_header(headers);
     add_header_entry_overwrite_if_exist(headers, "server", env!("CARGO_PKG_NAME"))?;
 
-    #[cfg(feature = "http3")]
+    #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
       // Manipulate ALT_SVC allowing h3 in response message only when mutual TLS is not enabled
       // TODO: This is a workaround for avoiding a client authentication in HTTP/3
@@ -235,7 +235,7 @@ where
         headers.remove(header::ALT_SVC.as_str());
       }
     }
-    #[cfg(not(feature = "http3"))]
+    #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
     {
       if let Some(port) = self.globals.proxy_config.https_port {
         headers.remove(header::ALT_SVC.as_str());

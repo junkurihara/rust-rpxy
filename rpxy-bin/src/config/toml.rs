@@ -142,10 +142,10 @@ impl TryInto<ProxyConfig> for &ConfigToml {
             proxy_config.h3_max_concurrent_connections = x;
           }
           if let Some(x) = h3option.max_concurrent_bidistream {
-            proxy_config.h3_max_concurrent_bidistream = x.into();
+            proxy_config.h3_max_concurrent_bidistream = x;
           }
           if let Some(x) = h3option.max_concurrent_unistream {
-            proxy_config.h3_max_concurrent_unistream = x.into();
+            proxy_config.h3_max_concurrent_unistream = x;
           }
           if let Some(x) = h3option.max_idle_timeout {
             if x == 0u64 {

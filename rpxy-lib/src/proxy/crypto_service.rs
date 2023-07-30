@@ -22,7 +22,10 @@ where
 pub type SniServerCryptoMap = HashMap<ServerNameBytesExp, Arc<ServerConfig>>;
 pub struct ServerCrypto {
   // For Quic/HTTP3, only servers with no client authentication
+  #[cfg(feature = "http3-quinn")]
   pub inner_global_no_client_auth: Arc<ServerConfig>,
+  #[cfg(feature = "http3-s2n")]
+  pub inner_global_no_client_auth: s2n_quic_rustls::Server,
   // For TLS over TCP/HTTP2 and 1.1, map of SNI to server_crypto for all given servers
   pub inner_local_map: Arc<SniServerCryptoMap>,
 }
@@ -68,7 +71,22 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
   type Error = anyhow::Error;
 
   fn try_into(self) -> Result<Arc<ServerCrypto>, Self::Error> {
-    let mut resolver_global = ResolvesServerCertUsingSni::new();
+    #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+    let server_crypto_global = self.build_server_crypto_global()?;
+    let server_crypto_local_map: SniServerCryptoMap = self.build_server_crypto_local_map()?;
+
+    Ok(Arc::new(ServerCrypto {
+      #[cfg(feature = "http3-quinn")]
+      inner_global_no_client_auth: Arc::new(server_crypto_global),
+      #[cfg(feature = "http3-s2n")]
+      inner_global_no_client_auth: server_crypto_global,
+      inner_local_map: Arc::new(server_crypto_local_map),
+    }))
+  }
+}
+
+impl ServerCryptoBase {
+  fn build_server_crypto_local_map(&self) -> Result<SniServerCryptoMap, ReloaderError<ServerCryptoBase>> {
     let mut server_crypto_local_map: SniServerCryptoMap = HashMap::default();
 
     for (server_name_bytes_exp, certs_and_keys) in self.inner.iter() {
@@ -93,16 +111,7 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
       }
 
       // add client certificate if specified
-      if certs_and_keys.client_ca_certs.is_none() {
-        // aggregated server config for no client auth server for http3
-        if let Err(e) = resolver_global.add(server_name.as_str(), certified_key) {
-          error!(
-            "{}: Failed to read some certificates and keys {}",
-            server_name.as_str(),
-            e
-          )
-        }
-      } else {
+      if certs_and_keys.client_ca_certs.is_some() {
         // add client certificate if specified
         match certs_and_keys.parse_client_ca_certs() {
           Ok((owned_trust_anchors, _subject_key_ids)) => {
@@ -120,14 +129,14 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
 
       let mut server_config_local = if client_ca_roots_local.is_empty() {
         // with no client auth, enable http1.1 -- 3
-        #[cfg(not(feature = "http3"))]
+        #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
         {
           ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth()
             .with_cert_resolver(Arc::new(resolver_local))
         }
-        #[cfg(feature = "http3")]
+        #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
         {
           let mut sc = ServerConfig::builder()
             .with_safe_defaults()
@@ -150,6 +159,33 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
 
       server_crypto_local_map.insert(server_name_bytes_exp.to_owned(), Arc::new(server_config_local));
     }
+    Ok(server_crypto_local_map)
+  }
+
+  #[cfg(feature = "http3-quinn")]
+  fn build_server_crypto_global(&self) -> Result<ServerConfig, ReloaderError<ServerCryptoBase>> {
+    let mut resolver_global = ResolvesServerCertUsingSni::new();
+
+    for (server_name_bytes_exp, certs_and_keys) in self.inner.iter() {
+      let server_name: String = server_name_bytes_exp.try_into()?;
+
+      // Parse server certificates and private keys
+      let Ok(certified_key): Result<CertifiedKey, _> = certs_and_keys.parse_server_certs_and_keys() else {
+        warn!("Failed to add certificate for {}", server_name);
+        continue;
+      };
+
+      if certs_and_keys.client_ca_certs.is_none() {
+        // aggregated server config for no client auth server for http3
+        if let Err(e) = resolver_global.add(server_name.as_str(), certified_key) {
+          error!(
+            "{}: Failed to read some certificates and keys {}",
+            server_name.as_str(),
+            e
+          )
+        }
+      }
+    }
 
     //////////////
     let mut server_crypto_global = ServerConfig::builder()
@@ -159,23 +195,82 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
 
     //////////////////////////////
 
-    #[cfg(feature = "http3")]
-    {
-      server_crypto_global.alpn_protocols = vec![
-        b"h3".to_vec(),
-        b"hq-29".to_vec(), // TODO: remove later?
-        b"h2".to_vec(),
-        b"http/1.1".to_vec(),
-      ];
-    }
-    #[cfg(not(feature = "http3"))]
-    {
-      server_crypto_global.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-    }
-
-    Ok(Arc::new(ServerCrypto {
-      inner_global_no_client_auth: Arc::new(server_crypto_global),
-      inner_local_map: Arc::new(server_crypto_local_map),
-    }))
+    server_crypto_global.alpn_protocols = vec![
+      b"h3".to_vec(),
+      b"hq-29".to_vec(), // TODO: remove later?
+      b"h2".to_vec(),
+      b"http/1.1".to_vec(),
+    ];
+    Ok(server_crypto_global)
   }
+
+  #[cfg(feature = "http3-s2n")]
+  fn build_server_crypto_global(&self) -> Result<s2n_quic_rustls::Server, ReloaderError<ServerCryptoBase>> {
+    let mut resolver_global = s2n_quic_rustls::rustls::server::ResolvesServerCertUsingSni::new();
+
+    for (server_name_bytes_exp, certs_and_keys) in self.inner.iter() {
+      let server_name: String = server_name_bytes_exp.try_into()?;
+
+      // Parse server certificates and private keys
+      let Ok(certified_key) = parse_server_certs_and_keys_s2n(certs_and_keys) else {
+        warn!("Failed to add certificate for {}", server_name);
+        continue;
+      };
+
+      if certs_and_keys.client_ca_certs.is_none() {
+        // aggregated server config for no client auth server for http3
+        if let Err(e) = resolver_global.add(server_name.as_str(), certified_key) {
+          error!(
+            "{}: Failed to read some certificates and keys {}",
+            server_name.as_str(),
+            e
+          )
+        }
+      }
+    }
+    let alpn = vec![
+      b"h3".to_vec(),
+      b"hq-29".to_vec(), // TODO: remove later?
+      b"h2".to_vec(),
+      b"http/1.1".to_vec(),
+    ];
+    let server_crypto_global = s2n_quic::provider::tls::rustls::Server::builder()
+      .with_cert_resolver(Arc::new(resolver_global))
+      .map_err(|e| anyhow::anyhow!(e))?
+      .with_application_protocols(alpn.iter())
+      .map_err(|e| anyhow::anyhow!(e))?
+      .build()
+      .map_err(|e| anyhow::anyhow!(e))?;
+    Ok(server_crypto_global)
+  }
+}
+
+#[cfg(feature = "http3-s2n")]
+/// This is workaround for the version difference between rustls and s2n-quic-rustls
+fn parse_server_certs_and_keys_s2n(
+  certs_and_keys: &CertsAndKeys,
+) -> Result<s2n_quic_rustls::rustls::sign::CertifiedKey, anyhow::Error> {
+  let signing_key = certs_and_keys
+    .cert_keys
+    .iter()
+    .find_map(|k| {
+      let s2n_private_key = s2n_quic_rustls::PrivateKey(k.0.clone());
+      if let Ok(sk) = s2n_quic_rustls::rustls::sign::any_supported_type(&s2n_private_key) {
+        Some(sk)
+      } else {
+        None
+      }
+    })
+    .ok_or_else(|| {
+      std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "Unable to find a valid certificate and key",
+      )
+    })?;
+  let certs: Vec<_> = certs_and_keys
+    .certs
+    .iter()
+    .map(|c| s2n_quic_rustls::rustls::Certificate(c.0.clone()))
+    .collect();
+  Ok(s2n_quic_rustls::rustls::sign::CertifiedKey::new(certs, signing_key))
 }

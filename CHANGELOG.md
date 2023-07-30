@@ -4,6 +4,8 @@
 
 ### Improvement
 
+- Feat: `s2n-quic` with `s2n-quic-h3` is supported as QUIC and HTTP/3 library in addition to `quinn` with `h3-quinn`, related to #57.
+
 ## 0.4.0
 
 ### Improvement

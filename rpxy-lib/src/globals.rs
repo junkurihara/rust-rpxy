@@ -53,19 +53,19 @@ pub struct ProxyConfig {
   // experimentals
   pub sni_consistency: bool, // Handler
   // All need to make packet acceptor
-  #[cfg(feature = "http3")]
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub http3: bool,
-  #[cfg(feature = "http3")]
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_alt_svc_max_age: u32,
-  #[cfg(feature = "http3")]
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_request_max_body_size: usize,
-  #[cfg(feature = "http3")]
-  pub h3_max_concurrent_bidistream: quinn::VarInt,
-  #[cfg(feature = "http3")]
-  pub h3_max_concurrent_unistream: quinn::VarInt,
-  #[cfg(feature = "http3")]
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  pub h3_max_concurrent_bidistream: u32,
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  pub h3_max_concurrent_unistream: u32,
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_concurrent_connections: u32,
-  #[cfg(feature = "http3")]
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_idle_timeout: Option<Duration>,
 }
 
@@ -87,19 +87,19 @@ impl Default for ProxyConfig {
 
       sni_consistency: true,
 
-      #[cfg(feature = "http3")]
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       http3: false,
-      #[cfg(feature = "http3")]
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_alt_svc_max_age: H3::ALT_SVC_MAX_AGE,
-      #[cfg(feature = "http3")]
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_request_max_body_size: H3::REQUEST_MAX_BODY_SIZE,
-      #[cfg(feature = "http3")]
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_max_concurrent_connections: H3::MAX_CONCURRENT_CONNECTIONS,
-      #[cfg(feature = "http3")]
-      h3_max_concurrent_bidistream: H3::MAX_CONCURRENT_BIDISTREAM.into(),
-      #[cfg(feature = "http3")]
-      h3_max_concurrent_unistream: H3::MAX_CONCURRENT_UNISTREAM.into(),
-      #[cfg(feature = "http3")]
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+      h3_max_concurrent_bidistream: H3::MAX_CONCURRENT_BIDISTREAM,
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+      h3_max_concurrent_unistream: H3::MAX_CONCURRENT_UNISTREAM,
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_max_idle_timeout: Some(Duration::from_secs(H3::MAX_IDLE_TIMEOUT)),
     }
   }
