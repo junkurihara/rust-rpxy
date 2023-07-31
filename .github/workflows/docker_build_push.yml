@@ -86,6 +86,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           labels: ${{ steps.meta.outputs.labels }}
 
+      # 今Pushし放題なので注意
       - name: Nightly build and push s2n-quic
         uses: docker/build-push-action@v4
         with:
