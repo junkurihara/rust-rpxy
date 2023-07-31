@@ -9,6 +9,7 @@ FROM --platform=$BUILDPLATFORM base AS builder
 
 ENV CFLAGS=-Ofast
 ENV BUILD_DEPS curl make ca-certificates build-essential
+ENV TARGET_SUFFIX=unknown-linux-gnu
 
 WORKDIR /tmp
 
@@ -37,11 +38,11 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS ${
   curl -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain stable && \
   export PATH="$HOME/.cargo/bin:$PATH" && \
   echo "Install toolchain" && \
-  rustup target add $(cat /arch)-unknown-linux-gnu &&\
+  rustup target add $(cat /arch)-${TARGET_SUFFIX} && \
   echo "Building rpxy from source" && \
-  cargo build --release --target=$(cat /arch)-unknown-linux-gnu ${CARGO_FEATURES} && \
-  strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-gnu/release/rpxy &&\
-  cp /tmp/target/$(cat /arch)-unknown-linux-gnu/release/rpxy /tmp/target/release/rpxy
+  cargo build --release --target=$(cat /arch)-${TARGET_SUFFIX} ${CARGO_FEATURES} && \
+  strip --strip-all /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy &&\
+  cp /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy /tmp/target/release/rpxy
 
 ########################################
 FROM --platform=$TARGETPLATFORM base AS runner
