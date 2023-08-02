@@ -41,6 +41,9 @@ jobs:
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n"
+            # Aliases must be used only for release builds
+            aliases: |
+              "s2n"
 
     steps:
       - name: Checkout
