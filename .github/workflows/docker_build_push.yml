@@ -24,7 +24,7 @@ jobs:
             platforms: linux/amd64,linux/arm64
 
           - target: "default-slim"
-            dockerfile: ./docker/Dockerfile.slim
+            dockerfile: ./docker/Dockerfile-slim
             build-contexts: |
               messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
               messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
