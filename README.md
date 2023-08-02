@@ -236,7 +236,9 @@ Since it is currently a work-in-progress project, we are frequently adding new o
 
 ## Using Docker Image
 
-You can also use [docker image](https://hub.docker.com/r/jqtype/rpxy) instead of directly executing the binary. There are only several docker-specific environment variables.
+You can also use `docker` image hosted on [Docker Hub](https://hub.docker.com/r/jqtype/rpxy) and [GitHub Container Registry](https://github.com/junkurihara/rust-rpxy/pkgs/container/rust-rpxy) instead of directly executing the binary. See [`./docker/README.md`](./docker/README.md) for the differences on image tags.
+
+There are only several docker-specific environment variables.
 
 - `HOST_USER` (default: `user`): User name executing `rpxy` inside the container.
 - `HOST_UID` (default: `900`): `UID` of `HOST_USER`.
