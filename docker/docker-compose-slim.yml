@@ -14,7 +14,7 @@ services:
     #   additional_contexts:
     #     - messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
     #     - messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
-    #   dockerfile: ./docker/Dockerfile.slim # based on alpine and build x86_64-unknown-linux-musl
+    #   dockerfile: ./docker/Dockerfile-slim # based on alpine and build x86_64-unknown-linux-musl
     #   platforms: # Choose your platforms
     #     - "linux/amd64"
     #     # - "linux/arm64"
