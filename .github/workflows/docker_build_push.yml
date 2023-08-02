@@ -21,14 +21,17 @@ jobs:
         include:
           - target: "default"
             dockerfile: ./docker/Dockerfile
-            platforms: linux/amd64,linux/arm64
+            platforms: linux/amd64 #,linux/arm64
+            # Aliases must be used only for release builds
+            aliases: jqtype/rpxy:latest
+              ghcr.io/junkurihara/rust-rpxy:latest
 
           - target: "default-slim"
             dockerfile: ./docker/Dockerfile-slim
             build-contexts: |
               messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
               messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
-            platforms: linux/amd64,linux/arm64
+            platforms: linux/amd64 #,linux/arm64
             tags-suffix: "-slim"
             # Aliases must be used only for release builds
             aliases: |
@@ -40,7 +43,7 @@ jobs:
             build-args: |
               "CARGO_FEATURES=--no-default-features --features http3-s2n"
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
-            platforms: linux/amd64,linux/arm64
+            platforms: linux/amd64 #,linux/arm64
             tags-suffix: "-s2n"
             # Aliases must be used only for release builds
             aliases: |
