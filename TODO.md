@@ -24,7 +24,7 @@
   - add option for sticky cookie name
   - add option for sticky cookie duration
 
-- Done in v0.5.0 ~~**Use `gchr.io`**~~
+- Done in v0.5.0 ~~Use `gchr.io`~~
 - Done in v0.5.0:
   ~~Consideration on migrating from `quinn` and `h3-quinn` to other QUIC implementations ([#57](https://github.com/junkurihara/rust-rpxy/issues/57))~~
 - Done in v0.4.0:

@@ -32,7 +32,7 @@ jobs:
             tags-suffix: "-slim"
             # Aliases must be used only for release builds
             aliases: |
-              "slim"
+              slim
 
           - target: "s2n"
             dockerfile: ./docker/Dockerfile
@@ -43,7 +43,7 @@ jobs:
             tags-suffix: "-s2n"
             # Aliases must be used only for release builds
             aliases: |
-              "s2n"
+              s2n
 
     steps:
       - name: Checkout
