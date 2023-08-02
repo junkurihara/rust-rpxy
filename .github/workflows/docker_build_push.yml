@@ -23,7 +23,8 @@ jobs:
             dockerfile: ./docker/Dockerfile
             platforms: linux/amd64 #,linux/arm64
             # Aliases must be used only for release builds
-            aliases: jqtype/rpxy:latest
+            aliases: |
+              jqtype/rpxy:latest
               ghcr.io/junkurihara/rust-rpxy:latest
 
           - target: "default-slim"
