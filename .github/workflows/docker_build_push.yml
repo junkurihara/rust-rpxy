@@ -32,7 +32,8 @@ jobs:
             tags-suffix: "-slim"
             # Aliases must be used only for release builds
             aliases: |
-              slim
+              jqtype/rpxy:slim
+              ghcr.io/junkurihara/rust-rpxy:slim
 
           - target: "s2n"
             dockerfile: ./docker/Dockerfile
@@ -43,7 +44,8 @@ jobs:
             tags-suffix: "-s2n"
             # Aliases must be used only for release builds
             aliases: |
-              s2n
+              jqtype/rpxy:s2n
+              ghcr.io/junkurihara/rust-rpxy:s2n
 
     steps:
       - name: Checkout
@@ -117,8 +119,7 @@ jobs:
           tags: |
             ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ env.DH_REGISTRY_NAME }}:latest${{ matrix.tags-suffix }}
-            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:${{ matrix.aliases }}
-            ${{ env.DH_REGISTRY_NAME }}:${{ matrix.aliases }}
+            ${{ matrix.aliases }}
           build-contexts: ${{ matrix.build-contexts }}
           file: ${{ matrix.dockerfile }}
           cache-from: type=gha,scope=rpxy-latest-${{ matrix.target }}
