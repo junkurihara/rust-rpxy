@@ -1,10 +1,15 @@
 # CHANGELOG
 
-## 0.5.0 (unreleased)
+## 0.6.0  (unreleased)
+
+## 0.5.0
 
 ### Improvement
 
 - Feat: `s2n-quic` with `s2n-quic-h3` is supported as QUIC and HTTP/3 library in addition to `quinn` with `h3-quinn`, related to #57.
+- Feat: Publish dockerfile for `rpxy` with `s2n-quic` on both `amd64` and `arm64`.
+- Feat: Start to publish docker images on `ghcr.io`
+- Refactor: logs of minor improvements
 
 ## 0.4.0
 

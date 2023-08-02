@@ -1,6 +1,6 @@
 # TODO List
 
-- [Try in v0.5.0] **Cache option for the response with `Cache-Control: public` header directive ([#55](https://github.com/junkurihara/rust-rpxy/issues/55))**
+- [Try in v0.6.0] **Cache option for the response with `Cache-Control: public` header directive ([#55](https://github.com/junkurihara/rust-rpxy/issues/55))**
 - Improvement of path matcher
 - More flexible option for rewriting path
 - Refactoring
