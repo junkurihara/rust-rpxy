@@ -17,7 +17,7 @@ pub const LOAD_CERTS_ONLY_WHEN_UPDATED: bool = true;
 // pub const H3_REQUEST_BUF_SIZE: usize = 65_536; // 64KB // handled by quinn
 
 #[allow(non_snake_case)]
-#[cfg(feature = "http3")]
+#[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
 pub mod H3 {
   pub const ALT_SVC_MAX_AGE: u32 = 3600;
   pub const REQUEST_MAX_BODY_SIZE: usize = 268_435_456; // 256MB

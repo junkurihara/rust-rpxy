@@ -23,6 +23,9 @@ pub mod reexports {
   pub use rustls::{Certificate, PrivateKey};
 }
 
+#[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
+compile_error!("feature \"http3-quinn\" and feature \"http3-s2n\" cannot be enabled at the same time");
+
 /// Entrypoint that creates and spawns tasks of reverse proxy services
 pub async fn entrypoint<T>(
   proxy_config: &ProxyConfig,
@@ -44,6 +47,7 @@ where
   if proxy_config.https_port.is_some() {
     info!("Listen port: {} (for TLS)", proxy_config.https_port.unwrap());
   }
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   if proxy_config.http3 {
     info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
   }

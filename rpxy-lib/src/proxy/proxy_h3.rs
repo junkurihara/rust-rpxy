@@ -1,8 +1,11 @@
 use super::Proxy;
 use crate::{certs::CryptoSource, error::*, log::*, utils::ServerNameBytesExp};
 use bytes::{Buf, Bytes};
-use h3::{quic::BidiStream, server::RequestStream};
+#[cfg(feature = "http3-quinn")]
+use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 use hyper::{client::connect::Connect, Body, Request, Response};
+#[cfg(feature = "http3-s2n")]
+use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 use std::net::SocketAddr;
 use tokio::time::{timeout, Duration};
 
@@ -11,67 +14,64 @@ where
   T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
-  pub(super) async fn connection_serve_h3(
+  pub(super) async fn connection_serve_h3<C>(
     self,
-    conn: quinn::Connecting,
+    quic_connection: C,
     tls_server_name: ServerNameBytesExp,
-  ) -> Result<()> {
-    let client_addr = conn.remote_address();
-
-    match conn.await {
-      Ok(new_conn) => {
-        let mut h3_conn = h3::server::Connection::<_, bytes::Bytes>::new(h3_quinn::Connection::new(new_conn)).await?;
-        info!(
-          "QUIC/HTTP3 connection established from {:?} {:?}",
-          client_addr, tls_server_name
-        );
-        // TODO: Is here enough to fetch server_name from NewConnection?
-        // to avoid deep nested call from listener_service_h3
-        loop {
-          // this routine follows hyperium/h3 examples https://github.com/hyperium/h3/blob/master/examples/server.rs
-          match h3_conn.accept().await {
-            Ok(None) => {
-              break;
-            }
-            Err(e) => {
-              warn!("HTTP/3 error on accept incoming connection: {}", e);
-              match e.get_error_level() {
-                h3::error::ErrorLevel::ConnectionError => break,
-                h3::error::ErrorLevel::StreamError => continue,
-              }
-            }
-            Ok(Some((req, stream))) => {
-              // We consider the connection count separately from the stream count.
-              // Max clients for h1/h2 = max 'stream' for h3.
-              let request_count = self.globals.request_count.clone();
-              if request_count.increment() > self.globals.proxy_config.max_clients {
-                request_count.decrement();
-                h3_conn.shutdown(0).await?;
-                break;
-              }
-              debug!("Request incoming: current # {}", request_count.current());
-
-              let self_inner = self.clone();
-              let tls_server_name_inner = tls_server_name.clone();
-              self.globals.runtime_handle.spawn(async move {
-                if let Err(e) = timeout(
-                  self_inner.globals.proxy_config.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
-                  self_inner.stream_serve_h3(req, stream, client_addr, tls_server_name_inner),
-                )
-                .await
-                {
-                  error!("HTTP/3 failed to process stream: {}", e);
-                }
-                request_count.decrement();
-                debug!("Request processed: current # {}", request_count.current());
-              });
-            }
+    client_addr: SocketAddr,
+  ) -> Result<()>
+  where
+    C: ConnectionQuic<Bytes>,
+    <C as ConnectionQuic<Bytes>>::BidiStream: BidiStream<Bytes> + Send + 'static,
+    <<C as ConnectionQuic<Bytes>>::BidiStream as BidiStream<Bytes>>::RecvStream: Send,
+    <<C as ConnectionQuic<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
+  {
+    let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
+    info!(
+      "QUIC/HTTP3 connection established from {:?} {:?}",
+      client_addr, tls_server_name
+    );
+    // TODO: Is here enough to fetch server_name from NewConnection?
+    // to avoid deep nested call from listener_service_h3
+    loop {
+      // this routine follows hyperium/h3 examples https://github.com/hyperium/h3/blob/master/examples/server.rs
+      match h3_conn.accept().await {
+        Ok(None) => {
+          break;
+        }
+        Err(e) => {
+          warn!("HTTP/3 error on accept incoming connection: {}", e);
+          match e.get_error_level() {
+            h3::error::ErrorLevel::ConnectionError => break,
+            h3::error::ErrorLevel::StreamError => continue,
           }
         }
-      }
-      Err(err) => {
-        warn!("QUIC accepting connection failed: {:?}", err);
-        return Err(RpxyError::QuicConn(err));
+        Ok(Some((req, stream))) => {
+          // We consider the connection count separately from the stream count.
+          // Max clients for h1/h2 = max 'stream' for h3.
+          let request_count = self.globals.request_count.clone();
+          if request_count.increment() > self.globals.proxy_config.max_clients {
+            request_count.decrement();
+            h3_conn.shutdown(0).await?;
+            break;
+          }
+          debug!("Request incoming: current # {}", request_count.current());
+
+          let self_inner = self.clone();
+          let tls_server_name_inner = tls_server_name.clone();
+          self.globals.runtime_handle.spawn(async move {
+            if let Err(e) = timeout(
+              self_inner.globals.proxy_config.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
+              self_inner.stream_serve_h3(req, stream, client_addr, tls_server_name_inner),
+            )
+            .await
+            {
+              error!("HTTP/3 failed to process stream: {}", e);
+            }
+            request_count.decrement();
+            debug!("Request processed: current # {}", request_count.current());
+          });
+        }
       }
     }
 

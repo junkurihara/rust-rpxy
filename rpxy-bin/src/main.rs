@@ -19,6 +19,9 @@ use crate::{
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use rpxy_lib::entrypoint;
 
+#[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
+compile_error!("feature \"http3-quinn\" and feature \"http3-s2n\" cannot be enabled at the same time");
+
 fn main() {
   init_logger();
 

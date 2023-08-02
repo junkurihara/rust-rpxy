@@ -1,7 +1,7 @@
 version: "3"
 services:
   rpxy-rp:
-    image: jqtype/rpxy:latest # ghcr.io/junkurihara/rust-rpxy:latest also works
+    image: jqtype/rpxy:slim # ghcr.io/junkurihara/rust-rpxy:slim also works
     container_name: rpxy
     init: true
     restart: unless-stopped
@@ -11,10 +11,10 @@ services:
       - 127.0.0.1:8443:8443/tcp
     # build: # Uncomment if you build yourself
     #   context: ../
-    #   args: # Uncomment when build quic-s2n version
-    #     - "CARGO_FEATURES=--no-default-features --features http3-s2n"
-    #     - "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
-    #   dockerfile: ./docker/Dockerfile # based on ubuntu 22.04 and build x86_64-unknown-linux-gnu
+    #   additional_contexts:
+    #     - messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
+    #     - messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
+    #   dockerfile: ./docker/Dockerfile-slim # based on alpine and build x86_64-unknown-linux-musl
     #   platforms: # Choose your platforms
     #     - "linux/amd64"
     #     # - "linux/arm64"

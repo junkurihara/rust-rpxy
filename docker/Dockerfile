@@ -9,12 +9,17 @@ FROM --platform=$BUILDPLATFORM base AS builder
 
 ENV CFLAGS=-Ofast
 ENV BUILD_DEPS curl make ca-certificates build-essential
+ENV TARGET_SUFFIX=unknown-linux-gnu
 
 WORKDIR /tmp
 
 COPY . /tmp/
 
 ARG TARGETARCH
+ARG CARGO_FEATURES
+ENV CARGO_FEATURES ${CARGO_FEATURES}
+ARG ADDITIONAL_DEPS
+ENV ADDITIONAL_DEPS ${ADDITIONAL_DEPS}
 
 RUN if [ $TARGETARCH = "amd64" ]; then \
   echo "x86_64" > /arch; \
@@ -29,15 +34,15 @@ ENV RUSTFLAGS "-C link-arg=-s"
 
 RUN update-ca-certificates 2> /dev/null || true
 
-RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS && \
+RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS ${ADDITIONAL_DEPS} && \
   curl -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain stable && \
   export PATH="$HOME/.cargo/bin:$PATH" && \
   echo "Install toolchain" && \
-  rustup target add $(cat /arch)-unknown-linux-gnu &&\
+  rustup target add $(cat /arch)-${TARGET_SUFFIX} && \
   echo "Building rpxy from source" && \
-  cargo build --release --target=$(cat /arch)-unknown-linux-gnu && \
-  strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-gnu/release/rpxy &&\
-  cp /tmp/target/$(cat /arch)-unknown-linux-gnu/release/rpxy /tmp/target/release/rpxy
+  cargo build --release --target=$(cat /arch)-${TARGET_SUFFIX} ${CARGO_FEATURES} && \
+  strip --strip-all /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy &&\
+  cp /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy /tmp/target/release/rpxy
 
 ########################################
 FROM --platform=$TARGETPLATFORM base AS runner

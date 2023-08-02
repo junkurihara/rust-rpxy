@@ -1,17 +1,49 @@
 name: Build and Publish Docker
-
 on:
   push:
     branches:
-      - main
-      - develop
+      - "develop"
+      - "main"
+  pull_request:
+    types: [synchronize, opened]
 
 env:
-  REGISTRY_IMAGE: jqtype/rpxy
+  GHCR: ghcr.io
+  GHCR_IMAGE_NAME: ${{ github.repository }}
+  DH_REGISTRY_NAME: jqtype/rpxy
 
 jobs:
   build_and_push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: "default"
+            dockerfile: ./docker/Dockerfile
+            platforms: linux/amd64,linux/arm64
+
+          - target: "default-slim"
+            dockerfile: ./docker/Dockerfile-slim
+            build-contexts: |
+              messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
+              messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
+            platforms: linux/amd64,linux/arm64
+            tags-suffix: "-slim"
+            # Aliases must be used only for release builds
+            aliases: |
+              "slim"
+
+          - target: "s2n"
+            dockerfile: ./docker/Dockerfile
+            build-args: |
+              "CARGO_FEATURES=--no-default-features --features http3-s2n"
+              "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
+            platforms: linux/amd64,linux/arm64
+            tags-suffix: "-s2n"
+            # Aliases must be used only for release builds
+            aliases: |
+              "s2n"
 
     steps:
       - name: Checkout
@@ -19,14 +51,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: GitHub Environment
-        run: echo "BRANCH=${GITHUB_REF##*/}" >> $GITHUB_ENV
-
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY_IMAGE }}
+          images: ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -34,70 +63,65 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Release build and push
-        if: ${{ env.BRANCH == 'main' }}
+      - name: Nightly build test on amd64 for pull requests
+        if: ${{ github.event_name == 'pull_request' }}
         uses: docker/build-push-action@v4
         with:
           context: .
-          push: true
-          tags: |
-            ${{ env.REGISTRY_IMAGE }}:latest
-          file: ./docker/Dockerfile
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          build-args: ${{ matrix.build-args }}
+          push: false
+          build-contexts: ${{ matrix.build-contexts }}
+          file: ${{ matrix.dockerfile }}
+          cache-from: type=gha,scope=rpxy-nightly-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=rpxy-nightly-${{ matrix.target }}
+          platforms: linux/amd64
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Release build and push slim
-        if: ${{ env.BRANCH == 'main' }}
+      - name: Nightly build and push from develop branch
+        if: ${{ (github.ref_name == 'develop') && (github.event_name == 'push') }}
         uses: docker/build-push-action@v4
         with:
           context: .
+          build-args: ${{ matrix.build-args }}
           push: true
           tags: |
-            ${{ env.REGISTRY_IMAGE }}:slim, ${{ env.REGISTRY_IMAGE }}:latest-slim
-          build-contexts: |
-            messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
-            messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
-          file: ./docker/Dockerfile.slim
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:nightly${{ matrix.tags-suffix }}
+            ${{ env.DH_REGISTRY_NAME }}:nightly${{ matrix.tags-suffix }}
+          build-contexts: ${{ matrix.build-contexts }}
+          file: ${{ matrix.dockerfile }}
+          cache-from: type=gha,scope=rpxy-nightly-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=rpxy-nightly-${{ matrix.target }}
+          platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Nightly build and push
-        if: ${{ env.BRANCH == 'develop' }}
+      - name: Release build and push from main branch
+        if: ${{ (github.ref_name == 'main') && (github.event_name == 'push') }}
         uses: docker/build-push-action@v4
         with:
           context: .
+          build-args: ${{ matrix.build-args }}
           push: true
           tags: |
-            ${{ env.REGISTRY_IMAGE }}:nightly
-          file: ./docker/Dockerfile
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
-          labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Nightly build and push slim
-        if: ${{ env.BRANCH == 'develop' }}
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.REGISTRY_IMAGE }}:nightly-slim
-          build-contexts: |
-            messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
-            messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
-          file: ./docker/Dockerfile.slim
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:latest${{ matrix.tags-suffix }}
+            ${{ env.DH_REGISTRY_NAME }}:latest${{ matrix.tags-suffix }}
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:${{ matrix.aliases }}
+            ${{ env.DH_REGISTRY_NAME }}:${{ matrix.aliases }}
+          build-contexts: ${{ matrix.build-contexts }}
+          file: ${{ matrix.dockerfile }}
+          cache-from: type=gha,scope=rpxy-latest-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=rpxy-latest-${{ matrix.target }}
+          platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
