@@ -23,7 +23,7 @@ pub(super) fn takeout_sticky_cookie_lb_context(
 ) -> Result<Option<LbContext>> {
   let mut headers_clone = headers.clone();
 
-  match headers_clone.entry(hyper::header::COOKIE) {
+  match headers_clone.entry(header::COOKIE) {
     header::Entry::Vacant(_) => Ok(None),
     header::Entry::Occupied(entry) => {
       let cookies_iter = entry
@@ -43,8 +43,8 @@ pub(super) fn takeout_sticky_cookie_lb_context(
       }
       let cookies_passed_to_upstream = without_sticky_cookies.join("; ");
       let cookie_passed_to_lb = sticky_cookies.first().unwrap();
-      headers.remove(hyper::header::COOKIE);
-      headers.insert(hyper::header::COOKIE, cookies_passed_to_upstream.parse()?);
+      headers.remove(header::COOKIE);
+      headers.insert(header::COOKIE, cookies_passed_to_upstream.parse()?);
 
       let sticky_cookie = StickyCookie {
         value: StickyCookieValue::try_from(cookie_passed_to_lb, expected_cookie_name)?,
@@ -63,7 +63,7 @@ pub(super) fn set_sticky_cookie_lb_context(headers: &mut HeaderMap, context_from
   let sticky_cookie_string: String = context_from_lb.sticky_cookie.clone().try_into()?;
   let new_header_val: HeaderValue = sticky_cookie_string.parse()?;
   let expected_cookie_name = &context_from_lb.sticky_cookie.value.name;
-  match headers.entry(hyper::header::SET_COOKIE) {
+  match headers.entry(header::SET_COOKIE) {
     header::Entry::Vacant(entry) => {
       entry.insert(new_header_val);
     }
@@ -173,13 +173,13 @@ pub(super) fn add_header_entry_overwrite_if_exist(
 pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
   let cookies = headers
     .iter()
-    .filter(|(k, _)| **k == hyper::header::COOKIE)
+    .filter(|(k, _)| **k == header::COOKIE)
     .map(|(_, v)| v.to_str().unwrap_or(""))
     .collect::<Vec<_>>()
     .join("; ");
   if !cookies.is_empty() {
-    headers.remove(hyper::header::COOKIE);
-    headers.insert(hyper::header::COOKIE, HeaderValue::from_bytes(cookies.as_bytes())?);
+    headers.remove(header::COOKIE);
+    headers.insert(header::COOKIE, HeaderValue::from_bytes(cookies.as_bytes())?);
   }
   Ok(())
 }
