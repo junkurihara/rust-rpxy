@@ -70,6 +70,7 @@ where
     .enable_http2()
     .build();
 
+  // TODO: HTTP2 only client is needed for http2 cleartext case
   let msg_handler = HttpMessageHandlerBuilder::default()
     .forwarder(Arc::new(Client::builder().build::<_, hyper::Body>(connector)))
     .globals(globals.clone())
