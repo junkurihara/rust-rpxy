@@ -78,7 +78,7 @@ load_balance = "random" # or "round_robin" or "sticky" (sticky session) or "none
 upstream_options = [
   "override_host",
   "upgrade_insecure_requests",
-  "convert_https_to_11",
+  "force_http11_upstream",
 ]
 ######################################################################
 
