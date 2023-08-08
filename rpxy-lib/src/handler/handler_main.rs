@@ -3,6 +3,7 @@ use super::{utils_headers::*, utils_request::*, utils_synth_response::*, Handler
 use crate::{
   backend::{Backend, UpstreamGroup},
   certs::CryptoSource,
+  constants::RESPONSE_HEADER_SERVER,
   error::*,
   globals::Globals,
   log::*,
@@ -15,7 +16,7 @@ use hyper::{
   http::uri::Scheme,
   Body, Client, Request, Response, StatusCode, Uri, Version,
 };
-use std::{env, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{io::copy_bidirectional, time::timeout};
 
 #[derive(Clone, Builder)]
@@ -208,7 +209,7 @@ where
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
-    add_header_entry_overwrite_if_exist(headers, "server", env!("CARGO_PKG_NAME"))?;
+    add_header_entry_overwrite_if_exist(headers, "server", RESPONSE_HEADER_SERVER)?;
 
     #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {

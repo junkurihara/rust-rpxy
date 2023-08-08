@@ -115,7 +115,7 @@ impl ServerCryptoBase {
         // add client certificate if specified
         match certs_and_keys.parse_client_ca_certs() {
           Ok((owned_trust_anchors, _subject_key_ids)) => {
-            client_ca_roots_local.add_server_trust_anchors(owned_trust_anchors.into_iter());
+            client_ca_roots_local.add_trust_anchors(owned_trust_anchors.into_iter());
           }
           Err(e) => {
             warn!(
