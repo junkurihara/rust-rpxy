@@ -8,9 +8,14 @@ mod log;
 mod proxy;
 mod utils;
 
-use crate::{error::*, globals::Globals, handler::HttpMessageHandlerBuilder, log::*, proxy::ProxyBuilder};
+use crate::{
+  error::*,
+  globals::Globals,
+  handler::{Forwarder, HttpMessageHandlerBuilder},
+  log::*,
+  proxy::ProxyBuilder,
+};
 use futures::future::select_all;
-use hyper::Client;
 // use hyper_trust_dns::TrustDnsResolver;
 use std::sync::Arc;
 
@@ -62,17 +67,10 @@ where
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
   });
-  // let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
-  let connector = hyper_rustls::HttpsConnectorBuilder::new()
-    .with_webpki_roots()
-    .https_or_http()
-    .enable_http1()
-    .enable_http2()
-    .build();
 
   // TODO: HTTP2 only client is needed for http2 cleartext case
   let msg_handler = HttpMessageHandlerBuilder::default()
-    .forwarder(Arc::new(Client::builder().build::<_, hyper::Body>(connector)))
+    .forwarder(Arc::new(Forwarder::new().await))
     .globals(globals.clone())
     .build()?;
 

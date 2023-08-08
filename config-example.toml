@@ -56,7 +56,10 @@ upstream = [
   { location = 'www.yahoo.co.jp', tls = true },
 ]
 load_balance = "round_robin" # or "random" or "sticky" (sticky session) or "none" (fix to the first one, default)
-upstream_options = ["override_host", "convert_https_to_2"]
+upstream_options = [
+  "override_host",
+  "force_http2_upstream", # mutually exclusive with "force_http11_upstream"
+]
 
 # Non-default destination in "localhost" app, which is routed by "path"
 [[apps.localhost.reverse_proxy]]

@@ -1,5 +1,11 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
-use super::{utils_headers::*, utils_request::*, utils_synth_response::*, HandlerContext};
+use super::{
+  forwarder::{ForwardRequest, Forwarder},
+  utils_headers::*,
+  utils_request::*,
+  utils_synth_response::*,
+  HandlerContext,
+};
 use crate::{
   backend::{Backend, UpstreamGroup},
   certs::CryptoSource,
@@ -14,7 +20,7 @@ use hyper::{
   client::connect::Connect,
   header::{self, HeaderValue},
   http::uri::Scheme,
-  Body, Client, Request, Response, StatusCode, Uri, Version,
+  Body, Request, Response, StatusCode, Uri, Version,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{io::copy_bidirectional, time::timeout};
@@ -27,7 +33,7 @@ where
   T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone,
 {
-  forwarder: Arc<Client<T>>,
+  forwarder: Arc<Forwarder<T>>,
   globals: Arc<Globals<U>>,
 }
 
