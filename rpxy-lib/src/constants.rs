@@ -1,3 +1,4 @@
+pub const RESPONSE_HEADER_SERVER: &str = "rpxy";
 // pub const LISTEN_ADDRESSES_V4: &[&str] = &["0.0.0.0"];
 // pub const LISTEN_ADDRESSES_V6: &[&str] = &["[::]"];
 pub const TCP_LISTEN_BACKLOG: u32 = 1024;
