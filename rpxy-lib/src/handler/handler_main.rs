@@ -363,19 +363,16 @@ where
     }
 
     // If not specified (force_httpXX_upstream) and https, version is preserved except for http/3
-    match req.version() {
-      Version::HTTP_3 => {
-        debug!("HTTP/3 is currently unsupported for request to upstream.");
-        *req.version_mut() = Version::HTTP_2;
-      }
-      _ => {
-        if upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
-          // Change version to http/1.1 when destination scheme is http
-          debug!("Change version to http/1.1 when destination scheme is http.");
-          *req.version_mut() = Version::HTTP_11;
-        }
-      }
+    if upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
+      // Change version to http/1.1 when destination scheme is http
+      debug!("Change version to http/1.1 when destination scheme is http.");
+      *req.version_mut() = Version::HTTP_11;
+    } else if req.version() == Version::HTTP_3 {
+      // HTTP/3 is always https
+      debug!("HTTP/3 is currently unsupported for request to upstream.");
+      *req.version_mut() = Version::HTTP_2;
     }
+
     apply_upstream_options_to_request_line(req, upstream_group)?;
 
     Ok(context)
