@@ -23,6 +23,7 @@ where
 {
   // TODO: need `h2c` or http/2-only client separately
   inner: Client<C, B>,
+  // TODO: maybe this forwarder definition is suitable for cache handling.
 }
 
 #[async_trait]
