@@ -1,4 +1,5 @@
 use crate::utils::ToCanonical;
+use hyper::header;
 use std::net::SocketAddr;
 pub use tracing::{debug, error, info, warn};
 
@@ -20,7 +21,7 @@ pub struct MessageLog {
 
 impl<T> From<&hyper::Request<T>> for MessageLog {
   fn from(req: &hyper::Request<T>) -> Self {
-    let header_mapper = |v: hyper::header::HeaderName| {
+    let header_mapper = |v: header::HeaderName| {
       req
         .headers()
         .get(v)
@@ -31,7 +32,7 @@ impl<T> From<&hyper::Request<T>> for MessageLog {
       // tls_server_name: "".to_string(),
       client_addr: "".to_string(),
       method: req.method().to_string(),
-      host: header_mapper(hyper::header::HOST),
+      host: header_mapper(header::HOST),
       p_and_q: req
         .uri()
         .path_and_query()
@@ -40,8 +41,8 @@ impl<T> From<&hyper::Request<T>> for MessageLog {
       version: req.version(),
       uri_scheme: req.uri().scheme_str().unwrap_or("").to_string(),
       uri_host: req.uri().host().unwrap_or("").to_string(),
-      ua: header_mapper(hyper::header::USER_AGENT),
-      xff: header_mapper(hyper::header::HeaderName::from_static("x-forwarded-for")),
+      ua: header_mapper(header::USER_AGENT),
+      xff: header_mapper(header::HeaderName::from_static("x-forwarded-for")),
       status: "".to_string(),
       upstream: "".to_string(),
     }
@@ -61,7 +62,7 @@ impl MessageLog {
     self.status = status_code.to_string();
     self
   }
-  pub fn xff(&mut self, xff: &Option<&hyper::header::HeaderValue>) -> &mut Self {
+  pub fn xff(&mut self, xff: &Option<&header::HeaderValue>) -> &mut Self {
     self.xff = xff.map_or_else(|| "", |v| v.to_str().unwrap_or("")).to_string();
     self
   }

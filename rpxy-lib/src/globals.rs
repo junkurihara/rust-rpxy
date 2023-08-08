@@ -225,7 +225,8 @@ where
     }
 
     if !(upstream.iter().all(|(_, elem)| {
-      !(elem.opts.contains(&UpstreamOption::ConvertHttpsTo11) && elem.opts.contains(&UpstreamOption::ConvertHttpsTo2))
+      !(elem.opts.contains(&UpstreamOption::ForceHttp11Upstream)
+        && elem.opts.contains(&UpstreamOption::ForceHttp2Upstream))
     })) {
       error!("Either one of force_http11 or force_http2 can be enabled");
       return Err(RpxyError::ConfigBuild("Invalid upstream option setting"));

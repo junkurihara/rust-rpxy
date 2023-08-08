@@ -4,8 +4,8 @@ use crate::error::*;
 pub enum UpstreamOption {
   OverrideHost,
   UpgradeInsecureRequests,
-  ConvertHttpsTo11,
-  ConvertHttpsTo2,
+  ForceHttp11Upstream,
+  ForceHttp2Upstream,
   // TODO: Adds more options for heder override
 }
 impl TryFrom<&str> for UpstreamOption {
@@ -14,8 +14,8 @@ impl TryFrom<&str> for UpstreamOption {
     match val {
       "override_host" => Ok(Self::OverrideHost),
       "upgrade_insecure_requests" => Ok(Self::UpgradeInsecureRequests),
-      "convert_https_to_11" => Ok(Self::ConvertHttpsTo11),
-      "convert_https_to_2" => Ok(Self::ConvertHttpsTo2),
+      "force_http11_upstream" => Ok(Self::ForceHttp11Upstream),
+      "force_http2_upstream" => Ok(Self::ForceHttp2Upstream),
       _ => Err(RpxyError::Other(anyhow!("Unsupported header option"))),
     }
   }

@@ -11,8 +11,12 @@ use hyper::{header, Request};
 pub(super) fn apply_upstream_options_to_request_line<B>(req: &mut Request<B>, upstream: &UpstreamGroup) -> Result<()> {
   for opt in upstream.opts.iter() {
     match opt {
-      UpstreamOption::ConvertHttpsTo11 => *req.version_mut() = hyper::Version::HTTP_11,
-      UpstreamOption::ConvertHttpsTo2 => *req.version_mut() = hyper::Version::HTTP_2,
+      UpstreamOption::ForceHttp11Upstream => *req.version_mut() = hyper::Version::HTTP_11,
+      UpstreamOption::ForceHttp2Upstream => {
+        // case: h2c -> https://www.rfc-editor.org/rfc/rfc9113.txt
+        // Upgrade from HTTP/1.1 to HTTP/2 is deprecated. So, http-2 prior knowledge is required.
+        *req.version_mut() = hyper::Version::HTTP_2;
+      }
       _ => (),
     }
   }
