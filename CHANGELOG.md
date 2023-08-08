@@ -2,6 +2,15 @@
 
 ## 0.6.0  (unreleased)
 
+### Improvement
+
+- Feat: Enabled `h2c` (HTTP/2 cleartext) requests to upstream app servers (in the previous versions, only HTTP/1.1 is allowed for cleartext requests)
+- Refactor: logs of minor improvements
+
+### Bugfix
+
+- Fix: fix `server` in the response header (`rpxy_lib` -> `rpxy`)
+
 ## 0.5.0
 
 ### Improvement

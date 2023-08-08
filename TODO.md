@@ -1,6 +1,6 @@
 # TODO List
 
-- [Try in v0.5.1 or 0.6.0] Fix strategy for `h2c` requests on forwarded requests upstream. This needs to update forwarder definition. Also, maybe forwarder would have a cache corresponding to the following task.
+- [Done in 0.6.0] ~~Fix strategy for `h2c` requests on forwarded requests upstream. This needs to update forwarder definition. Also, maybe forwarder would have a cache corresponding to the following task.~~
 - [Try in v0.6.0] **Cache option for the response with `Cache-Control: public` header directive ([#55](https://github.com/junkurihara/rust-rpxy/issues/55))**
 - Improvement of path matcher
 - More flexible option for rewriting path
