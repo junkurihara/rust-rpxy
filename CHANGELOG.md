@@ -10,6 +10,7 @@
 ### Bugfix
 
 - Fix: fix `server` in the response header (`rpxy_lib` -> `rpxy`)
+- Fix: fix bug for hot-reloading configuration file (Add termination notification receiver in proxy services)
 
 ## 0.5.0
 

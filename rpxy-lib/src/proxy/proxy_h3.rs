@@ -15,7 +15,7 @@ where
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn connection_serve_h3<C>(
-    self,
+    &self,
     quic_connection: C,
     tls_server_name: ServerNameBytesExp,
     client_addr: SocketAddr,
@@ -79,7 +79,7 @@ where
   }
 
   async fn stream_serve_h3<S>(
-    self,
+    &self,
     req: Request<()>,
     stream: RequestStream<S, Bytes>,
     client_addr: SocketAddr,
