@@ -36,6 +36,7 @@ pub async fn entrypoint<T>(
   proxy_config: &ProxyConfig,
   app_config_list: &AppConfigList<T>,
   runtime_handle: &tokio::runtime::Handle,
+  term_notify: Option<Arc<tokio::sync::Notify>>,
 ) -> Result<()>
 where
   T: CryptoSource + Clone + Send + Sync + 'static,
@@ -68,7 +69,7 @@ where
     runtime_handle: runtime_handle.clone(),
   });
 
-  // TODO: HTTP2 only client is needed for http2 cleartext case
+  // build message handler including a request forwarder
   let msg_handler = Arc::new(
     HttpMessageHandlerBuilder::default()
       .forwarder(Arc::new(Forwarder::new().await))
@@ -91,7 +92,7 @@ where
       .build()
       .unwrap();
 
-    globals.runtime_handle.spawn(proxy.start())
+    globals.runtime_handle.spawn(proxy.start(term_notify.clone()))
   }));
 
   // wait for all future

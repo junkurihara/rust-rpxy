@@ -8,6 +8,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{
   io::{AsyncRead, AsyncWrite},
   runtime::Handle,
+  sync::Notify,
   time::{timeout, Duration},
 };
 
@@ -123,7 +124,7 @@ where
   }
 
   /// Entrypoint for HTTP/1.1 and HTTP/2 servers
-  pub async fn start(self) -> Result<()> {
+  pub async fn start(self, term_notify: Option<Arc<Notify>>) -> Result<()> {
     let mut server = Http::new();
     server.http1_keep_alive(self.globals.proxy_config.keepalive);
     server.http2_max_concurrent_streams(self.globals.proxy_config.max_concurrent_streams);
@@ -131,11 +132,34 @@ where
     let executor = LocalExecutor::new(self.globals.runtime_handle.clone());
     let server = server.with_executor(executor);
 
-    if self.tls_enabled {
-      self.start_with_tls(server).await?;
-    } else {
-      self.start_without_tls(server).await?;
+    let listening_on = self.listening_on;
+
+    let proxy_service = async {
+      if self.tls_enabled {
+        self.start_with_tls(server).await
+      } else {
+        self.start_without_tls(server).await
+      }
+    };
+
+    match term_notify {
+      Some(term) => {
+        tokio::select! {
+          _ = proxy_service => {
+            warn!("Proxy service got down");
+          }
+          _ = term.notified() => {
+            info!("Proxy service listening on {} receives term signal", listening_on);
+          }
+        }
+      }
+      None => {
+        proxy_service.await?;
+        warn!("Proxy service got down");
+      }
     }
+
+    // proxy_service.await?;
 
     Ok(())
   }
