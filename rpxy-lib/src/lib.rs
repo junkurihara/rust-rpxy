@@ -69,10 +69,12 @@ where
   });
 
   // TODO: HTTP2 only client is needed for http2 cleartext case
-  let msg_handler = HttpMessageHandlerBuilder::default()
-    .forwarder(Arc::new(Forwarder::new().await))
-    .globals(globals.clone())
-    .build()?;
+  let msg_handler = Arc::new(
+    HttpMessageHandlerBuilder::default()
+      .forwarder(Arc::new(Forwarder::new().await))
+      .globals(globals.clone())
+      .build()?,
+  );
 
   let addresses = globals.proxy_config.listen_sockets.clone();
   let futures = select_all(addresses.into_iter().map(|addr| {

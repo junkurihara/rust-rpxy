@@ -50,7 +50,7 @@ where
 
   /// Handle incoming request message from a client
   pub async fn handle_request(
-    self,
+    &self,
     mut req: Request<Body>,
     client_addr: SocketAddr, // アクセス制御用
     listen_addr: SocketAddr,
