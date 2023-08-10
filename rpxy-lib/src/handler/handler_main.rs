@@ -365,7 +365,7 @@ where
     // If not specified (force_httpXX_upstream) and https, version is preserved except for http/3
     if upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
       // Change version to http/1.1 when destination scheme is http
-      debug!("Change version to http/1.1 when destination scheme is http.");
+      debug!("Change version to http/1.1 when destination scheme is http unless upstream option enabled.");
       *req.version_mut() = Version::HTTP_11;
     } else if req.version() == Version::HTTP_3 {
       // HTTP/3 is always https

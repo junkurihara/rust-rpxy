@@ -59,7 +59,7 @@ impl Forwarder<HttpsConnector<HttpConnector>, Body> {
     let connector_h2 = hyper_rustls::HttpsConnectorBuilder::new()
       .with_webpki_roots()
       .https_or_http()
-      .enable_http1()
+      .enable_http2()
       .build();
 
     let inner = Client::builder().build::<_, Body>(connector);
