@@ -6,7 +6,7 @@ use crate::{
 use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
-use std::{fs, net::SocketAddr};
+use std::{fs, net::SocketAddr, path::PathBuf};
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct ConfigToml {
@@ -32,10 +32,17 @@ pub struct Http3Option {
   pub max_idle_timeout: Option<u64>,
 }
 
+#[cfg(feature = "cache")]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
+pub struct CacheOption {
+  pub cache_dir: Option<String>,
+}
+
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Experimental {
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3: Option<Http3Option>,
+  pub cache: Option<CacheOption>,
   pub ignore_sni_consistency: Option<bool>,
 }
 
@@ -159,6 +166,14 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 
       if let Some(ignore) = exp.ignore_sni_consistency {
         proxy_config.sni_consistency = !ignore;
+      }
+
+      if let Some(cache_option) = &exp.cache {
+        proxy_config.cache_enabled = true;
+        proxy_config.cache_dir = match &cache_option.cache_dir {
+          Some(cache_dir) => Some(PathBuf::from(cache_dir)),
+          None => Some(PathBuf::from(CACHE_DIR)),
+        }
       }
     }
 

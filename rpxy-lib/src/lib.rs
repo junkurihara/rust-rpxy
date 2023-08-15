@@ -22,6 +22,7 @@ use std::sync::Arc;
 pub use crate::{
   certs::{CertsAndKeys, CryptoSource},
   globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
+  handler::CacheObject,
 };
 pub mod reexports {
   pub use hyper::Uri;
@@ -60,6 +61,12 @@ where
   if !proxy_config.sni_consistency {
     info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
   }
+  if proxy_config.cache_enabled {
+    info!(
+      "Cache is enabled: cache dir = {:?}",
+      proxy_config.cache_dir.as_ref().unwrap()
+    );
+  }
 
   // build global
   let globals = Arc::new(Globals {
@@ -72,7 +79,7 @@ where
   // build message handler including a request forwarder
   let msg_handler = Arc::new(
     HttpMessageHandlerBuilder::default()
-      .forwarder(Arc::new(Forwarder::new().await))
+      .forwarder(Arc::new(Forwarder::new(&globals).await))
       .globals(globals.clone())
       .build()?,
   );

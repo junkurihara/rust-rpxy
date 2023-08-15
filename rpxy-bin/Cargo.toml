@@ -12,27 +12,28 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn"]
+default = ["http3-quinn", "cache"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
+cache = []
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
 ] }
 
-anyhow = "1.0.72"
+anyhow = "1.0.73"
 rustc-hash = "1.1.0"
 serde = { version = "1.0.183", default-features = false, features = ["derive"] }
 derive_builder = "0.12.0"
-tokio = { version = "1.29.1", default-features = false, features = [
+tokio = { version = "1.31.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
 ] }
-async-trait = "0.1.72"
+async-trait = "0.1.73"
 rustls-pemfile = "1.0.3"
 
 # config

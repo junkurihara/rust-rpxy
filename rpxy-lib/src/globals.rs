@@ -9,11 +9,11 @@ use crate::{
   utils::{BytesName, PathNameBytesExp},
 };
 use rustc_hash::FxHashMap as HashMap;
-use std::net::SocketAddr;
 use std::sync::{
   atomic::{AtomicUsize, Ordering},
   Arc,
 };
+use std::{net::SocketAddr, path::PathBuf};
 use tokio::time::Duration;
 
 /// Global object containing proxy configurations and shared object like counters.
@@ -52,6 +52,10 @@ pub struct ProxyConfig {
 
   // experimentals
   pub sni_consistency: bool, // Handler
+
+  pub cache_enabled: bool,
+  pub cache_dir: Option<PathBuf>,
+
   // All need to make packet acceptor
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub http3: bool,
@@ -86,6 +90,9 @@ impl Default for ProxyConfig {
       keepalive: true,
 
       sni_consistency: true,
+
+      cache_enabled: false,
+      cache_dir: None,
 
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       http3: false,

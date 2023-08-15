@@ -1,3 +1,4 @@
+mod cache;
 mod forwarder;
 mod handler_main;
 mod utils_headers;
@@ -6,6 +7,7 @@ mod utils_synth_response;
 
 #[cfg(feature = "sticky-cookie")]
 use crate::backend::LbContext;
+pub use cache::CacheObject;
 pub use {
   forwarder::Forwarder,
   handler_main::{HttpMessageHandler, HttpMessageHandlerBuilder, HttpMessageHandlerBuilderError},
