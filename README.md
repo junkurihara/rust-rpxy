@@ -257,7 +257,7 @@ Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml`
 
 ### HTTP/3
 
-`rpxy` can serves HTTP/3 requests thanks to `quinn` and `hyperium/h3`. To enable this experimental feature, add an entry `experimental.h3` in your `config.toml` like follows. Any values in the entry like `alt_svc_max_age` are optional.
+`rpxy` can serves HTTP/3 requests thanks to `quinn`, `s2n-quic` and `hyperium/h3`. To enable this experimental feature, add an entry `experimental.h3` in your `config.toml` like follows. Any values in the entry like `alt_svc_max_age` are optional.
 
 ```toml
 [experimental.h3]
