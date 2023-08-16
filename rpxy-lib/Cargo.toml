@@ -75,7 +75,7 @@ s2n-quic-rustls = { path = "../submodules/s2n-quic/quic/s2n-quic-rustls/", optio
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics/" }
-moka = { version = "0.11.3", features = ["future"] }
+moka = { version = "0.11.3", features = ["future", "sync"] }
 
 # cookie handling for sticky cookie
 chrono = { version = "0.4.26", default-features = false, features = [

@@ -53,7 +53,6 @@ where
   async fn request(&self, req: Request<B>) -> Result<Response<Body>, Self::Error> {
     let mut synth_req = None;
     if self.cache.is_some() {
-      debug!("Search cache first");
       if let Some(cached_response) = self.cache.as_ref().unwrap().get(&req).await {
         // if found, return it as response.
         debug!("Cache hit - Return from cache");

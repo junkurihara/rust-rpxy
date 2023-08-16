@@ -106,11 +106,12 @@ impl RpxyCache {
       };
 
       let Ok(mut file) = File::open(&filepath.clone()).await else {
-        warn!("Cache file doesn't exist. Remove pointer cache.");
-        let my_cache = self.inner.clone();
-        self.runtime_handle.spawn(async move {
-          my_cache.invalidate(&moka_key).await;
-        });
+        warn!("Cache file object doesn't exist. Remove cache entry.");
+        self.inner.invalidate(&moka_key).await;
+        // let my_cache = self.inner.clone();
+        // self.runtime_handle.spawn(async move {
+        //   my_cache.invalidate(&moka_key).await;
+        // });
         return None;
       };
       let (body_sender, res_body) = Body::channel();
@@ -134,11 +135,12 @@ impl RpxyCache {
     } else {
       // Evict stale cache entry here
       debug!("Evict stale cache entry and file object: {moka_key}");
-      let my_cache = self.inner.clone();
-      self.runtime_handle.spawn(async move {
-        // eviction listener will be activated during invalidation.
-        my_cache.invalidate(&moka_key).await;
-      });
+      self.inner.invalidate(&moka_key).await;
+      // let my_cache = self.inner.clone();
+      // self.runtime_handle.spawn(async move {
+      // eviction listener will be activated during invalidation.
+      // my_cache.invalidate(&moka_key).await;
+      // });
       None
     }
   }
