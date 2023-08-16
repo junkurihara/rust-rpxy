@@ -36,6 +36,8 @@ pub struct Http3Option {
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct CacheOption {
   pub cache_dir: Option<String>,
+  pub max_cache_entry: Option<usize>,
+  pub max_cache_each_size: Option<usize>,
 }
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
@@ -173,7 +175,15 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         proxy_config.cache_dir = match &cache_option.cache_dir {
           Some(cache_dir) => Some(PathBuf::from(cache_dir)),
           None => Some(PathBuf::from(CACHE_DIR)),
-        }
+        };
+        proxy_config.cache_max_entry = match &cache_option.max_cache_entry {
+          Some(num) => Some(*num),
+          None => Some(MAX_CACHE_ENTRY),
+        };
+        proxy_config.cache_max_each_size = match &cache_option.max_cache_each_size {
+          Some(num) => Some(*num),
+          None => Some(MAX_CACHE_EACH_SIZE),
+        };
       }
     }
 

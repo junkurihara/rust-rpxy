@@ -110,4 +110,6 @@ max_idle_timeout = 10              # secs. 0 represents an infinite timeout.
 
 # If this specified, file cache feature is enabled
 [experimental.cache]
-cache_dir = './cache' # optional. default is "./cache" relative to the current working directory
+cache_dir = './cache'       # optional. default is "./cache" relative to the current working directory
+max_cache_entry = 1000      # optional. default is 1k
+max_cache_each_size = 65535 # optional. default is 64k

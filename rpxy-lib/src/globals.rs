@@ -55,6 +55,8 @@ pub struct ProxyConfig {
 
   pub cache_enabled: bool,
   pub cache_dir: Option<PathBuf>,
+  pub cache_max_entry: Option<usize>,
+  pub cache_max_each_size: Option<usize>,
 
   // All need to make packet acceptor
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -93,6 +95,8 @@ impl Default for ProxyConfig {
 
       cache_enabled: false,
       cache_dir: None,
+      cache_max_entry: None,
+      cache_max_each_size: None,
 
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       http3: false,

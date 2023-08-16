@@ -31,7 +31,3 @@ pub mod H3 {
 #[cfg(feature = "sticky-cookie")]
 /// For load-balancing with sticky cookie
 pub const STICKY_COOKIE_NAME: &str = "rpxy_srv_id";
-
-pub const MAX_CACHE_ENTRY: u64 = 10_000;
-// TODO: max cache size per entry
-// TODO: max cache size in total

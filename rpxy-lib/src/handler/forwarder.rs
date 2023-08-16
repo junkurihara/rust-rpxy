@@ -1,4 +1,4 @@
-use super::cache::RpxyCache;
+use super::cache::{get_policy_if_cacheable, RpxyCache};
 use crate::{error::RpxyError, globals::Globals, log::*, CryptoSource};
 use async_trait::async_trait;
 use bytes::Buf;
@@ -55,7 +55,7 @@ where
     if self.cache.is_some() {
       if let Some(cached_response) = self.cache.as_ref().unwrap().get(&req).await {
         // if found, return it as response.
-        debug!("Cache hit - Return from cache");
+        info!("Cache hit - Return from cache");
         return Ok(cached_response);
       };
 
@@ -76,13 +76,9 @@ where
     }
 
     // check cacheability and store it if cacheable
-    let Ok(Some(cache_policy)) = self
-      .cache
-      .as_ref()
-      .unwrap()
-      .is_cacheable(synth_req.as_ref(), res.as_ref().ok()) else {
-        return res;
-      };
+    let Ok(Some(cache_policy)) = get_policy_if_cacheable(synth_req.as_ref(), res.as_ref().ok()) else {
+      return res;
+    };
     let (parts, body) = res.unwrap().into_parts();
     // TODO: Inefficient?
     let Ok(mut bytes) = hyper::body::aggregate(body).await else {
