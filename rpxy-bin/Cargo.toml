@@ -12,10 +12,9 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "cache"]
+default = ["http3-quinn"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
-cache = []
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [

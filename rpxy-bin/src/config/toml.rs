@@ -32,7 +32,6 @@ pub struct Http3Option {
   pub max_idle_timeout: Option<u64>,
 }
 
-#[cfg(feature = "cache")]
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct CacheOption {
   pub cache_dir: Option<String>,
