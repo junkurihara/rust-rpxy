@@ -33,3 +33,5 @@ pub mod H3 {
 pub const STICKY_COOKIE_NAME: &str = "rpxy_srv_id";
 
 pub const MAX_CACHE_ENTRY: u64 = 10_000;
+// TODO: max cache size per entry
+// TODO: max cache size in total

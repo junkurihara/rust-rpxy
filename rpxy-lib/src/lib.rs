@@ -22,7 +22,6 @@ use std::sync::Arc;
 pub use crate::{
   certs::{CertsAndKeys, CryptoSource},
   globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
-  handler::CacheObject,
 };
 pub mod reexports {
   pub use hyper::Uri;

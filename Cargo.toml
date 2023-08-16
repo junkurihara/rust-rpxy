@@ -1,7 +1,7 @@
 [workspace]
 
 members = ["rpxy-bin", "rpxy-lib"]
-exclude = ["submodules", "h3-quinn"]
+exclude = ["submodules"]
 
 [profile.release]
 codegen-units = 1

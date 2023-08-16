@@ -94,7 +94,7 @@ where
       .cache
       .as_ref()
       .unwrap()
-      .put(synth_req.unwrap().uri(), &aggregated, cache_policy)
+      .put(synth_req.unwrap().uri(), &aggregated, &cache_policy)
       .await
     {
       error!("{:?}", cache_err);
