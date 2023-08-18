@@ -42,7 +42,7 @@ jobs:
           - target: "s2n"
             dockerfile: ./docker/Dockerfile
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features http3-s2n cache"
+              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache"
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n"
