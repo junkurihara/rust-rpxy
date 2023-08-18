@@ -22,6 +22,9 @@ pub enum RpxyError {
   #[error("Http Message Handler Error: {0}")]
   Handler(&'static str),
 
+  #[error("Cache Error: {0}")]
+  Cache(&'static str),
+
   #[error("Http Request Message Error: {0}")]
   Request(&'static str),
 

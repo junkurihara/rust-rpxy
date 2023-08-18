@@ -257,7 +257,7 @@ Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml`
 
 ### HTTP/3
 
-`rpxy` can serves HTTP/3 requests thanks to `quinn` and `hyperium/h3`. To enable this experimental feature, add an entry `experimental.h3` in your `config.toml` like follows. Any values in the entry like `alt_svc_max_age` are optional.
+`rpxy` can serves HTTP/3 requests thanks to `quinn`, `s2n-quic` and `hyperium/h3`. To enable this experimental feature, add an entry `experimental.h3` in your `config.toml` like follows. Any values in the entry like `alt_svc_max_age` are optional.
 
 ```toml
 [experimental.h3]
@@ -280,6 +280,19 @@ tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_p
 ```
 
  However, currently we have a limitation on HTTP/3 support for applications that enables client authentication. If an application is set with client authentication, HTTP/3 doesn't work for the application.
+
+### Hybrid Caching Feature Using File and On-Memory
+
+If `[experimental.cache]` is specified, you can leverage the local caching feature using temporary files and on-memory objects. Note that `max_cache_each_size` must be larger or equal to `max_cache_each_size_on_memory`.
+
+```toml
+# If this specified, file cache feature is enabled
+[experimental.cache]
+cache_dir = './cache'                # optional. default is "./cache" relative to the current working directory
+max_cache_entry = 1000               # optional. default is 1k
+max_cache_each_size = 65535          # optional. default is 64k
+max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is always file cache.
+```
 
 ## TIPS
 

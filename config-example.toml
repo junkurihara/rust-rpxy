@@ -107,3 +107,10 @@ max_concurrent_bidistream = 100
 max_concurrent_unistream = 100
 max_idle_timeout = 10              # secs. 0 represents an infinite timeout.
 # WARNING: If a peer or its network path malfunctions or acts maliciously, an infinite idle timeout can result in permanently hung futures!
+
+# If this specified, file cache feature is enabled
+[experimental.cache]
+cache_dir = './cache'                # optional. default is "./cache" relative to the current working directory
+max_cache_entry = 1000               # optional. default is 1k
+max_cache_each_size = 65535          # optional. default is 64k
+max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is always file cache.

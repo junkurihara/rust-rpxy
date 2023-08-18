@@ -1,3 +1,5 @@
+#[cfg(feature = "cache")]
+mod cache;
 mod forwarder;
 mod handler_main;
 mod utils_headers;
