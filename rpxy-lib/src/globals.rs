@@ -9,11 +9,11 @@ use crate::{
   utils::{BytesName, PathNameBytesExp},
 };
 use rustc_hash::FxHashMap as HashMap;
+use std::net::SocketAddr;
 use std::sync::{
   atomic::{AtomicUsize, Ordering},
   Arc,
 };
-use std::{net::SocketAddr, path::PathBuf};
 use tokio::time::Duration;
 
 /// Global object containing proxy configurations and shared object like counters.
@@ -53,10 +53,14 @@ pub struct ProxyConfig {
   // experimentals
   pub sni_consistency: bool, // Handler
 
+  #[cfg(feature = "cache")]
   pub cache_enabled: bool,
-  pub cache_dir: Option<PathBuf>,
-  pub cache_max_entry: Option<usize>,
-  pub cache_max_each_size: Option<usize>,
+  #[cfg(feature = "cache")]
+  pub cache_dir: Option<std::path::PathBuf>,
+  #[cfg(feature = "cache")]
+  pub cache_max_entry: usize,
+  #[cfg(feature = "cache")]
+  pub cache_max_each_size: usize,
 
   // All need to make packet acceptor
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -93,10 +97,14 @@ impl Default for ProxyConfig {
 
       sni_consistency: true,
 
+      #[cfg(feature = "cache")]
       cache_enabled: false,
+      #[cfg(feature = "cache")]
       cache_dir: None,
-      cache_max_entry: None,
-      cache_max_each_size: None,
+      #[cfg(feature = "cache")]
+      cache_max_entry: MAX_CACHE_ENTRY,
+      #[cfg(feature = "cache")]
+      cache_max_each_size: MAX_CACHE_EACH_SIZE,
 
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       http3: false,

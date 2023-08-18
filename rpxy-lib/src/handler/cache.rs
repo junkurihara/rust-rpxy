@@ -121,14 +121,14 @@ impl RpxyCache {
     let path = globals.proxy_config.cache_dir.as_ref().unwrap();
     let cache_file_manager = Arc::new(RwLock::new(CacheFileManager::new(path, &globals.runtime_handle).await));
     let inner = Arc::new(Mutex::new(LruCache::new(
-      std::num::NonZeroUsize::new(globals.proxy_config.cache_max_entry.unwrap()).unwrap(),
+      std::num::NonZeroUsize::new(globals.proxy_config.cache_max_entry).unwrap(),
     )));
 
     Some(Self {
       cache_file_manager,
       inner,
       runtime_handle: globals.runtime_handle.clone(),
-      max_each_size: globals.proxy_config.cache_max_each_size.unwrap(),
+      max_each_size: globals.proxy_config.cache_max_each_size,
     })
   }
 

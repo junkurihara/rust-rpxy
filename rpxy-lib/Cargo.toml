@@ -12,10 +12,11 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "sticky-cookie"]
+default = ["http3-quinn", "sticky-cookie", "cache"]
 http3-quinn = ["quinn", "h3", "h3-quinn", "socket2"]
 http3-s2n = ["h3", "s2n-quic", "s2n-quic-rustls", "s2n-quic-h3"]
 sticky-cookie = ["base64", "sha2", "chrono"]
+cache = ["http-cache-semantics", "lru"]
 
 [dependencies]
 rand = "0.8.5"
@@ -74,8 +75,8 @@ s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", optional = tr
 s2n-quic-rustls = { path = "../submodules/s2n-quic/quic/s2n-quic-rustls/", optional = true }
 
 # cache
-http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics/" }
-lru = { version = "0.11.0" }
+http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics/", optional = true }
+lru = { version = "0.11.0", optional = true }
 
 # cookie handling for sticky cookie
 chrono = { version = "0.4.26", default-features = false, features = [

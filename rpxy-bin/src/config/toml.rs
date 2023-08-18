@@ -6,7 +6,7 @@ use crate::{
 use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
-use std::{fs, net::SocketAddr, path::PathBuf};
+use std::{fs, net::SocketAddr};
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct ConfigToml {
@@ -32,6 +32,7 @@ pub struct Http3Option {
   pub max_idle_timeout: Option<u64>,
 }
 
+#[cfg(feature = "cache")]
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct CacheOption {
   pub cache_dir: Option<String>,
@@ -43,6 +44,7 @@ pub struct CacheOption {
 pub struct Experimental {
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3: Option<Http3Option>,
+  #[cfg(feature = "cache")]
   pub cache: Option<CacheOption>,
   pub ignore_sni_consistency: Option<bool>,
 }
@@ -169,20 +171,19 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         proxy_config.sni_consistency = !ignore;
       }
 
+      #[cfg(feature = "cache")]
       if let Some(cache_option) = &exp.cache {
         proxy_config.cache_enabled = true;
         proxy_config.cache_dir = match &cache_option.cache_dir {
-          Some(cache_dir) => Some(PathBuf::from(cache_dir)),
-          None => Some(PathBuf::from(CACHE_DIR)),
+          Some(cache_dir) => Some(std::path::PathBuf::from(cache_dir)),
+          None => Some(std::path::PathBuf::from(CACHE_DIR)),
         };
-        proxy_config.cache_max_entry = match &cache_option.max_cache_entry {
-          Some(num) => Some(*num),
-          None => Some(MAX_CACHE_ENTRY),
-        };
-        proxy_config.cache_max_each_size = match &cache_option.max_cache_each_size {
-          Some(num) => Some(*num),
-          None => Some(MAX_CACHE_EACH_SIZE),
-        };
+        if let Some(num) = cache_option.max_cache_entry {
+          proxy_config.cache_max_entry = num;
+        }
+        if let Some(num) = cache_option.max_cache_each_size {
+          proxy_config.cache_max_each_size = num;
+        }
       }
     }
 

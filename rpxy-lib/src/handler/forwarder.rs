@@ -1,8 +1,11 @@
+#[cfg(feature = "cache")]
 use super::cache::{get_policy_if_cacheable, RpxyCache};
-use crate::{error::RpxyError, globals::Globals, log::*, CryptoSource};
+#[cfg(feature = "cache")]
+use crate::log::*;
+use crate::{error::RpxyError, globals::Globals, CryptoSource};
 use async_trait::async_trait;
+#[cfg(feature = "cache")]
 use bytes::Buf;
-use derive_builder::Builder;
 use hyper::{
   body::{Body, HttpBody},
   client::{connect::Connect, HttpConnector},
@@ -11,6 +14,8 @@ use hyper::{
 };
 use hyper_rustls::HttpsConnector;
 
+#[cfg(feature = "cache")]
+/// Build synthetic request to cache
 fn build_synth_req_for_cache<T>(req: &Request<T>) -> Request<()> {
   let mut builder = Request::builder()
     .method(req.method())
@@ -30,12 +35,12 @@ pub trait ForwardRequest<B> {
   async fn request(&self, req: Request<B>) -> Result<Response<Body>, Self::Error>;
 }
 
-#[derive(Builder, Clone)]
 /// Forwarder struct responsible to cache handling
 pub struct Forwarder<C, B = Body>
 where
   C: Connect + Clone + Sync + Send + 'static,
 {
+  #[cfg(feature = "cache")]
   cache: Option<RpxyCache>,
   inner: Client<C, B>,
   inner_h2: Client<C, B>, // `h2c` or http/2-only client is defined separately
@@ -50,6 +55,8 @@ where
   C: Connect + Clone + Sync + Send + 'static,
 {
   type Error = RpxyError;
+
+  #[cfg(feature = "cache")]
   async fn request(&self, req: Request<B>) -> Result<Response<Body>, Self::Error> {
     let mut synth_req = None;
     if self.cache.is_some() {
@@ -99,10 +106,19 @@ where
     // res
     Ok(Response::from_parts(parts, Body::from(aggregated)))
   }
+
+  #[cfg(not(feature = "cache"))]
+  async fn request(&self, req: Request<B>) -> Result<Response<Body>, Self::Error> {
+    match req.version() {
+      Version::HTTP_2 => self.inner_h2.request(req).await.map_err(RpxyError::Hyper), // handles `h2c` requests
+      _ => self.inner.request(req).await.map_err(RpxyError::Hyper),
+    }
+  }
 }
 
 impl Forwarder<HttpsConnector<HttpConnector>, Body> {
-  pub async fn new<T: CryptoSource>(globals: &std::sync::Arc<Globals<T>>) -> Self {
+  /// Build forwarder
+  pub async fn new<T: CryptoSource>(_globals: &std::sync::Arc<Globals<T>>) -> Self {
     // let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
     let connector = hyper_rustls::HttpsConnectorBuilder::new()
       .with_webpki_roots()
@@ -119,7 +135,12 @@ impl Forwarder<HttpsConnector<HttpConnector>, Body> {
     let inner = Client::builder().build::<_, Body>(connector);
     let inner_h2 = Client::builder().http2_only(true).build::<_, Body>(connector_h2);
 
-    let cache = RpxyCache::new(globals).await;
-    Self { inner, inner_h2, cache }
+    #[cfg(feature = "cache")]
+    {
+      let cache = RpxyCache::new(_globals).await;
+      Self { inner, inner_h2, cache }
+    }
+    #[cfg(not(feature = "cache"))]
+    Self { inner, inner_h2 }
   }
 }
