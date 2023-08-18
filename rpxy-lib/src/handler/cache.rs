@@ -21,9 +21,15 @@ use tokio::{
 };
 
 #[derive(Clone, Debug)]
+pub enum CacheFileOrOnMemory {
+  File(PathBuf),
+  OnMemory(Vec<u8>),
+}
+
+#[derive(Clone, Debug)]
 struct CacheObject {
   pub policy: CachePolicy,
-  pub target: PathBuf,
+  pub target: CacheFileOrOnMemory,
 }
 
 #[derive(Debug)]
@@ -64,7 +70,7 @@ impl CacheFileManager {
     self.cnt += 1;
     Ok(CacheObject {
       policy: policy.clone(),
-      target: cache_filepath,
+      target: CacheFileOrOnMemory::File(cache_filepath),
     })
   }
 
@@ -109,6 +115,8 @@ pub struct RpxyCache {
   runtime_handle: tokio::runtime::Handle,
   /// Maximum size of each cache file object
   max_each_size: usize,
+  /// Maximum size of cache object on memory
+  max_each_size_on_memory: usize,
 }
 
 impl RpxyCache {
@@ -124,11 +132,21 @@ impl RpxyCache {
       std::num::NonZeroUsize::new(globals.proxy_config.cache_max_entry).unwrap(),
     )));
 
+    let max_each_size = globals.proxy_config.cache_max_each_size;
+    let mut max_each_size_on_memory = globals.proxy_config.cache_max_each_size_on_memory;
+    if max_each_size < max_each_size_on_memory {
+      warn!(
+        "Maximum size of on memory cache per entry must be smaller than or equal to the maximum of each file cache"
+      );
+      max_each_size_on_memory = max_each_size;
+    }
+
     Some(Self {
       cache_file_manager,
       inner,
       runtime_handle: globals.runtime_handle.clone(),
-      max_each_size: globals.proxy_config.cache_max_each_size,
+      max_each_size,
+      max_each_size_on_memory,
     })
   }
 
@@ -174,24 +192,35 @@ impl RpxyCache {
       // So, we have to evict stale cache entries and cache file objects if found.
       debug!("Stale cache entry and file object: {cache_key}");
       let _evicted_entry = self.evict_cache_entry(&cache_key);
-      self.evict_cache_file(&cached_object.target).await;
+      // For cache file
+      if let CacheFileOrOnMemory::File(path) = cached_object.target {
+        self.evict_cache_file(&path).await;
+      }
       return None;
     };
 
-    // Finally retrieve the file object
-    let mgr = self.cache_file_manager.read().await;
-    let res_body = match mgr.read(&cached_object.target).await {
-      Ok(res_body) => res_body,
-      Err(e) => {
-        warn!("Failed to read from file cache: {e}");
-        let _evicted_entry = self.evict_cache_entry(&cache_key);
-        self.evict_cache_file(&cached_object.target).await;
-        return None;
-      }
-    };
+    // Finally retrieve the file/on-memory object
+    match cached_object.target {
+      CacheFileOrOnMemory::File(path) => {
+        let mgr = self.cache_file_manager.read().await;
+        let res_body = match mgr.read(&path).await {
+          Ok(res_body) => res_body,
+          Err(e) => {
+            warn!("Failed to read from file cache: {e}");
+            let _evicted_entry = self.evict_cache_entry(&cache_key);
+            self.evict_cache_file(&path).await;
+            return None;
+          }
+        };
 
-    debug!("Cache hit: {cache_key}");
-    Some(Response::from_parts(res_parts, res_body))
+        debug!("Cache hit from file: {cache_key}");
+        Some(Response::from_parts(res_parts, res_body))
+      }
+      CacheFileOrOnMemory::OnMemory(object) => {
+        debug!("Cache hit from on memory: {cache_key}");
+        Some(Response::from_parts(res_parts, Body::from(object)))
+      }
+    }
   }
 
   pub async fn put(&self, uri: &hyper::Uri, body_bytes: &Bytes, policy: &CachePolicy) -> Result<()> {
@@ -201,6 +230,7 @@ impl RpxyCache {
     let bytes_clone = body_bytes.clone();
     let policy_clone = policy.clone();
     let max_each_size = self.max_each_size;
+    let max_each_size_on_memory = self.max_each_size_on_memory;
 
     self.runtime_handle.spawn(async move {
       if bytes_clone.len() > max_each_size {
@@ -212,10 +242,20 @@ impl RpxyCache {
 
       debug!("Cache file of {:?} bytes to be written", bytes_clone.len());
 
-      let mut mgr = mgr.write().await;
-      let Ok(cache_object) = mgr.create(&cache_filename, &bytes_clone, &policy_clone).await else {
-        error!("Failed to put the body into the file object or cache entry");
-        return Err(RpxyError::Cache("Failed to put the body into the file object or cache entry"));
+      let cache_object = if bytes_clone.len() > max_each_size_on_memory {
+        let mut mgr = mgr.write().await;
+        let Ok(cache_object) = mgr.create(&cache_filename, &bytes_clone, &policy_clone).await else {
+          error!("Failed to put the body into the file object or cache entry");
+          return Err(RpxyError::Cache("Failed to put the body into the file object or cache entry"));
+        };
+        debug!("Cached a new file: {} - {}", cache_key, cache_filename);
+        cache_object
+      } else {
+        debug!("Cached a new object on memory: {}", cache_key);
+        CacheObject {
+          policy: policy_clone,
+          target: CacheFileOrOnMemory::OnMemory(bytes_clone.to_vec()),
+        }
       };
       let push_opt = {
         let Ok(mut lock) = my_cache.lock() else {
@@ -227,13 +267,14 @@ impl RpxyCache {
       if let Some((k, v)) = push_opt {
         if k != cache_key {
           info!("Over the cache capacity. Evict least recent used entry");
-          if let Err(e) = mgr.remove(&v.target).await {
-            warn!("Eviction failed during file object removal over the capacity: {:?}", e);
-          };
+          if let CacheFileOrOnMemory::File(path) = v.target {
+            let mut mgr = mgr.write().await;
+            if let Err(e) = mgr.remove(&path).await {
+              warn!("Eviction failed during file object removal over the capacity: {:?}", e);
+            };
+          }
         }
       }
-
-      debug!("Cached a new file: {} - {}", cache_key, cache_filename);
       Ok(())
     });
 

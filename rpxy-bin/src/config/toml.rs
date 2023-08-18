@@ -38,6 +38,7 @@ pub struct CacheOption {
   pub cache_dir: Option<String>,
   pub max_cache_entry: Option<usize>,
   pub max_cache_each_size: Option<usize>,
+  pub max_cache_each_size_on_memory: Option<usize>,
 }
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
@@ -183,6 +184,9 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         }
         if let Some(num) = cache_option.max_cache_each_size {
           proxy_config.cache_max_each_size = num;
+        }
+        if let Some(num) = cache_option.max_cache_each_size_on_memory {
+          proxy_config.cache_max_each_size_on_memory = num;
         }
       }
     }
