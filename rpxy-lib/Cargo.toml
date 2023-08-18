@@ -23,7 +23,7 @@ rustc-hash = "1.1.0"
 bytes = "1.4.0"
 derive_builder = "0.12.0"
 futures = { version = "0.3.28", features = ["alloc", "async-await"] }
-tokio = { version = "1.31.0", default-features = false, features = [
+tokio = { version = "1.32.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -35,8 +35,8 @@ async-trait = "0.1.73"
 hot_reload = "0.1.4" # reloading certs
 
 # Error handling
-anyhow = "1.0.73"
-thiserror = "1.0.45"
+anyhow = "1.0.75"
+thiserror = "1.0.47"
 
 # http and tls
 hyper = { version = "0.14.27", default-features = false, features = [
