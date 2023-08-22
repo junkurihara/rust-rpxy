@@ -6,7 +6,7 @@
 
 - Feat: Enabled `h2c` (HTTP/2 cleartext) requests to upstream app servers (in the previous versions, only HTTP/1.1 is allowed for cleartext requests)
 - Feat: Initial implementation of caching feature using file + on memory cache. (Caveats: No persistance of the cache. Once config is updated, the cache is totally eliminated.)
-- Refactor: logs of minor improvements
+- Refactor: lots of minor improvements
 
 ### Bugfix
 

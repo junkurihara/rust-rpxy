@@ -294,6 +294,8 @@ max_cache_each_size = 65535          # optional. default is 64k
 max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is always file cache.
 ```
 
+Note that once `rpxy` restarts or the config is updated, the cache is totally eliminated not only  from the on-memory table but also from the file system.
+
 ## TIPS
 
 ### Using Private Key Issued by Let's Encrypt
