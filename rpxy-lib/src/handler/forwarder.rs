@@ -87,7 +87,6 @@ where
       return res;
     };
     let (parts, body) = res.unwrap().into_parts();
-    // TODO: Inefficient?
     let Ok(mut bytes) = hyper::body::aggregate(body).await else {
       return Err(RpxyError::Cache("Failed to write byte buffer"));
     };
