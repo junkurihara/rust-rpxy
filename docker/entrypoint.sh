@@ -58,8 +58,9 @@ EOF
 
 #######################################
 function setup_ubuntu () {
+  id ${USER} > /dev/null
   # Check the existence of the user, if not exist, create it.
-  if [ ! $(id ${USER}) ]; then
+  if [ $? -eq 1 ]; then
     echo "rpxy: Create user ${USER} with ${USER_ID}:${GROUP_ID}"
     groupadd -g ${GROUP_ID} ${USER}
     useradd -u ${USER_ID} -g ${GROUP_ID} ${USER}
@@ -81,8 +82,9 @@ function setup_ubuntu () {
 
 #######################################
 function setup_alpine () {
+  id ${USER} > /dev/null
   # Check the existence of the user, if not exist, create it.
-  if [ ! $(id ${USER}) ]; then
+  if [ $? -eq 1 ]; then
     echo "rpxy: Create user ${USER} with ${USER_ID}:${GROUP_ID}"
     addgroup -g ${GROUP_ID} ${USER}
     adduser -H -D -u ${USER_ID} -G ${USER} ${USER}
