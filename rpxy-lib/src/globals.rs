@@ -52,6 +52,18 @@ pub struct ProxyConfig {
 
   // experimentals
   pub sni_consistency: bool, // Handler
+
+  #[cfg(feature = "cache")]
+  pub cache_enabled: bool,
+  #[cfg(feature = "cache")]
+  pub cache_dir: Option<std::path::PathBuf>,
+  #[cfg(feature = "cache")]
+  pub cache_max_entry: usize,
+  #[cfg(feature = "cache")]
+  pub cache_max_each_size: usize,
+  #[cfg(feature = "cache")]
+  pub cache_max_each_size_on_memory: usize,
+
   // All need to make packet acceptor
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub http3: bool,
@@ -86,6 +98,17 @@ impl Default for ProxyConfig {
       keepalive: true,
 
       sni_consistency: true,
+
+      #[cfg(feature = "cache")]
+      cache_enabled: false,
+      #[cfg(feature = "cache")]
+      cache_dir: None,
+      #[cfg(feature = "cache")]
+      cache_max_entry: MAX_CACHE_ENTRY,
+      #[cfg(feature = "cache")]
+      cache_max_each_size: MAX_CACHE_EACH_SIZE,
+      #[cfg(feature = "cache")]
+      cache_max_each_size_on_memory: MAX_CACHE_EACH_SIZE_ON_MEMORY,
 
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       http3: false,
@@ -225,7 +248,8 @@ where
     }
 
     if !(upstream.iter().all(|(_, elem)| {
-      !(elem.opts.contains(&UpstreamOption::ConvertHttpsTo11) && elem.opts.contains(&UpstreamOption::ConvertHttpsTo2))
+      !(elem.opts.contains(&UpstreamOption::ForceHttp11Upstream)
+        && elem.opts.contains(&UpstreamOption::ForceHttp2Upstream))
     })) {
       error!("Either one of force_http11 or force_http2 can be enabled");
       return Err(RpxyError::ConfigBuild("Invalid upstream option setting"));

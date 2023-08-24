@@ -1,9 +1,5 @@
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
-
-#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod cert_file_reader;
 mod config;
@@ -84,7 +80,7 @@ async fn rpxy_service_without_watcher(
       return Err(anyhow::anyhow!(e));
     }
   };
-  entrypoint(&proxy_conf, &app_conf, &runtime_handle)
+  entrypoint(&proxy_conf, &app_conf, &runtime_handle, None)
     .await
     .map_err(|e| anyhow::anyhow!(e))
 }
@@ -105,10 +101,13 @@ async fn rpxy_service_with_watcher(
     }
   };
 
+  // Notifier for proxy service termination
+  let term_notify = std::sync::Arc::new(tokio::sync::Notify::new());
+
   // Continuous monitoring
   loop {
     tokio::select! {
-      _ = entrypoint(&proxy_conf, &app_conf, &runtime_handle) => {
+      _ = entrypoint(&proxy_conf, &app_conf, &runtime_handle, Some(term_notify.clone())) => {
         error!("rpxy entrypoint exited");
         break;
       }
@@ -127,7 +126,9 @@ async fn rpxy_service_with_watcher(
             continue;
           }
         };
-        info!("Configuration updated. Force to re-bind TCP/UDP sockets");
+        info!("Configuration updated. Terminate all spawned proxy services and force to re-bind TCP/UDP sockets");
+        term_notify.notify_waiters();
+        // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
       }
       else => break
     }

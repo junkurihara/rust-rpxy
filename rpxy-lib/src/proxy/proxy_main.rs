@@ -8,6 +8,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{
   io::{AsyncRead, AsyncWrite},
   runtime::Handle,
+  sync::Notify,
   time::{timeout, Duration},
 };
 
@@ -40,7 +41,7 @@ where
 {
   pub listening_on: SocketAddr,
   pub tls_enabled: bool, // TCP待受がTLSかどうか
-  pub msg_handler: HttpMessageHandler<T, U>,
+  pub msg_handler: Arc<HttpMessageHandler<T, U>>,
   pub globals: Arc<Globals<U>>,
 }
 
@@ -49,6 +50,21 @@ where
   T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send,
 {
+  /// Wrapper function to handle request
+  async fn serve(
+    handler: Arc<HttpMessageHandler<T, U>>,
+    req: Request<Body>,
+    client_addr: SocketAddr,
+    listen_addr: SocketAddr,
+    tls_enabled: bool,
+    tls_server_name: Option<ServerNameBytesExp>,
+  ) -> Result<hyper::Response<Body>> {
+    handler
+      .handle_request(req, client_addr, listen_addr, tls_enabled, tls_server_name)
+      .await
+  }
+
+  /// Serves requests from clients
   pub(super) fn client_serve<I>(
     self,
     stream: I,
@@ -72,7 +88,8 @@ where
           .serve_connection(
             stream,
             service_fn(move |req: Request<Body>| {
-              self.msg_handler.clone().handle_request(
+              Self::serve(
+                self.msg_handler.clone(),
                 req,
                 peer_addr,
                 self.listening_on,
@@ -91,11 +108,11 @@ where
     });
   }
 
+  /// Start without TLS (HTTP cleartext)
   async fn start_without_tls(self, server: Http<LocalExecutor>) -> Result<()> {
     let listener_service = async {
       let tcp_socket = bind_tcp_socket(&self.listening_on)?;
       let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
-      // let tcp_listener = TcpListener::bind(&self.listening_on).await?;
       info!("Start TCP proxy serving with HTTP request for configured host names");
       while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
         self.clone().client_serve(stream, server.clone(), _client_addr, None);
@@ -106,7 +123,8 @@ where
     Ok(())
   }
 
-  pub async fn start(self) -> Result<()> {
+  /// Entrypoint for HTTP/1.1 and HTTP/2 servers
+  pub async fn start(self, term_notify: Option<Arc<Notify>>) -> Result<()> {
     let mut server = Http::new();
     server.http1_keep_alive(self.globals.proxy_config.keepalive);
     server.http2_max_concurrent_streams(self.globals.proxy_config.max_concurrent_streams);
@@ -114,11 +132,34 @@ where
     let executor = LocalExecutor::new(self.globals.runtime_handle.clone());
     let server = server.with_executor(executor);
 
-    if self.tls_enabled {
-      self.start_with_tls(server).await?;
-    } else {
-      self.start_without_tls(server).await?;
+    let listening_on = self.listening_on;
+
+    let proxy_service = async {
+      if self.tls_enabled {
+        self.start_with_tls(server).await
+      } else {
+        self.start_without_tls(server).await
+      }
+    };
+
+    match term_notify {
+      Some(term) => {
+        tokio::select! {
+          _ = proxy_service => {
+            warn!("Proxy service got down");
+          }
+          _ = term.notified() => {
+            info!("Proxy service listening on {} receives term signal", listening_on);
+          }
+        }
+      }
+      None => {
+        proxy_service.await?;
+        warn!("Proxy service got down");
+      }
     }
+
+    // proxy_service.await?;
 
     Ok(())
   }

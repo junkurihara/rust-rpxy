@@ -1,8 +1,15 @@
 // Highly motivated by https://github.com/felipenoris/hyper-reverse-proxy
-use super::{utils_headers::*, utils_request::*, utils_synth_response::*, HandlerContext};
+use super::{
+  forwarder::{ForwardRequest, Forwarder},
+  utils_headers::*,
+  utils_request::*,
+  utils_synth_response::*,
+  HandlerContext,
+};
 use crate::{
   backend::{Backend, UpstreamGroup},
   certs::CryptoSource,
+  constants::RESPONSE_HEADER_SERVER,
   error::*,
   globals::Globals,
   log::*,
@@ -13,9 +20,9 @@ use hyper::{
   client::connect::Connect,
   header::{self, HeaderValue},
   http::uri::Scheme,
-  Body, Client, Request, Response, StatusCode, Uri, Version,
+  Body, Request, Response, StatusCode, Uri, Version,
 };
-use std::{env, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{io::copy_bidirectional, time::timeout};
 
 #[derive(Clone, Builder)]
@@ -26,7 +33,7 @@ where
   T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone,
 {
-  forwarder: Arc<Client<T>>,
+  forwarder: Arc<Forwarder<T>>,
   globals: Arc<Globals<U>>,
 }
 
@@ -43,7 +50,7 @@ where
 
   /// Handle incoming request message from a client
   pub async fn handle_request(
-    self,
+    &self,
     mut req: Request<Body>,
     client_addr: SocketAddr, // アクセス制御用
     listen_addr: SocketAddr,
@@ -208,7 +215,7 @@ where
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
-    add_header_entry_overwrite_if_exist(headers, "server", env!("CARGO_PKG_NAME"))?;
+    add_header_entry_overwrite_if_exist(headers, "server", RESPONSE_HEADER_SERVER)?;
 
     #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
@@ -356,14 +363,17 @@ where
     }
 
     // If not specified (force_httpXX_upstream) and https, version is preserved except for http/3
-    apply_upstream_options_to_request_line(req, upstream_group)?;
-    // Maybe workaround: Change version to http/1.1 when destination scheme is http
-    if req.version() != Version::HTTP_11 && upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
+    if upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
+      // Change version to http/1.1 when destination scheme is http
+      debug!("Change version to http/1.1 when destination scheme is http unless upstream option enabled.");
       *req.version_mut() = Version::HTTP_11;
     } else if req.version() == Version::HTTP_3 {
-      debug!("HTTP/3 is currently unsupported for request to upstream. Use HTTP/2.");
+      // HTTP/3 is always https
+      debug!("HTTP/3 is currently unsupported for request to upstream.");
       *req.version_mut() = Version::HTTP_2;
     }
+
+    apply_upstream_options_to_request_line(req, upstream_group)?;
 
     Ok(context)
   }

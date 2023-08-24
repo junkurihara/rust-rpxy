@@ -8,9 +8,14 @@ mod log;
 mod proxy;
 mod utils;
 
-use crate::{error::*, globals::Globals, handler::HttpMessageHandlerBuilder, log::*, proxy::ProxyBuilder};
+use crate::{
+  error::*,
+  globals::Globals,
+  handler::{Forwarder, HttpMessageHandlerBuilder},
+  log::*,
+  proxy::ProxyBuilder,
+};
 use futures::future::select_all;
-use hyper::Client;
 // use hyper_trust_dns::TrustDnsResolver;
 use std::sync::Arc;
 
@@ -31,6 +36,7 @@ pub async fn entrypoint<T>(
   proxy_config: &ProxyConfig,
   app_config_list: &AppConfigList<T>,
   runtime_handle: &tokio::runtime::Handle,
+  term_notify: Option<Arc<tokio::sync::Notify>>,
 ) -> Result<()>
 where
   T: CryptoSource + Clone + Send + Sync + 'static,
@@ -54,6 +60,15 @@ where
   if !proxy_config.sni_consistency {
     info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
   }
+  #[cfg(feature = "cache")]
+  if proxy_config.cache_enabled {
+    info!(
+      "Cache is enabled: cache dir = {:?}",
+      proxy_config.cache_dir.as_ref().unwrap()
+    );
+  } else {
+    info!("Cache is disabled")
+  }
 
   // build global
   let globals = Arc::new(Globals {
@@ -62,18 +77,14 @@ where
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
   });
-  // let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
-  let connector = hyper_rustls::HttpsConnectorBuilder::new()
-    .with_webpki_roots()
-    .https_or_http()
-    .enable_http1()
-    .enable_http2()
-    .build();
 
-  let msg_handler = HttpMessageHandlerBuilder::default()
-    .forwarder(Arc::new(Client::builder().build::<_, hyper::Body>(connector)))
-    .globals(globals.clone())
-    .build()?;
+  // build message handler including a request forwarder
+  let msg_handler = Arc::new(
+    HttpMessageHandlerBuilder::default()
+      .forwarder(Arc::new(Forwarder::new(&globals).await))
+      .globals(globals.clone())
+      .build()?,
+  );
 
   let addresses = globals.proxy_config.listen_sockets.clone();
   let futures = select_all(addresses.into_iter().map(|addr| {
@@ -90,7 +101,7 @@ where
       .build()
       .unwrap();
 
-    globals.runtime_handle.spawn(proxy.start())
+    globals.runtime_handle.spawn(proxy.start(term_notify.clone()))
   }));
 
   // wait for all future

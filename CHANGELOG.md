@@ -1,6 +1,19 @@
 # CHANGELOG
 
-## 0.6.0  (unreleased)
+## 0.7.0  (unreleased)
+
+## 0.6.0
+
+### Improvement
+
+- Feat: Enabled `h2c` (HTTP/2 cleartext) requests to upstream app servers (in the previous versions, only HTTP/1.1 is allowed for cleartext requests)
+- Feat: Initial implementation of caching feature using file + on memory cache. (Caveats: No persistance of the cache. Once config is updated, the cache is totally eliminated.)
+- Refactor: lots of minor improvements
+
+### Bugfix
+
+- Fix: fix `server` in the response header (`rpxy_lib` -> `rpxy`)
+- Fix: fix bug for hot-reloading configuration file (Add termination notification receiver in proxy services)
 
 ## 0.5.0
 
