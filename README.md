@@ -281,9 +281,9 @@ tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_p
 
  However, currently we have a limitation on HTTP/3 support for applications that enables client authentication. If an application is set with client authentication, HTTP/3 doesn't work for the application.
 
-### Hybrid Caching Feature Using File and On-Memory
+### Hybrid Caching Feature with Temporary File and On-Memory Cache
 
-If `[experimental.cache]` is specified, you can leverage the local caching feature using temporary files and on-memory objects. Note that `max_cache_each_size` must be larger or equal to `max_cache_each_size_on_memory`.
+If `[experimental.cache]` is specified in `config.toml`, you can leverage the local caching feature using temporary files and on-memory objects. An example configuration is as follows.
 
 ```toml
 # If this specified, file cache feature is enabled
@@ -294,7 +294,7 @@ max_cache_each_size = 65535          # optional. default is 64k
 max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is always file cache.
 ```
 
-Note that once `rpxy` restarts or the config is updated, the cache is totally eliminated not only  from the on-memory table but also from the file system.
+A *storable* (in the context of an HTTP message) response is stored if its size is less than or equal to `max_cache_each_size` in bytes. If it is also less than or equal to `max_cache_each_size_on_memory`, it is stored as an on-memory object. Otherwise, it is stored as a temporary file. Note that `max_cache_each_size` must be larger or equal to `max_cache_each_size_on_memory`. Also note that once `rpxy` restarts or the config is updated, the cache is totally eliminated not only from the on-memory table but also from the file system.
 
 ## TIPS
 
