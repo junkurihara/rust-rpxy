@@ -1,6 +1,6 @@
 [package]
 name = "rpxy-lib"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
