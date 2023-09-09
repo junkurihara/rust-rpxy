@@ -57,7 +57,9 @@ RUN apt-get update && \
   find / -type d -path /proc -prune -o -type f -perm /u+s -ignore_readdir_race -exec chmod u-s {} \; && \
   find / -type d -path /proc -prune -o -type f -perm /g+s -ignore_readdir_race -exec chmod g-s {} \; && \
   mkdir -p /rpxy/bin &&\
-  mkdir -p /rpxy/log
+  mkdir -p /rpxy/log &&\
+  mkdir -p /rpxy/cache &&\
+  mkdir -p /rpxy/config
 
 COPY --from=builder /tmp/target/release/rpxy /rpxy/bin/rpxy
 COPY ./docker/run.sh /rpxy

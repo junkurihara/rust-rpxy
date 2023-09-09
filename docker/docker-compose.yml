@@ -28,7 +28,11 @@ services:
     tty: false
     privileged: true
     volumes:
-      - ./log:/rpxy/log
+      - ./log:/rpxy/log:rw
+      - ./cache:/rpxy/cache:rw
       - ../example-certs/server.crt:/certs/server.crt:ro
       - ../example-certs/server.key:/certs/server.key:ro
       - ../config-example.toml:/etc/rpxy.toml:ro
+      # NOTE: To correctly enable "watch" in docker,
+      # ** you should mount not a file but a dir mapped to /rpxy/config including "rpxy.toml" due to the limitation of docker **
+      # e.g, - ./rpxy-config:/rpxy/config

@@ -1,6 +1,6 @@
 [package]
 name = "rpxy"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -24,7 +24,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 
 anyhow = "1.0.75"
 rustc-hash = "1.1.0"
-serde = { version = "1.0.186", default-features = false, features = ["derive"] }
+serde = { version = "1.0.188", default-features = false, features = ["derive"] }
 derive_builder = "0.12.0"
 tokio = { version = "1.32.0", default-features = false, features = [
   "net",
@@ -38,8 +38,8 @@ rustls-pemfile = "1.0.3"
 mimalloc = { version = "*", default-features = false }
 
 # config
-clap = { version = "4.3.24", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.7.6", default-features = false, features = ["parse"] }
+clap = { version = "4.4.2", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.7.8", default-features = false, features = ["parse"] }
 hot_reload = "0.1.4"
 
 # logging
