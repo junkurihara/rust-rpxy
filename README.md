@@ -247,7 +247,9 @@ There are only several docker-specific environment variables.
 - `LOG_TO_FILE=true|false`: Enable logging to the log file `/rpxy/log/rpxy.log` using `logrotate`. You should mount `/rpxy/log` via docker volume option if enabled. The log dir and file will be owned by the `HOST_USER` with `HOST_UID:HOST_GID` on the host machine. Hence, `HOST_USER`, `HOST_UID` and `HOST_GID` should be the same as ones of the user who executes the `rpxy` docker container on the host.
 - `WATCH=true|false` (default: `false`): Activate continuous watching of the config file if true.
 
-Other than them, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the docker volume option. See [`docker/docker-compose.yml`](./docker/docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
+Then, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the docker volume option. **If `WATCH=true`, You need to mount a directory, e.g., `./rpxy-config/`, including `rpxy.toml` on `/rpxy/config` instead of a file to correctly track file changes**. This is a docker limitation. Even if `WATCH=false`, you can mount the dir onto `/rpxy/config` rather than `/etc/rpxy.toml`. A file mounted on `/etc/rpxy` is prioritized over a dir mounted on `/rpxy/config`.
+
+See [`docker/docker-compose.yml`](./docker/docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
 
 ## Example
 
