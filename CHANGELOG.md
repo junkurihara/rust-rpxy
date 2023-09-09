@@ -2,6 +2,12 @@
 
 ## 0.7.0  (unreleased)
 
+## 0.6.1
+
+### Bugfix
+
+- Fix: fix a "watch" bug for docker. Due to a docker limitation, we need to mount a dir, e.g, `/rpxy/config`, instead of a file, `rpxy.toml`, to track changes of the configuration file. We thus updated a start up script in docker container for the case "WATCH=true".
+
 ## 0.6.0
 
 ### Improvement

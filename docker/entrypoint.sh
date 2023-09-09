@@ -9,6 +9,10 @@ USER=${HOST_USER:-rpxy}
 USER_ID=${HOST_UID:-900}
 GROUP_ID=${HOST_GID:-900}
 
+CONFIG_FILE=/etc/rpxy.toml
+CONFIG_DIR=/rpxy/config
+CONFIG_FILE_IN_DIR=${CONFIG_FILENAME:-rpxy.toml}
+
 #######################################
 # Setup logrotate
 function setup_logrotate () {
@@ -132,9 +136,23 @@ if [ $(id -u ${USER}) -ne ${USER_ID} -a $(id -g ${USER}) -ne ${GROUP_ID} ]; then
 fi
 
 # Change permission according to the given user
-chown -R ${USER_ID}:${USER_ID} /rpxy
+# except for the config dir that possibly get mounted with read-only
+find /rpxy -path ${CONFIG_DIR} -prune -o -exec chown ${USER_ID}:${USER_ID} {} +
+
+# Check the config file existence
+if [[ ! -f ${CONFIG_FILE} ]]; then
+  if [[ ! -f ${CONFIG_DIR}/${CONFIG_FILE_IN_DIR} ]]; then
+    echo "No config file is given. Mount a config dir or file."
+    exit 1
+  fi
+  echo "rpxy: config file: ${CONFIG_DIR}/${CONFIG_FILE_IN_DIR}"
+  ln -s ${CONFIG_DIR}/${CONFIG_FILE_IN_DIR} ${CONFIG_FILE}
+else
+  echo "rpxy: config file: ${CONFIG_FILE}"
+fi
 
 # Run rpxy
+cd /rpxy
 echo "rpxy: Start with user: ${USER} (${USER_ID}:${GROUP_ID})"
 if "${LOGGING}"; then
   echo "rpxy: Start with writing log file"
