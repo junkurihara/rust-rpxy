@@ -98,7 +98,7 @@ jobs:
 
       - name: Nightly build and push from develop branch
         if: ${{ (github.ref_name == 'develop') && (github.event_name == 'push') }}
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           build-args: ${{ matrix.build-args }}
@@ -115,7 +115,7 @@ jobs:
 
       - name: Release build and push from main branch
         if: ${{ (github.ref_name == 'main') && (github.event_name == 'push') }}
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           build-args: ${{ matrix.build-args }}
