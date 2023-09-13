@@ -67,7 +67,7 @@ h3 = { path = "../submodules/h3/h3/", optional = true }
 # h3-quinn = { path = "./h3/h3-quinn/", optional = true }
 h3-quinn = { path = "../submodules/h3-quinn/", optional = true } # Tentative to support rustls-0.21
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.5.3", features = ["all"], optional = true }
+socket2 = { version = "0.5.4", features = ["all"], optional = true }
 s2n-quic = { path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
@@ -84,7 +84,7 @@ chrono = { version = "0.4.30", default-features = false, features = [
   "alloc",
   "clock",
 ], optional = true }
-base64 = { version = "0.21.3", optional = true }
+base64 = { version = "0.21.4", optional = true }
 sha2 = { version = "0.10.7", default-features = false, optional = true }
 
 
