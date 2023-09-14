@@ -39,7 +39,7 @@ mimalloc = { version = "*", default-features = false }
 
 # config
 clap = { version = "4.4.3", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.7.8", default-features = false, features = ["parse"] }
+toml = { version = "0.8", default-features = false, features = ["parse"] }
 hot_reload = "0.1.4"
 
 # logging
