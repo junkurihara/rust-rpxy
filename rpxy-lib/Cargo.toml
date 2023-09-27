@@ -37,7 +37,7 @@ hot_reload = "0.1.4" # reloading certs
 
 # Error handling
 anyhow = "1.0.75"
-thiserror = "1.0.48"
+thiserror = "1.0.49"
 
 # http and tls
 hyper = { version = "0.14.27", default-features = false, features = [
@@ -85,7 +85,7 @@ chrono = { version = "0.4.31", default-features = false, features = [
   "clock",
 ], optional = true }
 base64 = { version = "0.21.4", optional = true }
-sha2 = { version = "0.10.7", default-features = false, optional = true }
+sha2 = { version = "0.10.8", default-features = false, optional = true }
 
 
 [dev-dependencies]
