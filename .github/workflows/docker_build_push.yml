@@ -1,4 +1,4 @@
-name: Build and Publish Docker
+name: Build and publish docker
 on:
   push:
     branches:
@@ -6,8 +6,6 @@ on:
       - "main"
     tags:
       - "*.*.*"
-  pull_request:
-    types: [synchronize, opened]
 
 env:
   GHCR: ghcr.io
