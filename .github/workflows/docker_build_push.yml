@@ -119,19 +119,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Nightly build test on amd64 for pull requests
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          build-args: ${{ matrix.build-args }}
-          push: false
-          build-contexts: ${{ matrix.build-contexts }}
-          file: ${{ matrix.dockerfile }}
-          cache-from: type=gha,scope=rpxy-nightly-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=rpxy-nightly-${{ matrix.target }}
-          platforms: linux/amd64
-          labels: ${{ steps.meta.outputs.labels }}
+      # - name: Nightly build test on amd64 for pull requests
+      #   if: ${{ github.event_name == 'pull_request' }}
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     build-args: ${{ matrix.build-args }}
+      #     push: false
+      #     build-contexts: ${{ matrix.build-contexts }}
+      #     file: ${{ matrix.dockerfile }}
+      #     cache-from: type=gha,scope=rpxy-nightly-${{ matrix.target }}
+      #     cache-to: type=gha,mode=max,scope=rpxy-nightly-${{ matrix.target }}
+      #     platforms: linux/amd64
+      #     labels: ${{ steps.meta.outputs.labels }}
 
       - name: Nightly build and push from develop branch
         if: ${{ (github.ref_name == 'develop') && (github.event_name == 'push') }}
