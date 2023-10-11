@@ -17,6 +17,7 @@ http3-quinn = ["quinn", "h3", "h3-quinn", "socket2"]
 http3-s2n = ["h3", "s2n-quic", "s2n-quic-rustls", "s2n-quic-h3"]
 sticky-cookie = ["base64", "sha2", "chrono"]
 cache = ["http-cache-semantics", "lru"]
+native-roots = ["hyper-rustls/native-tokio"]
 
 [dependencies]
 rand = "0.8.5"
