@@ -1,0 +1,59 @@
+name: Release
+on:
+  push:
+  # workflow_run:
+  #   workflows:
+  #     - "Build and Publish Docker"
+  #     - "Unit Test"
+  #   types:
+  #     - "completed"
+  #   branches:
+  #     - "main"
+  #     - "develop"
+
+jobs:
+  on-success:
+    runs-on: ubuntu-latest
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: "gnu"
+            platform: linux/amd64
+
+          - target: "gnu"
+            platform: linux/arm64
+
+          - target: "musl"
+            platform: linux/amd64
+            tags-suffix: "-slim"
+
+          - target: "musl"
+            platform: linux/arm64
+            tags-suffix: "-slim"
+
+          - target: "gnu-s2n"
+            platform: linux/amd64
+            tags-suffix: "-s2n"
+
+          - target: "gnu-s2n"
+            platform: linux/arm64
+            tags-suffix: "-s2n"
+
+    steps:
+      - run: echo 'The relese triggering workflows passed'
+
+      - name: "docker pull and extract binary from docker image"
+        # if: ${{ github.ref_name == 'develop' }}
+        run: |
+          CONTAINER_ID=`docker create --platform=${{ matrix.platform }} ghcr.io/junkurihara/rust-rpxy:nightly${{ matrix.tags-suffix }}`
+          if [ ${{ matrix.platform }} = "linux/amd64" ];then PLATFORM_MAP="x86_64";else PLATFORM_MAP="aarch64";fi
+          docker cp ${CONTAINER_ID}:/rpxy/bin/rpxy /tmp/rpxy-nightly-${PLATFORM_MAP}-unknown-linux-${{ matrix.target }}-${{ matrix.tags-suffix }}
+          ls /tmp
+
+  # on-failure:
+  #   runs-on: ubuntu-latest
+  #   if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+  #   steps:
+  #     - run: echo 'The release triggering workflows failed'
