@@ -16,6 +16,7 @@ default = ["http3-quinn", "cache"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 cache = ["rpxy-lib/cache"]
+native-roots = ["rpxy-lib/native-roots"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [

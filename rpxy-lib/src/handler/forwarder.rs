@@ -118,18 +118,22 @@ where
 impl Forwarder<HttpsConnector<HttpConnector>, Body> {
   /// Build forwarder
   pub async fn new<T: CryptoSource>(_globals: &std::sync::Arc<Globals<T>>) -> Self {
-    // let connector = TrustDnsResolver::default().into_rustls_webpki_https_connector();
-    let connector = hyper_rustls::HttpsConnectorBuilder::new()
-      .with_webpki_roots()
-      .https_or_http()
-      .enable_http1()
-      .enable_http2()
-      .build();
-    let connector_h2 = hyper_rustls::HttpsConnectorBuilder::new()
-      .with_webpki_roots()
-      .https_or_http()
-      .enable_http2()
-      .build();
+    #[cfg(feature = "native-roots")]
+    let builder = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots();
+    #[cfg(feature = "native-roots")]
+    let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots();
+    #[cfg(feature = "native-roots")]
+    info!("Native cert store is used for the connection to backend applications");
+
+    #[cfg(not(feature = "native-roots"))]
+    let builder = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
+    #[cfg(not(feature = "native-roots"))]
+    let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
+    #[cfg(not(feature = "native-roots"))]
+    info!("Mozilla WebPKI root certs is used for the connection to backend applications");
+
+    let connector = builder.https_or_http().enable_http1().enable_http2().build();
+    let connector_h2 = builder_h2.https_or_http().enable_http2().build();
 
     let inner = Client::builder().build::<_, Body>(connector);
     let inner_h2 = Client::builder().http2_only(true).build::<_, Body>(connector_h2);
