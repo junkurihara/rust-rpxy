@@ -1,11 +1,11 @@
-name: Build and Publish Docker
+name: Build and publish docker
 on:
   push:
     branches:
       - "develop"
       - "main"
-  pull_request:
-    types: [synchronize, opened]
+    tags:
+      - "*.*.*"
 
 env:
   GHCR: ghcr.io

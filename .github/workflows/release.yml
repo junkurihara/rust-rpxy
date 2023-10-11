@@ -1,0 +1,128 @@
+name: Extract executable binary, upload artifacts, create release
+on:
+  workflow_run:
+    workflows:
+      - "Build and publish docker"
+    types:
+      - "completed"
+
+jobs:
+  on-success:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: "gnu"
+            platform: linux/amd64
+
+          - target: "gnu"
+            platform: linux/arm64
+
+          - target: "musl"
+            platform: linux/amd64
+            tags-suffix: "-slim"
+
+          - target: "musl"
+            platform: linux/arm64
+            tags-suffix: "-slim"
+
+          - target: "gnu"
+            build-feature: "-s2n"
+            platform: linux/amd64
+            tags-suffix: "-s2n"
+
+          - target: "gnu"
+            build-feature: "-s2n"
+            platform: linux/arm64
+            tags-suffix: "-s2n"
+
+          - target: "gnu"
+            build-feature: "-native-roots"
+            platform: linux/amd64
+            tags-suffix: "-native-roots"
+
+          - target: "gnu"
+            build-feature: "-native-roots"
+            platform: linux/arm64
+            tags-suffix: "-native-roots"
+
+          - target: "musl"
+            build-feature: "-native-roots"
+            platform: linux/amd64
+            tags-suffix: "-slim-native-roots"
+
+          - target: "musl"
+            build-feature: "-native-roots"
+            platform: linux/arm64
+            tags-suffix: "-slim-native-roots"
+
+          - target: "gnu"
+            build-feature: "-s2n-native-roots"
+            platform: linux/amd64
+            tags-suffix: "-s2n-native-roots"
+
+          - target: "gnu"
+            build-feature: "-s2n-native-roots"
+            platform: linux/arm64
+            tags-suffix: "-s2n-native-roots"
+
+    steps:
+      - run: "echo 'The relese triggering workflows passed'"
+      - name: "set env"
+        run: |
+          if [ ${{ matrix.platform }} = "linux/amd64" ];then PLATFORM_MAP="x86_64";else PLATFORM_MAP="aarch64";fi
+          if [ ${{ github.ref_name == 'develop' }} ];then BUILD_NAME="rpxy-nightly";else BUILD_NAME="rpxy";fi
+          echo "PLATFORM_MAP=${PLATFORM_MAP}" >> $GITHUB_ENV
+          echo "TARGET_NAME=${BUILD_NAME}-${PLATFORM_MAP}-unknown-linux-${{ matrix.target }}${{ matrix.build-feature }}" >> $GITHUB_ENV
+
+      - name: "docker pull and extract binary from docker image"
+        id: "extract-binary"
+        run: |
+          CONTAINER_ID=`docker create --platform=${{ matrix.platform }} ghcr.io/junkurihara/rust-rpxy:nightly${{ matrix.tags-suffix }}`
+          docker cp ${CONTAINER_ID}:/rpxy/bin/rpxy /tmp/${TARGET_NAME}
+          cd /tmp
+          echo "artifact=${TARGET_NAME}" >> $GITHUB_OUTPUT
+
+      - name: "upload artifacts"
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.extract-binary.outputs.artifact }}
+          path: "/tmp/${{ steps.extract-binary.outputs.artifact }}"
+
+  on-failure:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    steps:
+      - run: echo 'The release triggering workflows failed'
+
+  release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: on-success
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: /tmp/rpxy
+
+      - name: make tar.gz of assets
+        run: |
+          mkdir /tmp/assets
+          cd /tmp/rpxy
+          for i in ./*; do sh -c "cd $i && tar zcvf $i.tar.gz $i && mv $i.tar.gz /tmp/assets/"; done
+          ls -lha /tmp/assets
+
+      - name: release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: /tmp/assets/*.tar.gz
+          tag_name: ${{ github.ref }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
