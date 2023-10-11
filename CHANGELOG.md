@@ -2,6 +2,14 @@
 
 ## 0.7.0  (unreleased)
 
+## 0.6.2
+
+### Improvement
+
+- Feat: Add a build feature of `native-roots` to use the system's default root cert store.
+- Feat: Add binary release in addition to container release
+- Refactor: lots of minor improvements
+
 ## 0.6.1
 
 ### Bugfix

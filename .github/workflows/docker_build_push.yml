@@ -4,6 +4,8 @@ on:
     branches:
       - "develop"
       - "main"
+    tags:
+      - "*.*.*"
   pull_request:
     types: [synchronize, opened]
 
