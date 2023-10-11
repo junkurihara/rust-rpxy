@@ -1,8 +1,6 @@
 #[cfg(feature = "cache")]
 use super::cache::{get_policy_if_cacheable, RpxyCache};
-#[cfg(feature = "cache")]
-use crate::log::*;
-use crate::{error::RpxyError, globals::Globals, CryptoSource};
+use crate::{error::RpxyError, globals::Globals, log::*, CryptoSource};
 use async_trait::async_trait;
 #[cfg(feature = "cache")]
 use bytes::Buf;
