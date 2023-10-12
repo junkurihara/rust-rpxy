@@ -9,11 +9,12 @@ on:
     types: [closed]
     branches:
       - main
+  push: # TODO: delete later
 
 jobs:
   on-success:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -98,7 +99,7 @@ jobs:
 
   on-failure:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure' }}
     steps:
       - run: echo 'The release triggering workflows failed'
 
