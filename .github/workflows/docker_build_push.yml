@@ -1,11 +1,12 @@
-name: Build and publish docker
+name: Build and publish docker, and trigger release
 on:
   push:
     branches:
       - "develop"
-      - "main"
-    tags:
-      - "*.*.*"
+  pull_request:
+    types: [closed]
+    branches:
+      - main
 
 env:
   GHCR: ghcr.io
@@ -15,6 +16,7 @@ env:
 jobs:
   build_and_push:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -167,3 +169,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=rpxy-latest-${{ matrix.target }}
           platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  dispatch_release_event:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
+    needs: build_and_push
+    steps:
+      - name: Repository dispatch for release
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          event-type: release-event
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "pull_request": { "title": "${{ github.event.pull_request.title }}", "body": "${{ github.event.pull_request.body }}", "number": "${{ github.event.pull_request.number }}", "head": "${{ github.event.pull_request.head.ref }}", "base": "${{ github.event.pull_request.base.ref}}"}}'
