@@ -1,6 +1,6 @@
 [package]
 name = "rpxy-lib"
-version = "0.6.1"
+version = "0.6.2"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -17,6 +17,7 @@ http3-quinn = ["quinn", "h3", "h3-quinn", "socket2"]
 http3-s2n = ["h3", "s2n-quic", "s2n-quic-rustls", "s2n-quic-h3"]
 sticky-cookie = ["base64", "sha2", "chrono"]
 cache = ["http-cache-semantics", "lru"]
+native-roots = ["hyper-rustls/native-tokio"]
 
 [dependencies]
 rand = "0.8.5"
@@ -24,7 +25,7 @@ rustc-hash = "1.1.0"
 bytes = "1.5.0"
 derive_builder = "0.12.0"
 futures = { version = "0.3.28", features = ["alloc", "async-await"] }
-tokio = { version = "1.32.0", default-features = false, features = [
+tokio = { version = "1.33.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -37,7 +38,7 @@ hot_reload = "0.1.4" # reloading certs
 
 # Error handling
 anyhow = "1.0.75"
-thiserror = "1.0.48"
+thiserror = "1.0.49"
 
 # http and tls
 hyper = { version = "0.14.27", default-features = false, features = [
@@ -54,7 +55,7 @@ hyper-rustls = { version = "0.24.1", default-features = false, features = [
 ] }
 tokio-rustls = { version = "0.24.1", features = ["early-data"] }
 rustls = { version = "0.21.7", default-features = false }
-webpki = "0.22.1"
+webpki = "0.22.4"
 x509-parser = "0.15.1"
 
 # logging
@@ -67,7 +68,7 @@ h3 = { path = "../submodules/h3/h3/", optional = true }
 # h3-quinn = { path = "./h3/h3-quinn/", optional = true }
 h3-quinn = { path = "../submodules/h3-quinn/", optional = true } # Tentative to support rustls-0.21
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.5.3", features = ["all"], optional = true }
+socket2 = { version = "0.5.4", features = ["all"], optional = true }
 s2n-quic = { path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
@@ -76,16 +77,16 @@ s2n-quic-rustls = { path = "../submodules/s2n-quic/quic/s2n-quic-rustls/", optio
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics/", optional = true }
-lru = { version = "0.11.1", optional = true }
+lru = { version = "0.12.0", optional = true }
 
 # cookie handling for sticky cookie
-chrono = { version = "0.4.30", default-features = false, features = [
+chrono = { version = "0.4.31", default-features = false, features = [
   "unstable-locales",
   "alloc",
   "clock",
 ], optional = true }
-base64 = { version = "0.21.3", optional = true }
-sha2 = { version = "0.10.7", default-features = false, optional = true }
+base64 = { version = "0.21.4", optional = true }
+sha2 = { version = "0.10.8", default-features = false, optional = true }
 
 
 [dev-dependencies]

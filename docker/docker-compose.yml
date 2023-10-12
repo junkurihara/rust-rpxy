@@ -9,15 +9,17 @@ services:
       - 127.0.0.1:8080:8080/tcp
       - 127.0.0.1:8443:8443/udp
       - 127.0.0.1:8443:8443/tcp
-    # build: # Uncomment if you build yourself
-    #   context: ../
-    #   args: # Uncomment when build quic-s2n version
-    #     - "CARGO_FEATURES=--no-default-features --features http3-s2n"
-    #     - "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
-    #   dockerfile: ./docker/Dockerfile # based on ubuntu 22.04 and build x86_64-unknown-linux-gnu
-    #   platforms: # Choose your platforms
-    #     - "linux/amd64"
-    #     # - "linux/arm64"
+    build: # Uncomment if you build yourself
+      context: ../
+      # args: # Uncomment when build quic-s2n version
+      #   - "CARGO_FEATURES=--no-default-features --features=http3-s2n"
+      #   - "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
+      # args: # Uncomment when build with native cert store
+      #   - "CARGO_FEATURES=--no-default-features --features=http3-quinn,native-roots"
+      dockerfile: ./docker/Dockerfile # based on ubuntu 22.04 and build x86_64-unknown-linux-gnu
+      platforms: # Choose your platforms
+        # - "linux/amd64"
+        - "linux/arm64"
     environment:
       - LOG_LEVEL=debug
       - LOG_TO_FILE=true

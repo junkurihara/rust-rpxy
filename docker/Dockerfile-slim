@@ -4,6 +4,8 @@ FROM --platform=$BUILDPLATFORM messense/rust-musl-cross:${TARGETARCH}-musl AS bu
 LABEL maintainer="Jun Kurihara"
 
 ARG TARGETARCH
+ARG CARGO_FEATURES
+ENV CARGO_FEATURES ${CARGO_FEATURES}
 
 RUN if [ $TARGETARCH = "amd64" ]; then \
   echo "x86_64" > /arch; \
@@ -23,7 +25,7 @@ COPY . /tmp/
 ENV RUSTFLAGS "-C link-arg=-s"
 
 RUN echo "Building rpxy from source" && \
-  cargo build --release --target $(cat /arch)-unknown-linux-musl && \
+  cargo build --release --target $(cat /arch)-unknown-linux-musl ${CARGO_FEATURES} && \
   musl-strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy && \
   cp /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy /tmp/target/release/rpxy
 

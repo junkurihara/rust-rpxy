@@ -46,13 +46,13 @@ where
             let client_hello = start.client_hello();
             let server_name = client_hello.server_name();
             debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", server_name);
-            let server_name = server_name.map_or_else(|| None, |v| Some(v.to_server_name_vec()));
-            if server_name.is_none(){
+            let server_name_in_bytes = server_name.map_or_else(|| None, |v| Some(v.to_server_name_vec()));
+            if server_name_in_bytes.is_none(){
               return Err(RpxyError::Proxy("No SNI is given".to_string()));
             }
-            let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
+            let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name_in_bytes.as_ref().unwrap());
             if server_crypto.is_none() {
-              return Err(RpxyError::Proxy(format!("No TLS serving app for {:?}", "xx")));
+              return Err(RpxyError::Proxy(format!("No TLS serving app for {:?}", server_name.unwrap())));
             }
             let stream = match start.into_stream(server_crypto.unwrap().clone()).await {
               Ok(s) => s,
@@ -60,7 +60,7 @@ where
                 return Err(RpxyError::Proxy(format!("Failed to handshake TLS: {e}")));
               }
             };
-            self_inner.client_serve(stream, server_clone, client_addr, server_name);
+            self_inner.client_serve(stream, server_clone, client_addr, server_name_in_bytes);
             Ok(())
           };
 
