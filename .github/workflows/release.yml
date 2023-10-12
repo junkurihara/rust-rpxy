@@ -8,15 +8,14 @@ on:
     branches:
       - main
       - develop
-  pull_request:
-    types: [closed]
-    branches:
-      - main
+  repository_dispatch:
+    types:
+      - release-event
 
 jobs:
   on-success:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'repositry_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
@@ -107,14 +106,14 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
+    if: ${{ github.event_name == 'repository_dispatch' }}
     needs: on-success
     steps:
       - name: check pull_request title
-        uses: actions-ecosystem/action-regex-match@v2
+        uses: kaisugi/action-regex-match@v1.0.0
         id: regex-match
         with:
-          text: ${{ github.event.pull_request.title }}
+          text: ${{ github.event.client_payload.pull_request.title }}
           regex: "^(\\d+\\.\\d+\\.\\d+)$"
 
       - name: checkout
@@ -140,9 +139,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: /tmp/assets/*.tar.gz
-          name: ${{ github.event.pull_request.title }}
-          tag_name: ${{ github.event.pull_request.title }}
-          body: ${{ github.event.pull_request.body }}
+          name: ${{ github.event.client_payload.pull_request.title }}
+          tag_name: ${{ github.event.client_payload.pull_request.title }}
+          body: ${{ github.event.client_payload.pull_request.body }}
           draft: true
           prerelease: false
           generate_release_notes: true

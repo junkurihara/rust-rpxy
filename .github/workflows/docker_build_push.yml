@@ -1,11 +1,12 @@
-name: Build and publish docker
+name: Build and publish docker, and trigger release
 on:
   push:
     branches:
       - "develop"
-      - "main"
   pull_request:
-    types: [synchronize, opened]
+    types: [closed]
+    branches:
+      - main
 
 env:
   GHCR: ghcr.io
@@ -15,6 +16,7 @@ env:
 jobs:
   build_and_push:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -119,19 +121,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Nightly build test on amd64 for pull requests
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          build-args: ${{ matrix.build-args }}
-          push: false
-          build-contexts: ${{ matrix.build-contexts }}
-          file: ${{ matrix.dockerfile }}
-          cache-from: type=gha,scope=rpxy-nightly-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=rpxy-nightly-${{ matrix.target }}
-          platforms: linux/amd64
-          labels: ${{ steps.meta.outputs.labels }}
+      # - name: Nightly build test on amd64 for pull requests
+      #   if: ${{ github.event_name == 'pull_request' }}
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     build-args: ${{ matrix.build-args }}
+      #     push: false
+      #     build-contexts: ${{ matrix.build-contexts }}
+      #     file: ${{ matrix.dockerfile }}
+      #     cache-from: type=gha,scope=rpxy-nightly-${{ matrix.target }}
+      #     cache-to: type=gha,mode=max,scope=rpxy-nightly-${{ matrix.target }}
+      #     platforms: linux/amd64
+      #     labels: ${{ steps.meta.outputs.labels }}
 
       - name: Nightly build and push from develop branch
         if: ${{ (github.ref_name == 'develop') && (github.event_name == 'push') }}
@@ -167,3 +169,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=rpxy-latest-${{ matrix.target }}
           platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  dispatch_release_event:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
+    needs: build_and_push
+    steps:
+      - name: Repository dispatch for release
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          event-type: release-event
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "pull_request": { "title": "${{ github.event.pull_request.title }}", "body": "${{ github.event.pull_request.body }}", "number": "${{ github.event.pull_request.number }}", "head": "${{ github.event.pull_request.head.ref }}", "base": "${{ github.event.pull_request.base.ref}}"}}'
