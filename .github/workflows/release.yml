@@ -8,10 +8,6 @@ on:
     branches:
       - main
       - develop
-  pull_request:
-    types: [closed]
-    branches:
-      - main
 
 jobs:
   on-success:
@@ -107,42 +103,47 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
+    # if: ${{ github.ref_name == 'main' }}
     needs: on-success
     steps:
-      - name: check pull_request title
-        uses: actions-ecosystem/action-regex-match@v2
-        id: regex-match
+      # - name: check pull_request title
+      #   uses: actions-ecosystem/action-regex-match@v2
+      #   id: regex-match
+      #   with:
+      #     text: ${{ github.event.pull_request.title }}
+      #     regex: "^(\\d+\\.\\d+\\.\\d+)$"
+      - name: retrive github script context
+        uses: actions/github-script@v6
         with:
-          text: ${{ github.event.pull_request.title }}
-          regex: "^(\\d+\\.\\d+\\.\\d+)$"
+          script: |
+            core.info(JSON.stringify(context.payload))
 
       - name: checkout
-        if: ${{ steps.regex-match.outputs.match != '' }}
+        # if: ${{ steps.regex-match.outputs.match != '' }}
         uses: actions/checkout@v4
 
       - name: download artifacts
-        if: ${{ steps.regex-match.outputs.match != ''}}
+        # if: ${{ steps.regex-match.outputs.match != ''}}
         uses: actions/download-artifact@v3
         with:
           path: /tmp/rpxy
 
       - name: make tar.gz of assets
-        if: ${{ steps.regex-match.outputs.match != ''}}
+        # if: ${{ steps.regex-match.outputs.match != ''}}
         run: |
           mkdir /tmp/assets
           cd /tmp/rpxy
           for i in ./*; do sh -c "cd $i && tar zcvf $i.tar.gz $i && mv $i.tar.gz /tmp/assets/"; done
           ls -lha /tmp/assets
 
-      - name: release
-        if: ${{ steps.regex-match.outputs.match != ''}}
-        uses: softprops/action-gh-release@v1
-        with:
-          files: /tmp/assets/*.tar.gz
-          name: ${{ github.event.pull_request.title }}
-          tag_name: ${{ github.event.pull_request.title }}
-          body: ${{ github.event.pull_request.body }}
-          draft: true
-          prerelease: false
-          generate_release_notes: true
+      # - name: release
+      #   if: ${{ steps.regex-match.outputs.match != ''}}
+      #   uses: softprops/action-gh-release@v1
+      #   with:
+      #     files: /tmp/assets/*.tar.gz
+      #     name: ${{ github.event.pull_request.title }}
+      #     tag_name: ${{ github.event.pull_request.title }}
+      #     body: ${{ github.event.pull_request.body }}
+      #     draft: true
+      #     prerelease: false
+      #     generate_release_notes: true
