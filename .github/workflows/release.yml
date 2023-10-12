@@ -5,11 +5,18 @@ on:
       - "Build and publish docker"
     types:
       - "completed"
+    branches:
+      - main
+      - develop
+  pull_request:
+    types: [closed]
+    branches:
+      - main
 
 jobs:
   on-success:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -70,47 +77,58 @@ jobs:
 
     steps:
       - run: "echo 'The relese triggering workflows passed'"
+
       - name: "set env"
+        id: "set-env"
         run: |
-          if [ ${{ matrix.platform }} = "linux/amd64" ];then PLATFORM_MAP="x86_64";else PLATFORM_MAP="aarch64";fi
-          if [ ${{ github.ref_name == 'develop' }} ];then BUILD_NAME="rpxy-nightly";else BUILD_NAME="rpxy";fi
-          echo "PLATFORM_MAP=${PLATFORM_MAP}" >> $GITHUB_ENV
-          echo "TARGET_NAME=${BUILD_NAME}-${PLATFORM_MAP}-unknown-linux-${{ matrix.target }}${{ matrix.build-feature }}" >> $GITHUB_ENV
+          if [ ${{ matrix.platform }} == 'linux/amd64' ]; then PLATFORM_MAP="x86_64"; else PLATFORM_MAP="aarch64"; fi
+          if [ ${{ github.ref_name }} == 'develop' ]; then BUILD_NAME="-nightly"; else BUILD_NAME=""; fi
+          if [ ${{ github.ref_name }} == 'develop' ]; then BUILD_IMG="nightly"; else BUILD_IMG="latest"; fi
+          echo "build_img=${BUILD_IMG}" >> $GITHUB_OUTPUT
+          echo "target_name=rpxy${BUILD_NAME}-${PLATFORM_MAP}-unknown-linux-${{ matrix.target }}${{ matrix.build-feature }}" >> $GITHUB_OUTPUT
 
       - name: "docker pull and extract binary from docker image"
         id: "extract-binary"
         run: |
-          CONTAINER_ID=`docker create --platform=${{ matrix.platform }} ghcr.io/junkurihara/rust-rpxy:nightly${{ matrix.tags-suffix }}`
-          docker cp ${CONTAINER_ID}:/rpxy/bin/rpxy /tmp/${TARGET_NAME}
-          cd /tmp
-          echo "artifact=${TARGET_NAME}" >> $GITHUB_OUTPUT
+          CONTAINER_ID=`docker create --platform=${{ matrix.platform }} ghcr.io/junkurihara/rust-rpxy:${{ steps.set-env.outputs.build_img }}${{ matrix.tags-suffix }}`
+          docker cp ${CONTAINER_ID}:/rpxy/bin/rpxy /tmp/${{ steps.set-env.outputs.target_name }}
 
       - name: "upload artifacts"
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ steps.extract-binary.outputs.artifact }}
-          path: "/tmp/${{ steps.extract-binary.outputs.artifact }}"
+          name: ${{ steps.set-env.outputs.target_name }}
+          path: "/tmp/${{ steps.set-env.outputs.target_name }}"
 
   on-failure:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure' }}
     steps:
       - run: echo 'The release triggering workflows failed'
 
   release:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
     needs: on-success
     steps:
+      - name: check pull_request title
+        uses: actions-ecosystem/action-regex-match@v2
+        id: regex-match
+        with:
+          text: ${{ github.event.pull_request.title }}
+          regex: "^(\\d+\\.\\d+\\.\\d+)$"
+
       - name: checkout
+        if: ${{ steps.regex-match.outputs.match != '' }}
         uses: actions/checkout@v4
 
       - name: download artifacts
+        if: ${{ steps.regex-match.outputs.match != ''}}
         uses: actions/download-artifact@v3
         with:
           path: /tmp/rpxy
 
       - name: make tar.gz of assets
+        if: ${{ steps.regex-match.outputs.match != ''}}
         run: |
           mkdir /tmp/assets
           cd /tmp/rpxy
@@ -118,11 +136,13 @@ jobs:
           ls -lha /tmp/assets
 
       - name: release
+        if: ${{ steps.regex-match.outputs.match != ''}}
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: /tmp/assets/*.tar.gz
-          tag_name: ${{ github.ref }}
+          name: ${{ github.event.pull_request.title }}
+          tag_name: ${{ github.event.pull_request.title }}
+          body: ${{ github.event.pull_request.body }}
           draft: true
           prerelease: false
           generate_release_notes: true
