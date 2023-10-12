@@ -8,11 +8,14 @@ on:
     branches:
       - main
       - develop
+  repository_dispatch:
+    types:
+      - release-event
 
 jobs:
   on-success:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'repositry_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
@@ -103,47 +106,42 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    # if: ${{ github.ref_name == 'main' }}
+    if: ${{ github.event_name == 'repository_dispatch' }}
     needs: on-success
     steps:
-      # - name: check pull_request title
-      #   uses: actions-ecosystem/action-regex-match@v2
-      #   id: regex-match
-      #   with:
-      #     text: ${{ github.event.pull_request.title }}
-      #     regex: "^(\\d+\\.\\d+\\.\\d+)$"
-      - name: retrive github script context
-        uses: actions/github-script@v6
+      - name: check pull_request title
+        uses: kaisugi/action-regex-match@v1.0.0
+        id: regex-match
         with:
-          script: |
-            core.info(JSON.stringify(context.payload))
+          text: ${{ github.event.client_payload.pull_request.title }}
+          regex: "^(\\d+\\.\\d+\\.\\d+)$"
 
       - name: checkout
-        # if: ${{ steps.regex-match.outputs.match != '' }}
+        if: ${{ steps.regex-match.outputs.match != '' }}
         uses: actions/checkout@v4
 
       - name: download artifacts
-        # if: ${{ steps.regex-match.outputs.match != ''}}
+        if: ${{ steps.regex-match.outputs.match != ''}}
         uses: actions/download-artifact@v3
         with:
           path: /tmp/rpxy
 
       - name: make tar.gz of assets
-        # if: ${{ steps.regex-match.outputs.match != ''}}
+        if: ${{ steps.regex-match.outputs.match != ''}}
         run: |
           mkdir /tmp/assets
           cd /tmp/rpxy
           for i in ./*; do sh -c "cd $i && tar zcvf $i.tar.gz $i && mv $i.tar.gz /tmp/assets/"; done
           ls -lha /tmp/assets
 
-      # - name: release
-      #   if: ${{ steps.regex-match.outputs.match != ''}}
-      #   uses: softprops/action-gh-release@v1
-      #   with:
-      #     files: /tmp/assets/*.tar.gz
-      #     name: ${{ github.event.pull_request.title }}
-      #     tag_name: ${{ github.event.pull_request.title }}
-      #     body: ${{ github.event.pull_request.body }}
-      #     draft: true
-      #     prerelease: false
-      #     generate_release_notes: true
+      - name: release
+        if: ${{ steps.regex-match.outputs.match != ''}}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: /tmp/assets/*.tar.gz
+          name: ${{ github.event.client_payload.pull_request.title }}
+          tag_name: ${{ github.event.client_payload.pull_request.title }}
+          body: ${{ github.event.client_payload.pull_request.body }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
