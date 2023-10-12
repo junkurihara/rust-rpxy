@@ -1,6 +1,9 @@
 name: ShiftLeft Scan
 
-on: push
+on:
+  push:
+  pull_request:
+    types: [synchronize, opened]
 
 jobs:
   Scan-Build:
