@@ -9,12 +9,11 @@ on:
     types: [closed]
     branches:
       - main
-  push: # TODO: delete later
 
 jobs:
   on-success:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -79,9 +78,9 @@ jobs:
       - name: "set env"
         id: "set-env"
         run: |
-          if [ ${{ matrix.platform }} = "linux/amd64" ]; then PLATFORM_MAP="x86_64"; else PLATFORM_MAP="aarch64"; fi
-          if [ ${{ github.ref_name == 'develop' }} ]; then BUILD_NAME="-nightly"; else BUILD_NAME=""; fi
-          if [ ${{ github.ref_name == 'develop' }} ]; then BUILD_IMG="nightly"; else BUILD_IMG="latest"; fi
+          if [ ${{ matrix.platform }} == 'linux/amd64' ]; then PLATFORM_MAP="x86_64"; else PLATFORM_MAP="aarch64"; fi
+          if [ ${{ github.ref_name }} == 'develop' ]; then BUILD_NAME="-nightly"; else BUILD_NAME=""; fi
+          if [ ${{ github.ref_name }} == 'develop' ]; then BUILD_IMG="nightly"; else BUILD_IMG="latest"; fi
           echo "build_img=${BUILD_IMG}" >> $GITHUB_OUTPUT
           echo "target_name=rpxy${BUILD_NAME}-${PLATFORM_MAP}-unknown-linux-${{ matrix.target }}${{ matrix.build-feature }}" >> $GITHUB_OUTPUT
 
