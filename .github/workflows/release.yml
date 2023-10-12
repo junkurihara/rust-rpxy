@@ -5,6 +5,9 @@ on:
       - "Build and publish docker"
     types:
       - "completed"
+    branches:
+      - main
+      - develop
   pull_request:
     types: [closed]
     branches:
@@ -13,7 +16,7 @@ on:
 jobs:
   on-success:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
