@@ -107,18 +107,28 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
     needs: on-success
     steps:
+      - name: check pull_request title
+        uses: actions-ecosystem/action-regex-match@v2
+        id: regex-match
+        with:
+          text: ${{ github.event.pull_request.title }}
+          regex: "^(\\d+\\.\\d+\\.\\d+)$"
+
       - name: checkout
+        if: ${{ steps.regex-match.outputs.match != '' }}
         uses: actions/checkout@v4
 
       - name: download artifacts
+        if: ${{ steps.regex-match.outputs.match != ''}}
         uses: actions/download-artifact@v3
         with:
           path: /tmp/rpxy
 
       - name: make tar.gz of assets
+        if: ${{ steps.regex-match.outputs.match != ''}}
         run: |
           mkdir /tmp/assets
           cd /tmp/rpxy
@@ -126,6 +136,7 @@ jobs:
           ls -lha /tmp/assets
 
       - name: release
+        if: ${{ steps.regex-match.outputs.match != ''}}
         uses: softprops/action-gh-release@v1
         with:
           files: /tmp/assets/*.tar.gz
