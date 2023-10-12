@@ -153,7 +153,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Release build and push from main branch
-        if: ${{ (github.ref_name == 'main') && (github.event_name == 'push') }}
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
         uses: docker/build-push-action@v5
         with:
           context: .
