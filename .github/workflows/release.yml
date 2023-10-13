@@ -2,7 +2,7 @@ name: Extract executable binary, upload artifacts, create release
 on:
   workflow_run:
     workflows:
-      - "Build and publish docker"
+      - "Release - Build and publish docker, and trigger package release"
     types:
       - "completed"
     branches:
