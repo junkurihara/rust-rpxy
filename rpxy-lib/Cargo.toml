@@ -33,12 +33,12 @@ tokio = { version = "1.33.0", default-features = false, features = [
   "macros",
   "fs",
 ] }
-async-trait = "0.1.73"
+async-trait = "0.1.74"
 hot_reload = "0.1.4" # reloading certs
 
 # Error handling
 anyhow = "1.0.75"
-thiserror = "1.0.49"
+thiserror = "1.0.50"
 
 # http and tls
 hyper = { version = "0.14.27", default-features = false, features = [
@@ -59,7 +59,7 @@ webpki = "0.22.4"
 x509-parser = "0.15.1"
 
 # logging
-tracing = { version = "0.1.37" }
+tracing = { version = "0.1.40" }
 
 # http/3
 # quinn = { version = "0.9.3", optional = true }
