@@ -1,7 +1,7 @@
 [package]
 name = "h3-quinn"
-version = "0.0.1"
-rust-version = "1.59"
+version = "0.0.4"
+rust-version = "1.63"
 authors = ["Jean-Christophe BEGUE <jc.begue@pm.me>"]
 edition = "2018"
 documentation = "https://docs.rs/h3-quinn"
@@ -13,12 +13,12 @@ categories = ["network-programming", "web-programming"]
 license = "MIT"
 
 [dependencies]
-h3 = { version = "0.0.2", path = "../h3/h3" }
+h3 = { version = "0.0.3", path = "../h3/h3" }
 bytes = "1"
 quinn = { path = "../quinn/quinn/", default-features = false, features = [
   "futures-io",
 ] }
 quinn-proto = { path = "../quinn/quinn-proto/", default-features = false }
-tokio-util = { version = "0.7.8" }
-futures = { version = "0.3.27" }
-tokio = { version = "1.28", features = ["io-util"], default-features = false }
+tokio-util = { version = "0.7.9" }
+futures = { version = "0.3.28" }
+tokio = { version = "1.33.0", features = ["io-util"], default-features = false }
