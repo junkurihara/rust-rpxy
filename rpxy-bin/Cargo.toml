@@ -25,7 +25,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 
 anyhow = "1.0.75"
 rustc-hash = "1.1.0"
-serde = { version = "1.0.189", default-features = false, features = ["derive"] }
+serde = { version = "1.0.190", default-features = false, features = ["derive"] }
 derive_builder = "0.12.0"
 tokio = { version = "1.33.0", default-features = false, features = [
   "net",
@@ -39,7 +39,7 @@ rustls-pemfile = "1.0.3"
 mimalloc = { version = "*", default-features = false }
 
 # config
-clap = { version = "4.4.6", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.4.7", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 hot_reload = "0.1.4"
 

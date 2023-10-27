@@ -34,6 +34,7 @@ pub(super) fn bind_udp_socket(listening_on: &SocketAddr) -> Result<UdpSocket> {
   }?;
   socket.set_reuse_address(true)?; // This isn't necessary?
   socket.set_reuse_port(true)?;
+  socket.set_nonblocking(true)?; // This was made true inside quinn. so this line isn't necessary here. but just in case.
 
   if let Err(e) = socket.bind(&(*listening_on).into()) {
     error!("Failed to bind UDP socket: {}", e);
