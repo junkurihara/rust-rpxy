@@ -41,7 +41,7 @@ anyhow = "1.0.75"
 thiserror = "1.0.50"
 
 # http and tls
-hyper = { version = "0.14.27", default-features = false, features = [
+hyper = { version = "1.0.0", default-features = false, features = [
   "server",
   "http1",
   "http2",
