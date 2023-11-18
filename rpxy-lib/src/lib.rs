@@ -4,20 +4,16 @@ mod constants;
 mod error;
 mod globals;
 mod handler;
+mod hyper_executor;
 mod log;
 mod proxy;
 mod utils;
 
-use crate::{
-  error::*,
-  globals::Globals,
-  handler::{Forwarder, HttpMessageHandlerBuilder},
-  log::*,
-  proxy::ProxyBuilder,
-};
+use crate::{error::*, globals::Globals, handler::HttpMessageHandlerBuilder, log::*, proxy::ProxyBuilder};
 use futures::future::select_all;
+use hyper_executor::build_http_server;
 // use hyper_trust_dns::TrustDnsResolver;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 pub use crate::{
   certs::{CertsAndKeys, CryptoSource},
@@ -76,15 +72,18 @@ where
     backends: app_config_list.clone().try_into()?,
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
+    term_notify: term_notify.clone(),
   });
 
   // build message handler including a request forwarder
   let msg_handler = Arc::new(
     HttpMessageHandlerBuilder::default()
-      .forwarder(Arc::new(Forwarder::new(&globals).await))
+      // .forwarder(Arc::new(Forwarder::new(&globals).await))
       .globals(globals.clone())
       .build()?,
   );
+
+  let http_server = Arc::new(build_http_server(&globals));
 
   let addresses = globals.proxy_config.listen_sockets.clone();
   let futures = select_all(addresses.into_iter().map(|addr| {
@@ -97,16 +96,17 @@ where
       .globals(globals.clone())
       .listening_on(addr)
       .tls_enabled(tls_enabled)
+      .http_server(http_server.clone())
       .msg_handler(msg_handler.clone())
       .build()
       .unwrap();
 
-    globals.runtime_handle.spawn(proxy.start(term_notify.clone()))
+    globals.runtime_handle.spawn(async move { proxy.start().await })
   }));
 
   // wait for all future
   if let (Ok(Err(e)), _, _) = futures.await {
-    error!("Some proxy services are down: {:?}", e);
+    error!("Some proxy services are down: {}", e);
   };
 
   Ok(())

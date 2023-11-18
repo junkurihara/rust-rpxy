@@ -1,78 +1,70 @@
-use super::socket::bind_tcp_socket;
+use super::{passthrough_response, socket::bind_tcp_socket, synthetic_error_response, EitherBody};
 use crate::{
-  certs::CryptoSource, error::*, globals::Globals, handler::HttpMessageHandler, log::*, utils::ServerNameBytesExp,
+  certs::CryptoSource, error::*, globals::Globals, handler::HttpMessageHandler, hyper_executor::LocalExecutor, log::*,
+  utils::ServerNameBytesExp,
 };
 use derive_builder::{self, Builder};
-use hyper::{client::connect::Connect, server::conn::Http, service::service_fn, Body, Request};
-use std::{net::SocketAddr, sync::Arc};
-use tokio::{
-  io::{AsyncRead, AsyncWrite},
-  runtime::Handle,
-  sync::Notify,
-  time::{timeout, Duration},
+use http::{Request, StatusCode};
+use hyper::{
+  body::Incoming,
+  rt::{Read, Write},
+  service::service_fn,
 };
-
-#[derive(Clone)]
-pub struct LocalExecutor {
-  runtime_handle: Handle,
-}
-
-impl LocalExecutor {
-  fn new(runtime_handle: Handle) -> Self {
-    LocalExecutor { runtime_handle }
-  }
-}
-
-impl<F> hyper::rt::Executor<F> for LocalExecutor
-where
-  F: std::future::Future + Send + 'static,
-  F::Output: Send,
-{
-  fn execute(&self, fut: F) {
-    self.runtime_handle.spawn(fut);
-  }
-}
+use hyper_util::{client::legacy::connect::Connect, rt::TokioIo, server::conn::auto::Builder as ConnectionBuilder};
+use std::{net::SocketAddr, sync::Arc};
+use tokio::time::{timeout, Duration};
 
 #[derive(Clone, Builder)]
-pub struct Proxy<T, U>
+/// Proxy main object
+pub struct Proxy<U>
 where
-  T: Connect + Clone + Sync + Send + 'static,
+  // T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub listening_on: SocketAddr,
   pub tls_enabled: bool, // TCP待受がTLSかどうか
-  pub msg_handler: Arc<HttpMessageHandler<T, U>>,
+  /// hyper server receiving http request
+  pub http_server: Arc<ConnectionBuilder<LocalExecutor>>,
+  // pub msg_handler: Arc<HttpMessageHandler<U>>,
+  pub msg_handler: Arc<HttpMessageHandler<U>>,
   pub globals: Arc<Globals<U>>,
 }
 
-impl<T, U> Proxy<T, U>
+/// Wrapper function to handle request
+async fn serve_request<U>(
+  req: Request<Incoming>,
+  // handler: Arc<HttpMessageHandler<T, U>>,
+  handler: Arc<HttpMessageHandler<U>>,
+  client_addr: SocketAddr,
+  listen_addr: SocketAddr,
+  tls_enabled: bool,
+  tls_server_name: Option<ServerNameBytesExp>,
+) -> Result<hyper::Response<EitherBody>>
 where
-  T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send + 'static,
+{
+  match handler
+    .handle_request(req, client_addr, listen_addr, tls_enabled, tls_server_name)
+    .await?
+  {
+    Ok(res) => passthrough_response(res),
+    Err(e) => synthetic_error_response(StatusCode::from(e)),
+  }
+}
+
+impl<U> Proxy<U>
+where
+  // T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send,
 {
-  /// Wrapper function to handle request
-  async fn serve(
-    handler: Arc<HttpMessageHandler<T, U>>,
-    req: Request<Body>,
-    client_addr: SocketAddr,
-    listen_addr: SocketAddr,
-    tls_enabled: bool,
-    tls_server_name: Option<ServerNameBytesExp>,
-  ) -> Result<hyper::Response<Body>> {
-    handler
-      .handle_request(req, client_addr, listen_addr, tls_enabled, tls_server_name)
-      .await
-  }
-
   /// Serves requests from clients
-  pub(super) fn client_serve<I>(
-    self,
+  pub(super) fn serve_connection<I>(
+    &self,
     stream: I,
-    server: Http<LocalExecutor>,
     peer_addr: SocketAddr,
     tls_server_name: Option<ServerNameBytesExp>,
   ) where
-    I: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    I: Read + Write + Send + Unpin + 'static,
   {
     let request_count = self.globals.request_count.clone();
     if request_count.increment() > self.globals.proxy_config.max_clients {
@@ -81,24 +73,27 @@ where
     }
     debug!("Request incoming: current # {}", request_count.current());
 
+    let server_clone = self.http_server.clone();
+    let msg_handler_clone = self.msg_handler.clone();
+    let timeout_sec = self.globals.proxy_config.proxy_timeout;
+    let tls_enabled = self.tls_enabled;
+    let listening_on = self.listening_on;
     self.globals.runtime_handle.clone().spawn(async move {
       timeout(
-        self.globals.proxy_config.proxy_timeout + Duration::from_secs(1),
-        server
-          .serve_connection(
-            stream,
-            service_fn(move |req: Request<Body>| {
-              Self::serve(
-                self.msg_handler.clone(),
-                req,
-                peer_addr,
-                self.listening_on,
-                self.tls_enabled,
-                tls_server_name.clone(),
-              )
-            }),
-          )
-          .with_upgrades(),
+        timeout_sec + Duration::from_secs(1),
+        server_clone.serve_connection_with_upgrades(
+          stream,
+          service_fn(move |req: Request<Incoming>| {
+            serve_request(
+              req,
+              msg_handler_clone.clone(),
+              peer_addr,
+              listening_on,
+              tls_enabled,
+              tls_server_name.clone(),
+            )
+          }),
+        ),
       )
       .await
       .ok();
@@ -109,13 +104,13 @@ where
   }
 
   /// Start without TLS (HTTP cleartext)
-  async fn start_without_tls(self, server: Http<LocalExecutor>) -> Result<()> {
+  async fn start_without_tls(&self) -> Result<()> {
     let listener_service = async {
       let tcp_socket = bind_tcp_socket(&self.listening_on)?;
       let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
       info!("Start TCP proxy serving with HTTP request for configured host names");
-      while let Ok((stream, _client_addr)) = tcp_listener.accept().await {
-        self.clone().client_serve(stream, server.clone(), _client_addr, None);
+      while let Ok((stream, client_addr)) = tcp_listener.accept().await {
+        self.serve_connection(TokioIo::new(stream), client_addr, None);
       }
       Ok(()) as Result<()>
     };
@@ -124,32 +119,23 @@ where
   }
 
   /// Entrypoint for HTTP/1.1 and HTTP/2 servers
-  pub async fn start(self, term_notify: Option<Arc<Notify>>) -> Result<()> {
-    let mut server = Http::new();
-    server.http1_keep_alive(self.globals.proxy_config.keepalive);
-    server.http2_max_concurrent_streams(self.globals.proxy_config.max_concurrent_streams);
-    server.pipeline_flush(true);
-    let executor = LocalExecutor::new(self.globals.runtime_handle.clone());
-    let server = server.with_executor(executor);
-
-    let listening_on = self.listening_on;
-
+  pub async fn start(&self) -> Result<()> {
     let proxy_service = async {
       if self.tls_enabled {
-        self.start_with_tls(server).await
+        self.start_with_tls().await
       } else {
-        self.start_without_tls(server).await
+        self.start_without_tls().await
       }
     };
 
-    match term_notify {
+    match &self.globals.term_notify {
       Some(term) => {
         tokio::select! {
           _ = proxy_service => {
             warn!("Proxy service got down");
           }
           _ = term.notified() => {
-            info!("Proxy service listening on {} receives term signal", listening_on);
+            info!("Proxy service listening on {} receives term signal", self.listening_on);
           }
         }
       }
@@ -158,8 +144,6 @@ where
         warn!("Proxy service got down");
       }
     }
-
-    // proxy_service.await?;
 
     Ok(())
   }

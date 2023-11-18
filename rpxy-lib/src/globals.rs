@@ -33,6 +33,9 @@ where
 
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
+
+  /// Shared context - Notify object to stop async tasks
+  pub term_notify: Option<Arc<tokio::sync::Notify>>,
 }
 
 /// Configuration parameters for proxy transport and request handlers

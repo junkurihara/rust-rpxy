@@ -5,14 +5,14 @@ use super::{
 };
 use crate::{certs::CryptoSource, error::*, log::*, utils::BytesName};
 use hot_reload::ReloaderReceiver;
-use hyper::client::connect::Connect;
+use hyper_util::client::legacy::connect::Connect;
 use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
 use rustls::ServerConfig;
 use std::sync::Arc;
 
-impl<T, U> Proxy<T, U>
+impl<U> Proxy<U>
 where
-  T: Connect + Clone + Sync + Send + 'static,
+  // T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn listener_service_h3(

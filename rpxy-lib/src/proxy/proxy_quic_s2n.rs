@@ -4,13 +4,13 @@ use super::{
 };
 use crate::{certs::CryptoSource, error::*, log::*, utils::BytesName};
 use hot_reload::ReloaderReceiver;
-use hyper::client::connect::Connect;
+use hyper_util::client::legacy::connect::Connect;
 use s2n_quic::provider;
 use std::sync::Arc;
 
-impl<T, U> Proxy<T, U>
+impl<U> Proxy<U>
 where
-  T: Connect + Clone + Sync + Send + 'static,
+  // T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn listener_service_h3(
@@ -29,7 +29,7 @@ where
     // event loop
     loop {
       tokio::select! {
-        v = self.serve_connection(&server_crypto) => {
+        v = self.listener_service_h3_inner(&server_crypto) => {
           if let Err(e) = v {
             error!("Quic connection event loop illegally shutdown [s2n-quic] {e}");
             break;
@@ -64,7 +64,7 @@ where
     })
   }
 
-  async fn serve_connection(&self, server_crypto: &Option<Arc<ServerCrypto>>) -> Result<()> {
+  async fn listener_service_h3_inner(&self, server_crypto: &Option<Arc<ServerCrypto>>) -> Result<()> {
     // setup UDP socket
     let io = provider::io::tokio::Builder::default()
       .with_receive_address(self.listening_on)?
@@ -110,9 +110,9 @@ where
     while let Some(new_conn) = server.accept().await {
       debug!("New QUIC connection established");
       let Ok(Some(new_server_name)) = new_conn.server_name() else {
-          warn!("HTTP/3 no SNI is given");
-          continue;
-        };
+        warn!("HTTP/3 no SNI is given");
+        continue;
+      };
       debug!("HTTP/3 connection incoming (SNI {:?})", new_server_name);
       let self_clone = self.clone();
 
