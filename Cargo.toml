@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["rpxy-bin", "rpxy-lib"]
+members = ["rpxy-bin", "rpxy-lib", "legacy-lib"]
 exclude = ["submodules"]
 resolver = "2"
 
