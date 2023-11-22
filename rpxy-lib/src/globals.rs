@@ -1,13 +1,30 @@
-use crate::{certs::CryptoSource, constants::*};
-use std::{net::SocketAddr, time::Duration};
+use crate::{certs::CryptoSource, constants::*, count::RequestCount};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+
+/// Global object containing proxy configurations and shared object like counters.
+/// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
+pub struct Globals {
+  /// Configuration parameters for proxy transport and request handlers
+  pub proxy_config: ProxyConfig,
+  /// Shared context - Counter for serving requests
+  pub request_count: RequestCount,
+  /// Shared context - Async task runtime handler
+  pub runtime_handle: tokio::runtime::Handle,
+  /// Shared context - Notify object to stop async tasks
+  pub term_notify: Option<Arc<tokio::sync::Notify>>,
+}
 
 /// Configuration parameters for proxy transport and request handlers
 #[derive(PartialEq, Eq, Clone)]
 pub struct ProxyConfig {
-  pub listen_sockets: Vec<SocketAddr>, // when instantiate server
-  pub http_port: Option<u16>,          // when instantiate server
-  pub https_port: Option<u16>,         // when instantiate server
-  pub tcp_listen_backlog: u32,         // when instantiate server
+  /// listen socket addresses
+  pub listen_sockets: Vec<SocketAddr>,
+  /// http port
+  pub http_port: Option<u16>,
+  /// https port
+  pub https_port: Option<u16>,
+  /// tcp listen backlog
+  pub tcp_listen_backlog: u32,
 
   pub proxy_timeout: Duration,    // when serving requests at Proxy
   pub upstream_timeout: Duration, // when serving requests at Handler

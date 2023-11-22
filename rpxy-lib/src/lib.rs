@@ -1,10 +1,14 @@
 mod certs;
 mod constants;
+mod count;
 mod error;
 mod globals;
+mod hyper_executor;
 mod log;
+mod proxy;
 
-use crate::{error::*, log::*};
+use crate::{error::*, globals::Globals, log::*, proxy::Proxy};
+use futures::future::select_all;
 use std::sync::Arc;
 
 pub use crate::{
@@ -25,7 +29,7 @@ pub async fn entrypoint<T>(
   app_config_list: &AppConfigList<T>,
   runtime_handle: &tokio::runtime::Handle,
   term_notify: Option<Arc<tokio::sync::Notify>>,
-) -> Result<()>
+) -> RpxyResult<()>
 where
   T: CryptoSource + Clone + Send + Sync + 'static,
 {
@@ -58,15 +62,18 @@ where
     info!("Cache is disabled")
   }
 
-  // // build global
-  // let globals = Arc::new(Globals {
-  //   proxy_config: proxy_config.clone(),
-  //   backends: app_config_list.clone().try_into()?,
-  //   request_count: Default::default(),
-  //   runtime_handle: runtime_handle.clone(),
-  //   term_notify: term_notify.clone(),
-  // });
+  // build global shared context
+  let globals = Arc::new(Globals {
+    proxy_config: proxy_config.clone(),
+    request_count: Default::default(),
+    runtime_handle: runtime_handle.clone(),
+    term_notify: term_notify.clone(),
+  });
 
+  // TODO: 1. build backends, and make it contained in Arc
+  // app_config_list: app_config_list.clone(),
+
+  // TODO: 2. build message handler with Arc-ed http_client and backends, and make it contained in Arc as well
   // // build message handler including a request forwarder
   // let msg_handler = Arc::new(
   //   HttpMessageHandlerBuilder::default()
@@ -75,31 +82,31 @@ where
   //     .build()?,
   // );
 
-  // let http_server = Arc::new(build_http_server(&globals));
+  // TODO: 3. spawn each proxy for a given socket with copied Arc-ed message_handler.
+  // build hyper connection builder shared with proxy instances
+  let connection_builder = proxy::connection_builder(&globals);
 
-  // let addresses = globals.proxy_config.listen_sockets.clone();
-  // let futures = select_all(addresses.into_iter().map(|addr| {
-  //   let mut tls_enabled = false;
-  //   if let Some(https_port) = globals.proxy_config.https_port {
-  //     tls_enabled = https_port == addr.port()
-  //   }
+  // spawn each proxy for a given socket with copied Arc-ed backend, message_handler and connection builder.
+  let addresses = globals.proxy_config.listen_sockets.clone();
+  let futures_iter = addresses.into_iter().map(|listening_on| {
+    let mut tls_enabled = false;
+    if let Some(https_port) = globals.proxy_config.https_port {
+      tls_enabled = https_port == listening_on.port()
+    }
+    let proxy = Proxy {
+      globals: globals.clone(),
+      listening_on,
+      tls_enabled,
+      connection_builder: connection_builder.clone(),
+      // TODO: message_handler
+    };
+    globals.runtime_handle.spawn(async move { proxy.start().await })
+  });
 
-  //   let proxy = ProxyBuilder::default()
-  //     .globals(globals.clone())
-  //     .listening_on(addr)
-  //     .tls_enabled(tls_enabled)
-  //     .http_server(http_server.clone())
-  //     .msg_handler(msg_handler.clone())
-  //     .build()
-  //     .unwrap();
-
-  //   globals.runtime_handle.spawn(async move { proxy.start().await })
-  // }));
-
-  // // wait for all future
-  // if let (Ok(Err(e)), _, _) = futures.await {
-  //   error!("Some proxy services are down: {}", e);
-  // };
+  // wait for all future
+  if let (Ok(Err(e)), _, _) = select_all(futures_iter).await {
+    error!("Some proxy services are down: {}", e);
+  };
 
   Ok(())
 }
