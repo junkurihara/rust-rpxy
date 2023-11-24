@@ -1,5 +1,6 @@
 mod proxy_main;
 mod socket;
+mod proxy_tls;
 
 use crate::{globals::Globals, hyper_executor::LocalExecutor};
 use hyper_util::server::{self, conn::auto::Builder as ConnectionBuilder};

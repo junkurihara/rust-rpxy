@@ -1,10 +1,11 @@
 use super::socket::bind_tcp_socket;
-use crate::{error::RpxyResult, globals::Globals, hyper_executor::LocalExecutor, log::*};
+use crate::{error::RpxyResult, globals::Globals, log::*};
+use hot_reload::{ReloaderReceiver, ReloaderService};
 use hyper_util::server::conn::auto::Builder as ConnectionBuilder;
 use std::{net::SocketAddr, sync::Arc};
 
 /// Proxy main object responsible to serve requests received from clients at the given socket address.
-pub(crate) struct Proxy<E = LocalExecutor> {
+pub(crate) struct Proxy<E> {
   /// global context shared among async tasks
   pub globals: Arc<Globals>,
   /// listen socket address
@@ -15,7 +16,7 @@ pub(crate) struct Proxy<E = LocalExecutor> {
   pub connection_builder: Arc<ConnectionBuilder<E>>,
 }
 
-impl Proxy {
+impl<E> Proxy<E> {
   /// Start without TLS (HTTP cleartext)
   async fn start_without_tls(&self) -> RpxyResult<()> {
     let listener_service = async {
@@ -31,14 +32,27 @@ impl Proxy {
     Ok(())
   }
 
+  /// Start with TLS (HTTPS)
+  pub(super) async fn start_with_tls(&self) -> RpxyResult<()> {
+    // let (cert_reloader_service, cert_reloader_rx) = ReloaderService::<CryptoReloader<U>, ServerCryptoBase>::new(
+    //   &self.globals.clone(),
+    //   CERTS_WATCH_DELAY_SECS,
+    //   !LOAD_CERTS_ONLY_WHEN_UPDATED,
+    // )
+    // .await
+    // .map_err(|e| anyhow::anyhow!(e))?;
+    loop {}
+    Ok(())
+  }
+
   /// Entrypoint for HTTP/1.1, 2 and 3 servers
   pub async fn start(&self) -> RpxyResult<()> {
     let proxy_service = async {
-      // if self.tls_enabled {
-      // self.start_with_tls().await
-      // } else {
-      self.start_without_tls().await
-      // }
+      if self.tls_enabled {
+        self.start_with_tls().await
+      } else {
+        self.start_without_tls().await
+      }
     };
 
     match &self.globals.term_notify {

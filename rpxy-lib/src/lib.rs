@@ -1,3 +1,4 @@
+mod backend;
 mod certs;
 mod constants;
 mod count;
@@ -5,6 +6,7 @@ mod error;
 mod globals;
 mod hyper_executor;
 mod log;
+mod name_exp;
 mod proxy;
 
 use crate::{error::*, globals::Globals, log::*, proxy::Proxy};
@@ -70,8 +72,8 @@ where
     term_notify: term_notify.clone(),
   });
 
-  // TODO: 1. build backends, and make it contained in Arc
-  // app_config_list: app_config_list.clone(),
+  // 1. build backends, and make it contained in Arc
+  let app_manager = Arc::new(backend::BackendAppManager::try_from(app_config_list)?);
 
   // TODO: 2. build message handler with Arc-ed http_client and backends, and make it contained in Arc as well
   // // build message handler including a request forwarder
