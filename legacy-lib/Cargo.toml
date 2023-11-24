@@ -12,7 +12,7 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-s2n", "sticky-cookie", "cache"]
+default = ["http3-quinn", "sticky-cookie", "cache"]
 http3-quinn = ["quinn", "h3", "h3-quinn", "socket2"]
 http3-s2n = ["h3", "s2n-quic", "s2n-quic-rustls", "s2n-quic-h3"]
 sticky-cookie = ["base64", "sha2", "chrono"]

@@ -11,7 +11,7 @@ use service::CryptoReloader;
 use std::sync::Arc;
 
 pub use certs::{CertsAndKeys, CryptoSource};
-pub use service::ServerCryptoBase;
+pub use service::{ServerCrypto, ServerCryptoBase, SniServerCryptoMap};
 
 /// Result type inner of certificate reloader service
 type ReloaderServiceResultInner<T> = (

@@ -6,9 +6,51 @@ pub type RpxyResult<T> = std::result::Result<T, RpxyError>;
 /// Describes things that can go wrong in the Rpxy
 #[derive(Debug, Error)]
 pub enum RpxyError {
+  // general errors
   #[error("IO error: {0}")]
   Io(#[from] std::io::Error),
 
+  // TLS errors
+  #[error("Failed to build TLS acceptor: {0}")]
+  FailedToTlsHandshake(String),
+  #[error("No server name in ClientHello")]
+  NoServerNameInClientHello,
+  #[error("No TLS serving app: {0}")]
+  NoTlsServingApp(String),
+  #[error("Failed to update server crypto: {0}")]
+  FailedToUpdateServerCrypto(String),
+  #[error("No server crypto: {0}")]
+  NoServerCrypto(String),
+
+  // hyper errors
+  #[error("hyper body manipulation error: {0}")]
+  HyperBodyManipulationError(String),
+
+  // http/3 errors
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[error("H3 error: {0}")]
+  H3Error(#[from] h3::Error),
+
+  #[cfg(feature = "http3-quinn")]
+  #[error("Invalid rustls TLS version: {0}")]
+  QuinnInvalidTlsProtocolVersion(String),
+  #[cfg(feature = "http3-quinn")]
+  #[error("Quinn connection error: {0}")]
+  QuinnConnectionFailed(#[from] quinn::ConnectionError),
+
+  #[cfg(feature = "http3-s2n")]
+  #[error("s2n-quic validation error: {0}")]
+  S2nQuicValidationError(#[from] s2n_quic_core::transport::parameters::ValidationError),
+  #[cfg(feature = "http3-s2n")]
+  #[error("s2n-quic connection error: {0}")]
+  S2nQuicConnectionError(#[from] s2n_quic_core::connection::Error),
+  #[cfg(feature = "http3-s2n")]
+  #[error("s2n-quic start error: {0}")]
+  S2nQuicStartError(#[from] s2n_quic::provider::StartError),
+
+  // certificate reloader errors
+  #[error("No certificate reloader when building a proxy for TLS")]
+  NoCertificateReloader,
   #[error("Certificate reload error: {0}")]
   CertificateReloadError(#[from] hot_reload::ReloaderError<crate::crypto::ServerCryptoBase>),
 
@@ -20,6 +62,11 @@ pub enum RpxyError {
   #[error("Failed to build backend app: {0}")]
   FailedToBuildBackendApp(#[from] crate::backend::BackendAppBuilderError),
 
+  // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,
+
+  // Others
+  #[error("Infallible")]
+  Infallible(#[from] std::convert::Infallible),
 }

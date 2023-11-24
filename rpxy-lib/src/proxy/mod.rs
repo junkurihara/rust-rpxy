@@ -1,5 +1,9 @@
+mod proxy_h3;
 mod proxy_main;
-mod proxy_tls;
+#[cfg(feature = "http3-quinn")]
+mod proxy_quic_quinn;
+#[cfg(feature = "http3-s2n")]
+mod proxy_quic_s2n;
 mod socket;
 
 use crate::{globals::Globals, hyper_executor::LocalExecutor};
