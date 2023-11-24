@@ -4,7 +4,12 @@ use crate::{
   crypto::{ServerCrypto, SniServerCryptoMap},
   error::*,
   globals::Globals,
-  hyper_executor::LocalExecutor,
+  hyper_ext::{
+    body::{BoxBody, IncomingOr},
+    full,
+    rt::LocalExecutor,
+    synthetic_response,
+  },
   log::*,
   name_exp::ServerName,
 };
@@ -22,14 +27,14 @@ use tokio::time::timeout;
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
 async fn serve_request(
-  req: Request<Incoming>,
+  mut req: Request<Incoming>,
   // handler: Arc<HttpMessageHandler<T, U>>,
   // handler: Arc<HttpMessageHandler<U>>,
   client_addr: SocketAddr,
   listen_addr: SocketAddr,
   tls_enabled: bool,
   tls_server_name: Option<ServerName>,
-) -> RpxyResult<Response<BoxBody>> {
+) -> RpxyResult<Response<IncomingOr<BoxBody>>> {
   // match handler
   //   .handle_request(req, client_addr, listen_addr, tls_enabled, tls_server_name)
   //   .await?
@@ -37,19 +42,14 @@ async fn serve_request(
   //   Ok(res) => passthrough_response(res),
   //   Err(e) => synthetic_error_response(StatusCode::from(e)),
   // }
+
+  //////////////
+  // TODO: remove later
   let body = full(hyper::body::Bytes::from("hello"));
   let res = Response::builder().body(body).unwrap();
-  Ok(res)
+  synthetic_response(res)
+  //////////////
 }
-//////////////
-/// TODO: remove later
-/// helper function to build a full body
-use http_body_util::{BodyExt, Full};
-pub(crate) type BoxBody = http_body_util::combinators::BoxBody<hyper::body::Bytes, hyper::Error>;
-pub fn full(body: hyper::body::Bytes) -> BoxBody {
-  Full::new(body).map_err(|never| match never {}).boxed()
-}
-//////////////
 
 #[derive(Clone)]
 /// Proxy main object responsible to serve requests received from clients at the given socket address.

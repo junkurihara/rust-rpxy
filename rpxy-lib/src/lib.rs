@@ -4,7 +4,7 @@ mod count;
 mod crypto;
 mod error;
 mod globals;
-mod hyper_executor;
+mod hyper_ext;
 mod log;
 mod name_exp;
 mod proxy;

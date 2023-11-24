@@ -25,11 +25,16 @@ pub enum RpxyError {
   // hyper errors
   #[error("hyper body manipulation error: {0}")]
   HyperBodyManipulationError(String),
+  #[error("New closed in incoming-like")]
+  HyperIncomingLikeNewClosed,
 
   // http/3 errors
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[error("H3 error: {0}")]
   H3Error(#[from] h3::Error),
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[error("Exceeds max request body size for HTTP/3")]
+  H3TooLargeBody,
 
   #[cfg(feature = "http3-quinn")]
   #[error("Invalid rustls TLS version: {0}")]

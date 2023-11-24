@@ -6,7 +6,7 @@ mod proxy_quic_quinn;
 mod proxy_quic_s2n;
 mod socket;
 
-use crate::{globals::Globals, hyper_executor::LocalExecutor};
+use crate::{globals::Globals, hyper_ext::rt::LocalExecutor};
 use hyper_util::server::{self, conn::auto::Builder as ConnectionBuilder};
 use std::sync::Arc;
 

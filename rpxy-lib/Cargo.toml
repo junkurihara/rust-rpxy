@@ -50,6 +50,8 @@ http = "1.0.0"
 http-body-util = "0.1.0"
 hyper = { version = "1.0.1", default-features = false }
 hyper-util = { version = "0.1.1", features = ["full"] }
+futures-util = { version = "0.3.29", default-features = false }
+futures-channel = { version = "0.3.29", default-features = false }
 # hyper-rustls = { version = "0.24.2", default-features = false, features = [
 #   "tokio-runtime",
 #   "webpki-tokio",

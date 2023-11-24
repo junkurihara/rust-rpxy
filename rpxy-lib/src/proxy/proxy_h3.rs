@@ -1,6 +1,14 @@
 use super::proxy_main::Proxy;
-use crate::{error::*, log::*, name_exp::ServerName};
-use bytes::Bytes;
+use crate::{
+  error::*,
+  hyper_ext::{
+    body::{IncomingLike, IncomingOr},
+    full, synthetic_response,
+  },
+  log::*,
+  name_exp::ServerName,
+};
+use bytes::{Buf, Bytes};
 use http::{Request, Response};
 use http_body_util::BodyExt;
 use std::{net::SocketAddr, time::Duration};
@@ -11,7 +19,6 @@ use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestSt
 #[cfg(feature = "http3-s2n")]
 use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 
-// use crate::{certs::CryptoSource, error::*, log::*, utils::ServerNameBytesExp};
 // use futures::Stream;
 // use hyper_util::client::legacy::connect::Connect;
 
@@ -111,48 +118,41 @@ impl Proxy {
     // split stream and async body handling
     let (mut send_stream, mut recv_stream) = stream.split();
 
-    // let max_body_size = self.globals.proxy_config.h3_request_max_body_size;
-    // // let max = body_stream.size_hint().upper().unwrap_or(u64::MAX);
-    // // if max > max_body_size as u64 {
-    // //   return Err(HttpError::TooLargeRequestBody);
-    // // }
+    // generate streamed body with trailers using channel
+    let (body_sender, req_body) = IncomingLike::channel();
 
-    // let new_req = Request::from_parts(req_parts, body_stream);
+    // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
+    // The underling buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
+    let max_body_size = self.globals.proxy_config.h3_request_max_body_size;
+    self.globals.runtime_handle.spawn(async move {
+      let mut sender = body_sender;
+      let mut size = 0usize;
+      while let Some(mut body) = recv_stream.recv_data().await? {
+        debug!("HTTP/3 incoming request body: remaining {}", body.remaining());
+        size += body.remaining();
+        if size > max_body_size {
+          error!(
+            "Exceeds max request body size for HTTP/3: received {}, maximum_allowd {}",
+            size, max_body_size
+          );
+          return Err(RpxyError::H3TooLargeBody);
+        }
+        // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
+        sender.send_data(body.copy_to_bytes(body.remaining())).await?;
+      }
 
-    // // generate streamed body with trailers using channel
-    // let (body_sender, req_body) = Incoming::channel();
+      // trailers: use inner for work around. (directly get trailer)
+      let trailers = recv_stream.as_mut().recv_trailers().await?;
+      if trailers.is_some() {
+        debug!("HTTP/3 incoming request trailers");
+        sender.send_trailers(trailers.unwrap()).await?;
+      }
+      Ok(()) as RpxyResult<()>
+    });
 
-    // // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
-    // // The underling buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
-    // let max_body_size = self.globals.proxy_config.h3_request_max_body_size;
-    // self.globals.runtime_handle.spawn(async move {
-    //   // let mut sender = body_sender;
-    //   let mut size = 0usize;
-    //   while let Some(mut body) = recv_stream.recv_data().await? {
-    //     debug!("HTTP/3 incoming request body: remaining {}", body.remaining());
-    //     size += body.remaining();
-    //     if size > max_body_size {
-    //       error!(
-    //         "Exceeds max request body size for HTTP/3: received {}, maximum_allowd {}",
-    //         size, max_body_size
-    //       );
-    //       return Err(RpxyError::Proxy("Exceeds max request body size for HTTP/3".to_string()));
-    //     }
-    //     // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
-    //     // sender.send_data(body.copy_to_bytes(body.remaining())).await?;
-    //   }
+    let mut new_req: Request<IncomingOr<IncomingLike>> = Request::from_parts(req_parts, IncomingOr::Right(req_body));
 
-    //   // trailers: use inner for work around. (directly get trailer)
-    //   let trailers = recv_stream.as_mut().recv_trailers().await?;
-    //   if trailers.is_some() {
-    //     debug!("HTTP/3 incoming request trailers");
-    //     // sender.send_trailers(trailers.unwrap()).await?;
-    //   }
-    //   Ok(())
-    // });
-
-    // let new_req: Request<Incoming> = Request::from_parts(req_parts, req_body);
-    // let res = self
+    // let res = selfw
     //   .msg_handler
     //   .clone()
     //   .handle_request(
@@ -165,8 +165,9 @@ impl Proxy {
     //   .await?;
 
     // TODO: TODO: TODO: remove later
-    let body = full(hyper::body::Bytes::from("hello h3 echo"));
-    let res = Response::builder().body(body).unwrap();
+    let body = full(Bytes::from("hello h3 echo"));
+    // here response is IncomingOr<BoxBody> from message handler
+    let res = synthetic_response(Response::builder().body(body).unwrap())?;
     /////////////////
 
     let (new_res_parts, new_body) = res.into_parts();
@@ -193,13 +194,3 @@ impl Proxy {
     Ok(send_stream.finish().await?)
   }
 }
-
-//////////////
-/// TODO: remove later
-/// helper function to build a full body
-use http_body_util::Full;
-pub(crate) type BoxBody = http_body_util::combinators::BoxBody<hyper::body::Bytes, hyper::Error>;
-pub fn full(body: hyper::body::Bytes) -> BoxBody {
-  Full::new(body).map_err(|never| match never {}).boxed()
-}
-//////////////
