@@ -1,9 +1,14 @@
-use crate::{certs::CryptoSource, constants::*, count::RequestCount};
+use crate::{
+  constants::*,
+  count::RequestCount,
+  crypto::{CryptoSource, ServerCryptoBase},
+};
+use hot_reload::ReloaderReceiver;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 /// Global object containing proxy configurations and shared object like counters.
 /// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
-pub struct Globals {
+pub(crate) struct Globals {
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig,
   /// Shared context - Counter for serving requests
@@ -12,6 +17,8 @@ pub struct Globals {
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Notify object to stop async tasks
   pub term_notify: Option<Arc<tokio::sync::Notify>>,
+  /// Shared context - Certificate reloader service receiver
+  pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
 }
 
 /// Configuration parameters for proxy transport and request handlers

@@ -13,11 +13,11 @@ publish = false
 
 [features]
 default = ["http3-s2n", "sticky-cookie", "cache"]
-http3-quinn = ["socket2"]                         #"quinn", "h3", "h3-quinn", ]
-http3-s2n = []                                    #"h3", "s2n-quic", "s2n-quic-rustls", "s2n-quic-h3"]
+http3-quinn = ["socket2", "quinn", "h3", "h3-quinn"]
+http3-s2n = ["h3", "s2n-quic", "s2n-quic-rustls", "s2n-quic-h3"]
 sticky-cookie = ["base64", "sha2", "chrono"]
-cache = []                                        #"http-cache-semantics", "lru"]
-native-roots = []                                 #"hyper-rustls/native-tokio"]
+cache = []                                                       #"http-cache-semantics", "lru"]
+native-roots = []                                                #"hyper-rustls/native-tokio"]
 
 [dependencies]
 rand = "0.8.5"
@@ -39,8 +39,7 @@ async-trait = "0.1.74"
 anyhow = "1.0.75"
 thiserror = "1.0.50"
 
-# http and tls
-hot_reload = "0.1.4" # reloading certs
+# http
 http = "1.0.0"
 # http-body-util = "0.1.0"
 hyper = { version = "1.0.1", default-features = false }
@@ -52,22 +51,25 @@ hyper-util = { version = "0.1.1", features = ["full"] }
 #   "http2",
 # ] }
 # tokio-rustls = { version = "0.24.1", features = ["early-data"] }
+
+# tls and cert management
+hot_reload = "0.1.4"
 rustls = { version = "0.21.9", default-features = false }
-# webpki = "0.22.4"
-# x509-parser = "0.15.1"
+webpki = "0.22.4"
+x509-parser = "0.15.1"
 
 # logging
 tracing = { version = "0.1.40" }
 
-# # http/3
-# quinn = { version = "0.10.2", optional = true }
-# h3 = { path = "../submodules/h3/h3/", optional = true }
-# h3-quinn = { path = "../submodules/h3/h3-quinn/", optional = true }
-# s2n-quic = { version = "1.31.0", default-features = false, features = [
-#   "provider-tls-rustls",
-# ], optional = true }
-# s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", optional = true }
-# s2n-quic-rustls = { version = "0.31.0", optional = true }
+# http/3
+quinn = { version = "0.10.2", optional = true }
+h3 = { path = "../submodules/h3/h3/", optional = true }
+h3-quinn = { path = "../submodules/h3/h3-quinn/", optional = true }
+s2n-quic = { version = "1.31.0", default-features = false, features = [
+  "provider-tls-rustls",
+], optional = true }
+s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", optional = true }
+s2n-quic-rustls = { version = "0.31.0", optional = true }
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
 socket2 = { version = "0.5.5", features = ["all"], optional = true }
 

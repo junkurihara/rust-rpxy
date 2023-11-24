@@ -1,7 +1,7 @@
 mod backend;
-mod certs;
 mod constants;
 mod count;
+mod crypto;
 mod error;
 mod globals;
 mod hyper_executor;
@@ -9,12 +9,12 @@ mod log;
 mod name_exp;
 mod proxy;
 
-use crate::{error::*, globals::Globals, log::*, proxy::Proxy};
+use crate::{crypto::build_cert_reloader, error::*, globals::Globals, log::*, proxy::Proxy};
 use futures::future::select_all;
 use std::sync::Arc;
 
 pub use crate::{
-  certs::{CertsAndKeys, CryptoSource},
+  crypto::{CertsAndKeys, CryptoSource},
   globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
 };
 pub mod reexports {
@@ -64,16 +64,26 @@ where
     info!("Cache is disabled")
   }
 
-  // build global shared context
+  // 1. build backends, and make it contained in Arc
+  let app_manager = Arc::new(backend::BackendAppManager::try_from(app_config_list)?);
+
+  // 2. build crypto reloader service
+  let (cert_reloader_service, cert_reloader_rx) = match proxy_config.https_port {
+    Some(_) => {
+      let (s, r) = build_cert_reloader(&app_manager).await?;
+      (Some(s), Some(r))
+    }
+    None => (None, None),
+  };
+
+  // 3. build global shared context
   let globals = Arc::new(Globals {
     proxy_config: proxy_config.clone(),
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
     term_notify: term_notify.clone(),
+    cert_reloader_rx: cert_reloader_rx.clone(),
   });
-
-  // 1. build backends, and make it contained in Arc
-  let app_manager = Arc::new(backend::BackendAppManager::try_from(app_config_list)?);
 
   // TODO: 2. build message handler with Arc-ed http_client and backends, and make it contained in Arc as well
   // // build message handler including a request forwarder
@@ -106,9 +116,23 @@ where
   });
 
   // wait for all future
-  if let (Ok(Err(e)), _, _) = select_all(futures_iter).await {
-    error!("Some proxy services are down: {}", e);
-  };
+  match cert_reloader_service {
+    Some(cert_service) => {
+      tokio::select! {
+        _ = cert_service.start() => {
+          error!("Certificate reloader service got down");
+        }
+        _ = select_all(futures_iter) => {
+          error!("Some proxy services are down");
+        }
+      }
+    }
+    None => {
+      if let (Ok(Err(e)), _, _) = select_all(futures_iter).await {
+        error!("Some proxy services are down: {}", e);
+      }
+    }
+  }
 
   Ok(())
 }

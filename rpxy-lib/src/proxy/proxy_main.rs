@@ -1,6 +1,5 @@
 use super::socket::bind_tcp_socket;
 use crate::{error::RpxyResult, globals::Globals, log::*};
-use hot_reload::{ReloaderReceiver, ReloaderService};
 use hyper_util::server::conn::auto::Builder as ConnectionBuilder;
 use std::{net::SocketAddr, sync::Arc};
 

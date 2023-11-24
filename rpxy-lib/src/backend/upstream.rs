@@ -7,7 +7,7 @@ use super::load_balance::{
 // use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
 use super::upstream_opts::UpstreamOption;
 use crate::{
-  certs::CryptoSource,
+  crypto::CryptoSource,
   error::RpxyError,
   globals::{AppConfig, UpstreamUri},
   log::*,
