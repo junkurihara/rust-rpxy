@@ -6,6 +6,7 @@ mod error;
 mod globals;
 mod hyper_ext;
 mod log;
+mod message_handler;
 mod name_exp;
 mod proxy;
 
