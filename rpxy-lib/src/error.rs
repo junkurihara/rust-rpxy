@@ -27,6 +27,8 @@ pub enum RpxyError {
   HyperBodyManipulationError(String),
   #[error("New closed in incoming-like")]
   HyperIncomingLikeNewClosed,
+  #[error("New body write aborted")]
+  HyperNewBodyWriteAborted,
 
   // http/3 errors
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
