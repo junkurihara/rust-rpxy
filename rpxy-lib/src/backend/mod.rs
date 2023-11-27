@@ -3,12 +3,11 @@ mod load_balance;
 mod upstream;
 mod upstream_opts;
 
-pub use backend_main::{BackendAppBuilderError, BackendAppManager};
-pub use upstream::Upstream;
 // #[cfg(feature = "sticky-cookie")]
-// pub use sticky_cookie::{StickyCookie, StickyCookieValue};
-// pub use self::{
-//   load_balance::{LbContext, LoadBalance},
-//   upstream::{ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder},
-//   upstream_opts::UpstreamOption,
-// };
+// pub use self::load_balance::{StickyCookie, StickyCookieValue};
+pub(crate) use self::{
+  load_balance::{LoadBalance, LoadBalanceContext, StickyCookie, StickyCookieValue},
+  upstream::{PathManager, Upstream, UpstreamCandidates},
+  upstream_opts::UpstreamOption,
+};
+pub(crate) use backend_main::{BackendAppBuilderError, BackendAppManager};

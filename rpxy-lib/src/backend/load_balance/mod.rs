@@ -12,6 +12,8 @@ pub use load_balance_main::{
 };
 #[cfg(feature = "sticky-cookie")]
 pub use load_balance_sticky::LoadBalanceStickyBuilder;
+#[cfg(feature = "sticky-cookie")]
+pub use sticky_cookie::{StickyCookie, StickyCookieValue};
 
 /// Result type for load balancing
 type LoadBalanceResult<T> = std::result::Result<T, LoadBalanceError>;

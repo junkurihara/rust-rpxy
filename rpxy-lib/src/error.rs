@@ -1,4 +1,3 @@
-pub use anyhow::{anyhow, bail, ensure, Context};
 use thiserror::Error;
 
 pub type RpxyResult<T> = std::result::Result<T, RpxyError>;

@@ -18,6 +18,13 @@ pub enum HttpError {
   NoMatchingBackendApp,
   #[error("Failed to redirect: {0}")]
   FailedToRedirect(String),
+  #[error("No upstream candidates")]
+  NoUpstreamCandidates,
+  #[error("Failed to generate upstream request: {0}")]
+  FailedToGenerateUpstreamRequest(String),
+
+  #[error("Failed to add set-cookie header in response")]
+  FailedToAddSetCookeInResponse,
 
   #[error(transparent)]
   Other(#[from] anyhow::Error),
@@ -30,6 +37,10 @@ impl From<HttpError> for StatusCode {
       HttpError::InvalidHostInRequestHeader => StatusCode::BAD_REQUEST,
       HttpError::SniHostInconsistency => StatusCode::MISDIRECTED_REQUEST,
       HttpError::NoMatchingBackendApp => StatusCode::SERVICE_UNAVAILABLE,
+      HttpError::FailedToRedirect(_) => StatusCode::INTERNAL_SERVER_ERROR,
+      HttpError::NoUpstreamCandidates => StatusCode::NOT_FOUND,
+      HttpError::FailedToGenerateUpstreamRequest(_) => StatusCode::INTERNAL_SERVER_ERROR,
+      HttpError::FailedToAddSetCookeInResponse => StatusCode::INTERNAL_SERVER_ERROR,
       _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
   }
