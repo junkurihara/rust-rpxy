@@ -32,7 +32,7 @@ pub(super) struct HandlerContext {
 /// HTTP message handler for requests from clients and responses from backend applications,
 /// responsible to manipulate and forward messages to upstream backends and downstream clients.
 // pub struct HttpMessageHandler<T, U>
-pub struct HttpMessageHandler<U>
+pub(crate) struct HttpMessageHandler<U>
 where
   // T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone,
