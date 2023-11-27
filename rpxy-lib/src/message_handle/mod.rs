@@ -7,4 +7,5 @@ mod synthetic_response;
 mod utils_headers;
 mod utils_request;
 
-pub(crate) use handler_main::{HttpMessageHandler, HttpMessageHandlerBuilder, HttpMessageHandlerBuilderError};
+pub use handler_main::HttpMessageHandlerBuilderError;
+pub(crate) use handler_main::{HttpMessageHandler, HttpMessageHandlerBuilder};

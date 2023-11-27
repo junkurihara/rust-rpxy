@@ -8,7 +8,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 /// Global object containing proxy configurations and shared object like counters.
 /// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
-pub(crate) struct Globals {
+pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig,
   /// Shared context - Counter for serving requests
