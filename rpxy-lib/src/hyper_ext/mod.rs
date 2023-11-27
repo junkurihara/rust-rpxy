@@ -8,6 +8,5 @@ pub(crate) mod rt {
 }
 pub(crate) mod body {
   pub(crate) use super::body_incoming_like::IncomingLike;
-  pub(crate) use super::body_type::{BoxBody, IncomingOr};
+  pub(crate) use super::body_type::{empty, full, BoxBody, IncomingOr};
 }
-pub(crate) use body_type::{full, passthrough_response, synthetic_error_response, synthetic_response};

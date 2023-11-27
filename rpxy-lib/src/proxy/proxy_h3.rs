@@ -1,10 +1,8 @@
 use super::proxy_main::Proxy;
 use crate::{
+  crypto::CryptoSource,
   error::*,
-  hyper_ext::{
-    body::{IncomingLike, IncomingOr},
-    full, synthetic_response,
-  },
+  hyper_ext::body::{IncomingLike, IncomingOr},
   log::*,
   name_exp::ServerName,
 };
@@ -22,13 +20,11 @@ use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic
 // use futures::Stream;
 // use hyper_util::client::legacy::connect::Connect;
 
-// impl<U> Proxy<U>
-// where
-//   // T: Connect + Clone + Sync + Send + 'static,
-//   U: CryptoSource + Clone + Sync + Send + 'static,
-// {
-
-impl Proxy {
+impl<U> Proxy<U>
+where
+  // T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send + 'static,
+{
   pub(super) async fn h3_serve_connection<C>(
     &self,
     quic_connection: C,
@@ -151,24 +147,17 @@ impl Proxy {
     });
 
     let mut new_req: Request<IncomingOr<IncomingLike>> = Request::from_parts(req_parts, IncomingOr::Right(req_body));
-
-    // let res = selfw
-    //   .msg_handler
-    //   .clone()
-    //   .handle_request(
-    //     new_req,
-    //     client_addr,
-    //     self.listening_on,
-    //     self.tls_enabled,
-    //     Some(tls_server_name),
-    //   )
-    //   .await?;
-
-    // TODO: TODO: TODO: remove later
-    let body = full(Bytes::from("hello h3 echo"));
-    // here response is IncomingOr<BoxBody> from message handler
-    let res = synthetic_response(Response::builder().body(body).unwrap())?;
-    /////////////////
+    // Response<IncomingOr<BoxBody>> wrapped by RpxyResult
+    let res = self
+      .message_handler
+      .handle_request(
+        new_req,
+        client_addr,
+        self.listening_on,
+        self.tls_enabled,
+        Some(tls_server_name),
+      )
+      .await?;
 
     let (new_res_parts, new_body) = res.into_parts();
     let new_res = Response::from_parts(new_res_parts, ());

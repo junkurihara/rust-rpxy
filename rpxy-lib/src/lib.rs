@@ -6,11 +6,14 @@ mod error;
 mod globals;
 mod hyper_ext;
 mod log;
-mod message_handler;
+mod message_handle;
 mod name_exp;
 mod proxy;
 
-use crate::{crypto::build_cert_reloader, error::*, globals::Globals, log::*, proxy::Proxy};
+use crate::{
+  crypto::build_cert_reloader, error::*, globals::Globals, log::*, message_handle::HttpMessageHandlerBuilder,
+  proxy::Proxy,
+};
 use futures::future::select_all;
 use std::sync::Arc;
 
@@ -86,16 +89,15 @@ where
     cert_reloader_rx: cert_reloader_rx.clone(),
   });
 
-  // TODO: 2. build message handler with Arc-ed http_client and backends, and make it contained in Arc as well
-  // // build message handler including a request forwarder
-  // let msg_handler = Arc::new(
-  //   HttpMessageHandlerBuilder::default()
-  //     // .forwarder(Arc::new(Forwarder::new(&globals).await))
-  //     .globals(globals.clone())
-  //     .build()?,
-  // );
+  // 4. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well
+  let message_handler = Arc::new(
+    HttpMessageHandlerBuilder::default()
+      .globals(globals.clone())
+      .app_manager(app_manager.clone())
+      .build()?,
+  );
 
-  // TODO: 3. spawn each proxy for a given socket with copied Arc-ed message_handler.
+  // 5. spawn each proxy for a given socket with copied Arc-ed message_handler.
   // build hyper connection builder shared with proxy instances
   let connection_builder = proxy::connection_builder(&globals);
 
@@ -111,7 +113,7 @@ where
       listening_on,
       tls_enabled,
       connection_builder: connection_builder.clone(),
-      // TODO: message_handler
+      message_handler: message_handler.clone(),
     };
     globals.runtime_handle.spawn(async move { proxy.start().await })
   });

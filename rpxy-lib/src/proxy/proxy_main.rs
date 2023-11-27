@@ -1,16 +1,15 @@
 use super::socket::bind_tcp_socket;
 use crate::{
   constants::TLS_HANDSHAKE_TIMEOUT_SEC,
-  crypto::{ServerCrypto, SniServerCryptoMap},
+  crypto::{CryptoSource, ServerCrypto, SniServerCryptoMap},
   error::*,
   globals::Globals,
   hyper_ext::{
     body::{BoxBody, IncomingOr},
-    full,
     rt::LocalExecutor,
-    synthetic_response,
   },
   log::*,
+  message_handle::HttpMessageHandler,
   name_exp::ServerName,
 };
 use futures::{select, FutureExt};
@@ -26,34 +25,37 @@ use tokio::time::timeout;
 
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
-async fn serve_request(
+async fn serve_request<U>(
   mut req: Request<Incoming>,
   // handler: Arc<HttpMessageHandler<T, U>>,
-  // handler: Arc<HttpMessageHandler<U>>,
+  handler: Arc<HttpMessageHandler<U>>,
   client_addr: SocketAddr,
   listen_addr: SocketAddr,
   tls_enabled: bool,
   tls_server_name: Option<ServerName>,
-) -> RpxyResult<Response<IncomingOr<BoxBody>>> {
-  // match handler
-  //   .handle_request(req, client_addr, listen_addr, tls_enabled, tls_server_name)
-  //   .await?
-  // {
-  //   Ok(res) => passthrough_response(res),
-  //   Err(e) => synthetic_error_response(StatusCode::from(e)),
-  // }
-
-  //////////////
-  // TODO: remove later
-  let body = full(hyper::body::Bytes::from("hello"));
-  let res = Response::builder().body(body).unwrap();
-  synthetic_response(res)
-  //////////////
+) -> RpxyResult<Response<IncomingOr<BoxBody>>>
+where
+  // T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone,
+{
+  handler
+    .handle_request(
+      req.map(IncomingOr::Left),
+      client_addr,
+      listen_addr,
+      tls_enabled,
+      tls_server_name,
+    )
+    .await
 }
 
 #[derive(Clone)]
 /// Proxy main object responsible to serve requests received from clients at the given socket address.
-pub(crate) struct Proxy<E = LocalExecutor> {
+pub(crate) struct Proxy<U, E = LocalExecutor>
+where
+  // T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send + 'static,
+{
   /// global context shared among async tasks
   pub globals: Arc<Globals>,
   /// listen socket address
@@ -62,9 +64,15 @@ pub(crate) struct Proxy<E = LocalExecutor> {
   pub tls_enabled: bool,
   /// hyper connection builder serving http request
   pub connection_builder: Arc<ConnectionBuilder<E>>,
+  /// message handler serving incoming http request
+  pub message_handler: Arc<HttpMessageHandler<U>>,
 }
 
-impl Proxy {
+impl<U> Proxy<U>
+where
+  // T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send + 'static,
+{
   /// Serves requests from clients
   fn serve_connection<I>(&self, stream: I, peer_addr: SocketAddr, tls_server_name: Option<ServerName>)
   where
@@ -78,7 +86,7 @@ impl Proxy {
     debug!("Request incoming: current # {}", request_count.current());
 
     let server_clone = self.connection_builder.clone();
-    // let msg_handler_clone = self.msg_handler.clone();
+    let message_handler_clone = self.message_handler.clone();
     let timeout_sec = self.globals.proxy_config.proxy_timeout;
     let tls_enabled = self.tls_enabled;
     let listening_on = self.listening_on;
@@ -90,7 +98,7 @@ impl Proxy {
           service_fn(move |req: Request<Incoming>| {
             serve_request(
               req,
-              // msg_handler_clone.clone(),
+              message_handler_clone.clone(),
               peer_addr,
               listening_on,
               tls_enabled,

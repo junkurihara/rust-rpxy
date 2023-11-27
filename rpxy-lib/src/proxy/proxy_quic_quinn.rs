@@ -1,15 +1,20 @@
 use super::proxy_main::Proxy;
 use super::socket::bind_udp_socket;
-use crate::{crypto::ServerCrypto, error::*, log::*, name_exp::ByteName};
+use crate::{
+  crypto::{CryptoSource, ServerCrypto},
+  error::*,
+  log::*,
+  name_exp::ByteName,
+};
 // use hyper_util::client::legacy::connect::Connect;
 use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
 use rustls::ServerConfig;
 use std::sync::Arc;
 
-impl Proxy
-// where
-//   // T: Connect + Clone + Sync + Send + 'static,
-//   U: CryptoSource + Clone + Sync + Send + 'static,
+impl<U> Proxy<U>
+where
+  // T: Connect + Clone + Sync + Send + 'static,
+  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn h3_listener_service(&self) -> RpxyResult<()> {
     let Some(mut server_crypto_rx) = self.globals.cert_reloader_rx.clone() else {

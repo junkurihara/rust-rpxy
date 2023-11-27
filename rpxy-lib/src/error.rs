@@ -69,6 +69,10 @@ pub enum RpxyError {
   #[error("Failed to build backend app: {0}")]
   FailedToBuildBackendApp(#[from] crate::backend::BackendAppBuilderError),
 
+  // Handler errors
+  #[error("Failed to build message handler: {0}")]
+  FailedToBuildMessageHandler(#[from] crate::message_handle::HttpMessageHandlerBuilderError),
+
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,
