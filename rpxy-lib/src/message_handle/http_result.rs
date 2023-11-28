@@ -28,6 +28,13 @@ pub enum HttpError {
   #[error("Failed to generated downstream response: {0}")]
   FailedToGenerateDownstreamResponse(String),
 
+  #[error("Failed to upgrade connection")]
+  FailedToUpgrade,
+  #[error("Request does not have an upgrade extension")]
+  NoUpgradeExtensionInRequest,
+  #[error("Response does not have an upgrade extension")]
+  NoUpgradeExtensionInResponse,
+
   #[error(transparent)]
   Other(#[from] anyhow::Error),
 }
@@ -44,6 +51,9 @@ impl From<HttpError> for StatusCode {
       HttpError::FailedToGenerateUpstreamRequest(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToAddSetCookeInResponse => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToGenerateDownstreamResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
+      HttpError::FailedToUpgrade => StatusCode::INTERNAL_SERVER_ERROR,
+      HttpError::NoUpgradeExtensionInRequest => StatusCode::BAD_REQUEST,
+      HttpError::NoUpgradeExtensionInResponse => StatusCode::BAD_GATEWAY,
       _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
   }

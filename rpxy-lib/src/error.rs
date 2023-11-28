@@ -71,6 +71,12 @@ pub enum RpxyError {
   // Handler errors
   #[error("Failed to build message handler: {0}")]
   FailedToBuildMessageHandler(#[from] crate::message_handle::HttpMessageHandlerBuilderError),
+  #[error("Failed to upgrade request: {0}")]
+  FailedToUpgradeRequest(String),
+  #[error("Failed to upgrade response: {0}")]
+  FailedToUpgradeResponse(String),
+  #[error("Failed to copy bidirectional for upgraded connections: {0}")]
+  FailedToCopyBidirectional(String),
 
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]

@@ -16,7 +16,9 @@ use crate::{
 };
 use derive_builder::Builder;
 use http::{Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use std::{net::SocketAddr, sync::Arc};
+use tokio::io::copy_bidirectional;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -51,13 +53,15 @@ where
   /// Responsible to passthrough responses from backend applications or generate synthetic error responses.
   pub async fn handle_request(
     &self,
-    mut req: Request<IncomingOr<IncomingLike>>,
+    req: Request<IncomingOr<IncomingLike>>,
     client_addr: SocketAddr, // For access control
     listen_addr: SocketAddr,
     tls_enabled: bool,
     tls_server_name: Option<ServerName>,
   ) -> RpxyResult<Response<IncomingOr<BoxBody>>> {
+    // preparing log data
     let mut log_data = HttpMessageLog::from(&req);
+    log_data.client_addr(&client_addr);
 
     let http_result = self
       .handle_request_inner(
@@ -96,10 +100,6 @@ where
     tls_enabled: bool,
     tls_server_name: Option<ServerName>,
   ) -> HttpResult<Response<IncomingOr<BoxBody>>> {
-    // preparing log data
-    let mut log_data = HttpMessageLog::from(&req);
-    log_data.client_addr(&client_addr);
-
     // Here we start to inspect and parse with server_name
     let server_name = req
       .inspect_parse_host()
@@ -207,48 +207,46 @@ where
       return Ok(res_backend);
     }
 
-    // // Handle StatusCode::SWITCHING_PROTOCOLS in response
-    // let upgrade_in_response = extract_upgrade(res_backend.headers());
-    // let should_upgrade = if let (Some(u_req), Some(u_res)) = (upgrade_in_request.as_ref(), upgrade_in_response.as_ref())
-    // {
-    //   u_req.to_ascii_lowercase() == u_res.to_ascii_lowercase()
-    // } else {
-    //   false
-    // };
-    // if !should_upgrade {
-    //   error!(
-    //     "Backend tried to switch to protocol {:?} when {:?} was requested",
-    //     upgrade_in_response, upgrade_in_request
-    //   );
-    //   return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
-    // }
-    // let Some(request_upgraded) = request_upgraded else {
-    //   error!("Request does not have an upgrade extension");
-    //   return self.return_with_error_log(StatusCode::BAD_REQUEST, &mut log_data);
-    // };
-    // let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() else {
-    //   error!("Response does not have an upgrade extension");
-    //   return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
-    // };
+    // Handle StatusCode::SWITCHING_PROTOCOLS in response
+    let upgrade_in_response = extract_upgrade(res_backend.headers());
+    let should_upgrade = match (upgrade_in_request.as_ref(), upgrade_in_response.as_ref()) {
+      (Some(u_req), Some(u_res)) => u_req.to_ascii_lowercase() == u_res.to_ascii_lowercase(),
+      _ => false,
+    };
 
-    // self.globals.runtime_handle.spawn(async move {
-    //   let mut response_upgraded = onupgrade.await.map_err(|e| {
-    //     error!("Failed to upgrade response: {}", e);
-    //     RpxyError::Hyper(e)
-    //   })?;
-    //   let mut request_upgraded = request_upgraded.await.map_err(|e| {
-    //     error!("Failed to upgrade request: {}", e);
-    //     RpxyError::Hyper(e)
-    //   })?;
-    //   copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
-    //     .await
-    //     .map_err(|e| {
-    //       error!("Coping between upgraded connections failed: {}", e);
-    //       RpxyError::Io(e)
-    //     })?;
-    //   Ok(()) as Result<()>
-    // });
-    // log_data.status_code(&res_backend.status()).output();
+    if !should_upgrade {
+      error!(
+        "Backend tried to switch to protocol {:?} when {:?} was requested",
+        upgrade_in_response, upgrade_in_request
+      );
+      return Err(HttpError::FailedToUpgrade);
+    }
+    let Some(request_upgraded) = request_upgraded else {
+      error!("Request does not have an upgrade extension");
+      return Err(HttpError::NoUpgradeExtensionInRequest);
+    };
+    let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() else {
+      error!("Response does not have an upgrade extension");
+      return Err(HttpError::NoUpgradeExtensionInResponse);
+    };
+
+    self.globals.runtime_handle.spawn(async move {
+      let mut response_upgraded = TokioIo::new(onupgrade.await.map_err(|e| {
+        error!("Failed to upgrade response: {}", e);
+        RpxyError::FailedToUpgradeResponse(e.to_string())
+      })?);
+      let mut request_upgraded = TokioIo::new(request_upgraded.await.map_err(|e| {
+        error!("Failed to upgrade request: {}", e);
+        RpxyError::FailedToUpgradeRequest(e.to_string())
+      })?);
+      copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
+        .await
+        .map_err(|e| {
+          error!("Coping between upgraded connections failed: {}", e);
+          RpxyError::FailedToCopyBidirectional(e.to_string())
+        })?;
+      Ok(()) as RpxyResult<()>
+    });
 
     Ok(res_backend)
   }

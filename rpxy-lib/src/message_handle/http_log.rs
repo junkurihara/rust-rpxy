@@ -11,7 +11,7 @@ pub struct HttpMessageLog {
   pub method: String,
   pub host: String,
   pub p_and_q: String,
-  pub version: hyper::Version,
+  pub version: http::Version,
   pub uri_scheme: String,
   pub uri_host: String,
   pub ua: String,
@@ -20,8 +20,8 @@ pub struct HttpMessageLog {
   pub upstream: String,
 }
 
-impl<T> From<&hyper::Request<T>> for HttpMessageLog {
-  fn from(req: &hyper::Request<T>) -> Self {
+impl<T> From<&http::Request<T>> for HttpMessageLog {
+  fn from(req: &http::Request<T>) -> Self {
     let header_mapper = |v: header::HeaderName| {
       req
         .headers()
@@ -59,7 +59,7 @@ impl HttpMessageLog {
   //   self.tls_server_name = tls_server_name.to_string();
   //   self
   // }
-  pub fn status_code(&mut self, status_code: &hyper::StatusCode) -> &mut Self {
+  pub fn status_code(&mut self, status_code: &http::StatusCode) -> &mut Self {
     self.status = status_code.to_string();
     self
   }
@@ -67,7 +67,7 @@ impl HttpMessageLog {
     self.xff = xff.map_or_else(|| "", |v| v.to_str().unwrap_or("")).to_string();
     self
   }
-  pub fn upstream(&mut self, upstream: &hyper::Uri) -> &mut Self {
+  pub fn upstream(&mut self, upstream: &http::Uri) -> &mut Self {
     self.upstream = upstream.to_string();
     self
   }
