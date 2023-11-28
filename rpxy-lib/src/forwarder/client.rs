@@ -35,7 +35,7 @@ pub struct Forwarder<C, B> {
 impl<C, B1, B2> ForwardRequest<B1, IncomingOr<B2>> for Forwarder<C, B1>
 where
   C: Send + Sync + Connect + Clone + 'static,
-  B1: Body + Send + Unpin + 'static,
+  B1: Body + Send + Sync + Unpin + 'static,
   <B1 as Body>::Data: Send,
   <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
   B2: Body,
@@ -80,11 +80,7 @@ where
 
     let connector = HttpsConnector::new();
     let executor = LocalExecutor::new(_globals.runtime_handle.clone());
-    let inner_h2 = Client::builder(executor)
-      .http2_adaptive_window(true)
-      .http2_only(true)
-      .set_host(true)
-      .build::<_, B1>(connector);
+    let inner_h2 = Client::builder(executor).http2_only(true).build::<_, B1>(connector);
 
     // #[cfg(feature = "native-roots")]
     // let builder = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots();
