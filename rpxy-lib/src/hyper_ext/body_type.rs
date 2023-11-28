@@ -1,3 +1,4 @@
+use http::Response;
 use http_body_util::{combinators, BodyExt, Either, Empty, Full};
 use hyper::body::{Bytes, Incoming};
 
@@ -5,6 +6,19 @@ use hyper::body::{Bytes, Incoming};
 pub(crate) type BoxBody = combinators::BoxBody<Bytes, hyper::Error>;
 /// Type for either passthrough body or given body type, specifically synthetic boxed body
 pub(crate) type IncomingOr<B> = Either<Incoming, B>;
+
+/// helper function to build http response with passthrough body
+pub(crate) fn wrap_incoming_body_response<B>(response: Response<Incoming>) -> Response<IncomingOr<B>>
+where
+  B: hyper::body::Body,
+{
+  response.map(IncomingOr::Left)
+}
+
+/// helper function to build http response with synthetic body
+pub(crate) fn wrap_synthetic_body_response<B>(response: Response<B>) -> Response<IncomingOr<B>> {
+  response.map(IncomingOr::Right)
+}
 
 /// helper function to build a empty body
 pub(crate) fn empty() -> BoxBody {

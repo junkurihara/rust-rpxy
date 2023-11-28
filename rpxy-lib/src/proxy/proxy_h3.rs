@@ -92,13 +92,9 @@ where
   }
 
   /// Serves a request stream from a client
-  /// TODO: TODO: TODO: TODO:
-  /// TODO: Body in hyper-0.14 was changed to Incoming in hyper-1.0, and it is not accessible from outside.
-  /// Thus, we need to implement IncomingLike trait using channel. Also, the backend handler must feed the body in the form of
+  /// Body in hyper-0.14 was changed to Incoming in hyper-1.0, and it is not accessible from outside.
+  /// Thus, we needed to implement IncomingLike trait using channel. Also, the backend handler must feed the body in the form of
   /// Either<Incoming, IncomingLike> as body.
-  /// Also, the downstream from the backend handler could be Incoming, but will be wrapped as Either<Incoming, ()/Empty> as well due to H3.
-  /// Result<Either<_,_>, E> type includes E as HttpError to generate the status code and related Response<BoxBody>.
-  /// Thus to handle synthetic error messages in BoxBody, the serve() function outputs Response<Either<Either<Incoming, ()/Empty>, BoxBody>>>.
   async fn h3_serve_stream<S>(
     &self,
     req: Request<()>,
@@ -146,7 +142,7 @@ where
       Ok(()) as RpxyResult<()>
     });
 
-    let mut new_req: Request<IncomingOr<IncomingLike>> = Request::from_parts(req_parts, IncomingOr::Right(req_body));
+    let new_req: Request<IncomingOr<IncomingLike>> = Request::from_parts(req_parts, IncomingOr::Right(req_body));
     // Response<IncomingOr<BoxBody>> wrapped by RpxyResult
     let res = self
       .message_handler

@@ -57,11 +57,11 @@ pub(super) fn apply_upstream_options_to_request_line<B>(
 ) -> anyhow::Result<()> {
   for opt in upstream.options.iter() {
     match opt {
-      UpstreamOption::ForceHttp11Upstream => *req.version_mut() = hyper::Version::HTTP_11,
+      UpstreamOption::ForceHttp11Upstream => *req.version_mut() = http::Version::HTTP_11,
       UpstreamOption::ForceHttp2Upstream => {
         // case: h2c -> https://www.rfc-editor.org/rfc/rfc9113.txt
         // Upgrade from HTTP/1.1 to HTTP/2 is deprecated. So, http-2 prior knowledge is required.
-        *req.version_mut() = hyper::Version::HTTP_2;
+        *req.version_mut() = http::Version::HTTP_2;
       }
       _ => (),
     }

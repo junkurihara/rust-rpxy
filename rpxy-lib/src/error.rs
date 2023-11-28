@@ -78,6 +78,10 @@ pub enum RpxyError {
   #[error("Failed to copy bidirectional for upgraded connections: {0}")]
   FailedToCopyBidirectional(String),
 
+  // Forwarder errors
+  #[error("Failed to fetch from upstream: {0}")]
+  FailedToFetchFromUpstream(String),
+
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,

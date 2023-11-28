@@ -1,25 +1,10 @@
+use super::http_result::{HttpError, HttpResult};
 use crate::{
   error::*,
   hyper_ext::body::{empty, BoxBody, IncomingOr},
   name_exp::ServerName,
 };
 use http::{Request, Response, StatusCode, Uri};
-use hyper::body::Incoming;
-
-use super::http_result::{HttpError, HttpResult};
-
-/// helper function to build http response with passthrough body
-pub(crate) fn passthrough_response<B>(response: Response<Incoming>) -> Response<IncomingOr<B>>
-where
-  B: hyper::body::Body,
-{
-  response.map(IncomingOr::Left)
-}
-
-/// helper function to build http response with synthetic body
-pub(crate) fn synthetic_response<B>(response: Response<B>) -> Response<IncomingOr<B>> {
-  response.map(IncomingOr::Right)
-}
 
 /// build http response with status code of 4xx and 5xx
 pub(crate) fn synthetic_error_response(status_code: StatusCode) -> RpxyResult<Response<IncomingOr<BoxBody>>> {

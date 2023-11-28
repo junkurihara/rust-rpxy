@@ -20,16 +20,20 @@ pub enum HttpError {
   FailedToRedirect(String),
   #[error("No upstream candidates")]
   NoUpstreamCandidates,
-  #[error("Failed to generate upstream request: {0}")]
+  #[error("Failed to generate upstream request for backend application: {0}")]
   FailedToGenerateUpstreamRequest(String),
+  #[error("Timeout in upstream request")]
+  TimeoutUpstreamRequest,
+  #[error("Failed to get response from backend: {0}")]
+  FailedToGetResponseFromBackend(String),
 
-  #[error("Failed to add set-cookie header in response")]
-  FailedToAddSetCookeInResponse,
-  #[error("Failed to generated downstream response: {0}")]
+  #[error("Failed to add set-cookie header in response {0}")]
+  FailedToAddSetCookeInResponse(String),
+  #[error("Failed to generated downstream response for clients: {0}")]
   FailedToGenerateDownstreamResponse(String),
 
-  #[error("Failed to upgrade connection")]
-  FailedToUpgrade,
+  #[error("Failed to upgrade connection: {0}")]
+  FailedToUpgrade(String),
   #[error("Request does not have an upgrade extension")]
   NoUpgradeExtensionInRequest,
   #[error("Response does not have an upgrade extension")]
@@ -49,9 +53,10 @@ impl From<HttpError> for StatusCode {
       HttpError::FailedToRedirect(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::NoUpstreamCandidates => StatusCode::NOT_FOUND,
       HttpError::FailedToGenerateUpstreamRequest(_) => StatusCode::INTERNAL_SERVER_ERROR,
-      HttpError::FailedToAddSetCookeInResponse => StatusCode::INTERNAL_SERVER_ERROR,
+      HttpError::TimeoutUpstreamRequest => StatusCode::GATEWAY_TIMEOUT,
+      HttpError::FailedToAddSetCookeInResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToGenerateDownstreamResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
-      HttpError::FailedToUpgrade => StatusCode::INTERNAL_SERVER_ERROR,
+      HttpError::FailedToUpgrade(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::NoUpgradeExtensionInRequest => StatusCode::BAD_REQUEST,
       HttpError::NoUpgradeExtensionInResponse => StatusCode::BAD_GATEWAY,
       _ => StatusCode::INTERNAL_SERVER_ERROR,

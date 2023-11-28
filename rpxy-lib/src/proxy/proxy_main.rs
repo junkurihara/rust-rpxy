@@ -26,7 +26,7 @@ use tokio::time::timeout;
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
 async fn serve_request<U>(
-  mut req: Request<Incoming>,
+  req: Request<Incoming>,
   // handler: Arc<HttpMessageHandler<T, U>>,
   handler: Arc<HttpMessageHandler<U>>,
   client_addr: SocketAddr,

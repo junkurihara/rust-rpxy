@@ -2,6 +2,9 @@
 
 ## 0.7.0  (unreleased)
 
+- Breaking: `hyper`-1.0 for both server and client modules.
+- Breaking: Remove `override_host` option in upstream options. Add a reverse option, i.e., `disable_override_host`. That is, `rpxy` always override the host header by the upstream hostname by default.
+
 ## 0.6.2
 
 ### Improvement

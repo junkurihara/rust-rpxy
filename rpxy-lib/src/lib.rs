@@ -3,6 +3,7 @@ mod constants;
 mod count;
 mod crypto;
 mod error;
+mod forwarder;
 mod globals;
 mod hyper_ext;
 mod log;
@@ -11,8 +12,8 @@ mod name_exp;
 mod proxy;
 
 use crate::{
-  crypto::build_cert_reloader, error::*, globals::Globals, log::*, message_handler::HttpMessageHandlerBuilder,
-  proxy::Proxy,
+  crypto::build_cert_reloader, error::*, forwarder::Forwarder, globals::Globals, log::*,
+  message_handler::HttpMessageHandlerBuilder, proxy::Proxy,
 };
 use futures::future::select_all;
 use std::sync::Arc;
@@ -90,10 +91,12 @@ where
   });
 
   // 4. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well
+  let forwarder = Arc::new(Forwarder::new(&globals).await);
   let message_handler = Arc::new(
     HttpMessageHandlerBuilder::default()
       .globals(globals.clone())
       .app_manager(app_manager.clone())
+      .forwarder(forwarder)
       .build()?,
   );
 

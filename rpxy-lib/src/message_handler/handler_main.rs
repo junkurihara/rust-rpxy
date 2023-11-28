@@ -9,6 +9,7 @@ use crate::{
   backend::{BackendAppManager, LoadBalanceContext},
   crypto::CryptoSource,
   error::*,
+  forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
   hyper_ext::body::{BoxBody, IncomingLike, IncomingOr},
   log::*,
@@ -18,7 +19,7 @@ use derive_builder::Builder;
 use http::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::io::copy_bidirectional;
+use tokio::{io::copy_bidirectional, time::timeout};
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -36,10 +37,9 @@ pub(super) struct HandlerContext {
 // pub struct HttpMessageHandler<T, U>
 pub struct HttpMessageHandler<U>
 where
-  // T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone,
 {
-  // forwarder: Arc<Forwarder<T>>,
+  forwarder: Arc<Forwarder>,
   pub(super) globals: Arc<Globals>,
   app_manager: Arc<BackendAppManager<U>>,
 }
@@ -81,7 +81,7 @@ where
         Ok(v)
       }
       Err(e) => {
-        debug!("{e}");
+        error!("{e}");
         let code = StatusCode::from(e);
         log_data.status_code(&code).output();
         synthetic_error_response(code)
@@ -155,14 +155,14 @@ where
       tls_enabled,
     ) {
       Err(e) => {
-        error!("Failed to generate upstream request for backend application: {}", e);
         return Err(HttpError::FailedToGenerateUpstreamRequest(e.to_string()));
       }
       Ok(v) => v,
     };
     debug!(
-      "Request to be forwarded: uri {}, version {:?}, headers {:?}",
+      "Request to be forwarded: [uri {}, method: {}, version {:?}, headers {:?}]",
       req.uri(),
+      req.method(),
       req.version(),
       req.headers()
     );
@@ -171,37 +171,31 @@ where
     //////
 
     //////////////
-    // // TODO: remove later
-    let body = crate::hyper_ext::body::full(hyper::body::Bytes::from("not yet implemented"));
-    let mut res_backend = super::synthetic_response::synthetic_response(Response::builder().body(body).unwrap());
-    // // Forward request to a chosen backend
-    // let mut res_backend = {
-    //   let Ok(result) = timeout(self.globals.proxy_config.upstream_timeout, self.forwarder.request(req)).await else {
-    //     return self.return_with_error_log(StatusCode::GATEWAY_TIMEOUT, &mut log_data);
-    //   };
-    //   match result {
-    //     Ok(res) => res,
-    //     Err(e) => {
-    //       error!("Failed to get response from backend: {}", e);
-    //       return self.return_with_error_log(StatusCode::SERVICE_UNAVAILABLE, &mut log_data);
-    //     }
-    //   }
-    // };
+    // Forward request to a chosen backend
+    let mut res_backend = {
+      let Ok(result) = timeout(self.globals.proxy_config.upstream_timeout, self.forwarder.request(req)).await else {
+        return Err(HttpError::TimeoutUpstreamRequest);
+      };
+      match result {
+        Ok(res) => res,
+        Err(e) => {
+          return Err(HttpError::FailedToGetResponseFromBackend(e.to_string()));
+        }
+      }
+    };
     //////////////
     // Process reverse proxy context generated during the forwarding request generation.
     #[cfg(feature = "sticky-cookie")]
     if let Some(context_from_lb) = _context.context_lb {
       let res_headers = res_backend.headers_mut();
       if let Err(e) = set_sticky_cookie_lb_context(res_headers, &context_from_lb) {
-        error!("Failed to append context to the response given from backend: {}", e);
-        return Err(HttpError::FailedToAddSetCookeInResponse);
+        return Err(HttpError::FailedToAddSetCookeInResponse(e.to_string()));
       }
     }
 
     if res_backend.status() != StatusCode::SWITCHING_PROTOCOLS {
       // Generate response to client
       if let Err(e) = self.generate_response_forwarded(&mut res_backend, backend_app) {
-        error!("Failed to generate downstream response for clients: {}", e);
         return Err(HttpError::FailedToGenerateDownstreamResponse(e.to_string()));
       }
       return Ok(res_backend);
@@ -215,18 +209,15 @@ where
     };
 
     if !should_upgrade {
-      error!(
+      return Err(HttpError::FailedToUpgrade(format!(
         "Backend tried to switch to protocol {:?} when {:?} was requested",
         upgrade_in_response, upgrade_in_request
-      );
-      return Err(HttpError::FailedToUpgrade);
+      )));
     }
     let Some(request_upgraded) = request_upgraded else {
-      error!("Request does not have an upgrade extension");
       return Err(HttpError::NoUpgradeExtensionInRequest);
     };
     let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() else {
-      error!("Response does not have an upgrade extension");
       return Err(HttpError::NoUpgradeExtensionInResponse);
     };
 

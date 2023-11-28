@@ -58,6 +58,7 @@ futures-channel = { version = "0.3.29", default-features = false }
 #   "http1",
 #   "http2",
 # ] }
+hyper-tls = { version = "0.6.0", features = ["alpn"] }
 
 # tls and cert management
 hot_reload = "0.1.4"
