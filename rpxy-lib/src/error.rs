@@ -70,7 +70,7 @@ pub enum RpxyError {
 
   // Handler errors
   #[error("Failed to build message handler: {0}")]
-  FailedToBuildMessageHandler(#[from] crate::message_handle::HttpMessageHandlerBuilderError),
+  FailedToBuildMessageHandler(#[from] crate::message_handler::HttpMessageHandlerBuilderError),
   #[error("Failed to upgrade request: {0}")]
   FailedToUpgradeRequest(String),
   #[error("Failed to upgrade response: {0}")]

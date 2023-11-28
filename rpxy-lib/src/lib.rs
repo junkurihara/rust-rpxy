@@ -6,12 +6,12 @@ mod error;
 mod globals;
 mod hyper_ext;
 mod log;
-mod message_handle;
+mod message_handler;
 mod name_exp;
 mod proxy;
 
 use crate::{
-  crypto::build_cert_reloader, error::*, globals::Globals, log::*, message_handle::HttpMessageHandlerBuilder,
+  crypto::build_cert_reloader, error::*, globals::Globals, log::*, message_handler::HttpMessageHandlerBuilder,
   proxy::Proxy,
 };
 use futures::future::select_all;

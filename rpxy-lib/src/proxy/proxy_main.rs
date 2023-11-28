@@ -9,7 +9,7 @@ use crate::{
     rt::LocalExecutor,
   },
   log::*,
-  message_handle::HttpMessageHandler,
+  message_handler::HttpMessageHandler,
   name_exp::ServerName,
 };
 use futures::{select, FutureExt};
