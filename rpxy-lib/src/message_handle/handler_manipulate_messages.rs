@@ -2,9 +2,14 @@ use super::{
   handler_main::HandlerContext, utils_headers::*, utils_request::apply_upstream_options_to_request_line,
   HttpMessageHandler,
 };
-use crate::{backend::UpstreamCandidates, log::*, CryptoSource};
+use crate::{
+  backend::{BackendApp, UpstreamCandidates},
+  constants::RESPONSE_HEADER_SERVER,
+  log::*,
+  CryptoSource,
+};
 use anyhow::{anyhow, ensure, Result};
-use http::{header, uri::Scheme, HeaderValue, Request, Uri, Version};
+use http::{header, uri::Scheme, HeaderValue, Request, Response, Uri, Version};
 use std::net::SocketAddr;
 
 impl<U> HttpMessageHandler<U>
@@ -15,51 +20,46 @@ where
   // Functions to generate messages
   ////////////////////////////////////////////////////
 
-  // /// Manipulate a response message sent from a backend application to forward downstream to a client.
-  // fn generate_response_forwarded<B>(&self, response: &mut Response<B>, chosen_backend: &Backend<U>) -> Result<()> {
-  // where
-  //   B: core::fmt::Debug,
-  // {
-  //   let headers = response.headers_mut();
-  //   remove_connection_header(headers);
-  //   remove_hop_header(headers);
-  //   add_header_entry_overwrite_if_exist(headers, "server", RESPONSE_HEADER_SERVER)?;
+  /// Manipulate a response message sent from a backend application to forward downstream to a client.
+  pub(super) fn generate_response_forwarded<B>(
+    &self,
+    response: &mut Response<B>,
+    backend_app: &BackendApp<U>,
+  ) -> Result<()> {
+    let headers = response.headers_mut();
+    remove_connection_header(headers);
+    remove_hop_header(headers);
+    add_header_entry_overwrite_if_exist(headers, "server", RESPONSE_HEADER_SERVER)?;
 
-  //   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-  //   {
-  //     // Manipulate ALT_SVC allowing h3 in response message only when mutual TLS is not enabled
-  //     // TODO: This is a workaround for avoiding a client authentication in HTTP/3
-  //     if self.globals.proxy_config.http3
-  //       && chosen_backend
-  //         .crypto_source
-  //         .as_ref()
-  //         .is_some_and(|v| !v.is_mutual_tls())
-  //     {
-  //       if let Some(port) = self.globals.proxy_config.https_port {
-  //         add_header_entry_overwrite_if_exist(
-  //           headers,
-  //           header::ALT_SVC.as_str(),
-  //           format!(
-  //             "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
-  //             port, self.globals.proxy_config.h3_alt_svc_max_age, port, self.globals.proxy_config.h3_alt_svc_max_age
-  //           ),
-  //         )?;
-  //       }
-  //     } else {
-  //       // remove alt-svc to disallow requests via http3
-  //       headers.remove(header::ALT_SVC.as_str());
-  //     }
-  //   }
-  //   #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
-  //   {
-  //     if let Some(port) = self.globals.proxy_config.https_port {
-  //       headers.remove(header::ALT_SVC.as_str());
-  //     }
-  //   }
+    #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+    {
+      // Manipulate ALT_SVC allowing h3 in response message only when mutual TLS is not enabled
+      // TODO: This is a workaround for avoiding a client authentication in HTTP/3
+      if self.globals.proxy_config.http3 && backend_app.crypto_source.as_ref().is_some_and(|v| !v.is_mutual_tls()) {
+        if let Some(port) = self.globals.proxy_config.https_port {
+          add_header_entry_overwrite_if_exist(
+            headers,
+            header::ALT_SVC.as_str(),
+            format!(
+              "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
+              port, self.globals.proxy_config.h3_alt_svc_max_age, port, self.globals.proxy_config.h3_alt_svc_max_age
+            ),
+          )?;
+        }
+      } else {
+        // remove alt-svc to disallow requests via http3
+        headers.remove(header::ALT_SVC.as_str());
+      }
+    }
+    #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
+    {
+      if self.globals.proxy_config.https_port.is_some() {
+        headers.remove(header::ALT_SVC.as_str());
+      }
+    }
 
-  //   Ok(())
-  //   todo!()
-  // }
+    Ok(())
+  }
 
   #[allow(clippy::too_many_arguments)]
   /// Manipulate a request message sent from a client to forward upstream to a backend application

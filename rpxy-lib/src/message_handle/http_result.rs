@@ -25,6 +25,8 @@ pub enum HttpError {
 
   #[error("Failed to add set-cookie header in response")]
   FailedToAddSetCookeInResponse,
+  #[error("Failed to generated downstream response: {0}")]
+  FailedToGenerateDownstreamResponse(String),
 
   #[error(transparent)]
   Other(#[from] anyhow::Error),
@@ -41,6 +43,7 @@ impl From<HttpError> for StatusCode {
       HttpError::NoUpstreamCandidates => StatusCode::NOT_FOUND,
       HttpError::FailedToGenerateUpstreamRequest(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToAddSetCookeInResponse => StatusCode::INTERNAL_SERVER_ERROR,
+      HttpError::FailedToGenerateDownstreamResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
       _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
   }

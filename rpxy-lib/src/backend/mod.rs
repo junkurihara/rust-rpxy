@@ -10,4 +10,4 @@ pub(crate) use self::{
   upstream::{PathManager, Upstream, UpstreamCandidates},
   upstream_opts::UpstreamOption,
 };
-pub(crate) use backend_main::{BackendAppBuilderError, BackendAppManager};
+pub(crate) use backend_main::{BackendApp, BackendAppBuilderError, BackendAppManager};

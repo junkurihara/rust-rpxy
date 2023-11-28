@@ -38,7 +38,7 @@ where
   U: CryptoSource + Clone,
 {
   // forwarder: Arc<Forwarder<T>>,
-  globals: Arc<Globals>,
+  pub(super) globals: Arc<Globals>,
   app_manager: Arc<BackendAppManager<U>>,
 }
 
@@ -155,7 +155,7 @@ where
       tls_enabled,
     ) {
       Err(e) => {
-        error!("Failed to generate destination uri for backend application: {}", e);
+        error!("Failed to generate upstream request for backend application: {}", e);
         return Err(HttpError::FailedToGenerateUpstreamRequest(e.to_string()));
       }
       Ok(v) => v,
@@ -199,12 +199,12 @@ where
     }
 
     if res_backend.status() != StatusCode::SWITCHING_PROTOCOLS {
-      //   // Generate response to client
-      //   if self.generate_response_forwarded(&mut res_backend, backend).is_err() {
-      //     return self.return_with_error_log(StatusCode::INTERNAL_SERVER_ERROR, &mut log_data);
-      //   }
-      //   log_data.status_code(&res_backend.status()).output();
-      //   return Ok(res_backend);
+      // Generate response to client
+      if let Err(e) = self.generate_response_forwarded(&mut res_backend, backend_app) {
+        error!("Failed to generate downstream response for clients: {}", e);
+        return Err(HttpError::FailedToGenerateDownstreamResponse(e.to_string()));
+      }
+      return Ok(res_backend);
     }
 
     // // Handle StatusCode::SWITCHING_PROTOCOLS in response
