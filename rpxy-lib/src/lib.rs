@@ -91,7 +91,7 @@ where
   });
 
   // 4. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well
-  let forwarder = Arc::new(Forwarder::new(&globals).await);
+  let forwarder = Arc::new(Forwarder::try_new(&globals).await?);
   let message_handler = Arc::new(
     HttpMessageHandlerBuilder::default()
       .globals(globals.clone())

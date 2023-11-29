@@ -43,6 +43,8 @@ where
   type Error = RpxyError;
 
   async fn request(&self, req: Request<B1>) -> Result<Response<IncomingOr<B2>>, Self::Error> {
+    // TODO: cache handling
+
     self.request_directly(req).await
   }
 }
@@ -64,6 +66,7 @@ where
   }
 }
 
+/// Build forwarder with hyper-tls (native-tls)
 impl<B1> Forwarder<HttpsConnector<HttpConnector>, B1>
 where
   B1: Body + Send + Unpin + 'static,
@@ -71,16 +74,29 @@ where
   <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
 {
   /// Build forwarder
-  pub async fn new(_globals: &Arc<Globals>) -> Self {
+  pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
     // build hyper client with hyper-tls
-    // TODO: Frame size errorが取れない > H2 どうしようもない。。。。 hyper_rustlsのリリース待ち？
-    let connector = HttpsConnector::new();
-    let executor = LocalExecutor::new(_globals.runtime_handle.clone().clone());
+    let executor = LocalExecutor::new(_globals.runtime_handle.clone());
+
+    let try_build_connector = |alpns: &[&str]| {
+      hyper_tls::native_tls::TlsConnector::builder()
+        .request_alpns(alpns)
+        .build()
+        .map_err(|e| RpxyError::FailedToBuildForwarder(e.to_string()))
+        .map(|tls| {
+          let mut http = HttpConnector::new();
+          http.enforce_http(false);
+          HttpsConnector::from((http, tls.into()))
+        })
+    };
+
+    let connector = try_build_connector(&["h2", "http/1.1"])?;
     let inner = Client::builder(executor.clone()).build::<_, B1>(connector);
 
-    let connector = HttpsConnector::new();
-    let executor = LocalExecutor::new(_globals.runtime_handle.clone());
-    let inner_h2 = Client::builder(executor).http2_only(true).build::<_, B1>(connector);
+    let connector_h2 = try_build_connector(&["h2"])?;
+    let inner_h2 = Client::builder(executor.clone())
+      .http2_only(true)
+      .build::<_, B1>(connector_h2);
 
     // #[cfg(feature = "native-roots")]
     // let builder = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots();
@@ -108,6 +124,6 @@ where
     //   Self { inner, inner_h2, cache }
     // }
     // #[cfg(not(feature = "cache"))]
-    Self { inner, inner_h2 }
+    Ok(Self { inner, inner_h2 })
   }
 }

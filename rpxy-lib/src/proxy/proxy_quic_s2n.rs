@@ -1,18 +1,20 @@
 use super::proxy_main::Proxy;
 use crate::{
+  crypto::CryptoSource,
   crypto::{ServerCrypto, ServerCryptoBase},
   error::*,
   log::*,
   name_exp::ByteName,
 };
+use anyhow::anyhow;
 use hot_reload::ReloaderReceiver;
-use std::sync::Arc;
-// use hyper_util::client::legacy::connect::Connect;
+use hyper_util::client::legacy::connect::Connect;
 use s2n_quic::provider;
+use std::sync::Arc;
 
-impl<U> Proxy<U>
+impl<U, T> Proxy<U, T>
 where
-  // T: Connect + Clone + Sync + Send + 'static,
+  T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   /// Start UDP proxy serving with HTTP/3 request for configured host names

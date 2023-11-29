@@ -79,6 +79,8 @@ pub enum RpxyError {
   FailedToCopyBidirectional(String),
 
   // Forwarder errors
+  #[error("Failed to build forwarder: {0}")]
+  FailedToBuildForwarder(String),
   #[error("Failed to fetch from upstream: {0}")]
   FailedToFetchFromUpstream(String),
 

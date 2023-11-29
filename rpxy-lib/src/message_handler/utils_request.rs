@@ -1,6 +1,9 @@
-use crate::backend::{UpstreamCandidates, UpstreamOption};
+use crate::{
+  backend::{Upstream, UpstreamCandidates, UpstreamOption},
+  log::*,
+};
 use anyhow::{anyhow, ensure, Result};
-use http::{header, Request};
+use http::{header, uri::Scheme, Request, Version};
 
 /// Trait defining parser of hostname
 /// Inspect and extract hostname from either the request HOST header or request line
@@ -50,18 +53,30 @@ impl<B> InspectParseHost for Request<B> {
 ////////////////////////////////////////////////////
 // Functions to manipulate request line
 
-/// Apply upstream options in request line, specified in the configuration
-pub(super) fn apply_upstream_options_to_request_line<B>(
+/// Update request line, e.g., version, and apply upstream options to request line, specified in the configuration
+pub(super) fn update_request_line<B>(
   req: &mut Request<B>,
-  upstream: &UpstreamCandidates,
+  upstream_chosen: &Upstream,
+  upstream_candidates: &UpstreamCandidates,
 ) -> anyhow::Result<()> {
-  for opt in upstream.options.iter() {
+  // If not specified (force_httpXX_upstream) and https, version is preserved except for http/3
+  if upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
+    // Change version to http/1.1 when destination scheme is http
+    debug!("Change version to http/1.1 when destination scheme is http unless upstream option enabled.");
+    *req.version_mut() = Version::HTTP_11;
+  } else if req.version() == Version::HTTP_3 {
+    // HTTP/3 is always https
+    debug!("HTTP/3 is currently unsupported for request to upstream.");
+    *req.version_mut() = Version::HTTP_2;
+  }
+
+  for opt in upstream_candidates.options.iter() {
     match opt {
-      UpstreamOption::ForceHttp11Upstream => *req.version_mut() = http::Version::HTTP_11,
+      UpstreamOption::ForceHttp11Upstream => *req.version_mut() = Version::HTTP_11,
       UpstreamOption::ForceHttp2Upstream => {
         // case: h2c -> https://www.rfc-editor.org/rfc/rfc9113.txt
         // Upgrade from HTTP/1.1 to HTTP/2 is deprecated. So, http-2 prior knowledge is required.
-        *req.version_mut() = http::Version::HTTP_2;
+        *req.version_mut() = Version::HTTP_2;
       }
       _ => (),
     }

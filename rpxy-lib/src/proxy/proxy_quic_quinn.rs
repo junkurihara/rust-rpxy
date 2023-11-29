@@ -6,14 +6,14 @@ use crate::{
   log::*,
   name_exp::ByteName,
 };
-// use hyper_util::client::legacy::connect::Connect;
+use hyper_util::client::legacy::connect::Connect;
 use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
 use rustls::ServerConfig;
 use std::sync::Arc;
 
-impl<U> Proxy<U>
+impl<U, T> Proxy<U, T>
 where
-  // T: Connect + Clone + Sync + Send + 'static,
+  T: Send + Sync + Connect + Clone + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn h3_listener_service(&self) -> RpxyResult<()> {

@@ -45,22 +45,25 @@ async-trait = "0.1.74"
 anyhow = "1.0.75"
 thiserror = "1.0.50"
 
-# http
+# http for both server and client
 http = "1.0.0"
 http-body-util = "0.1.0"
 hyper = { version = "1.0.1", default-features = false }
 hyper-util = { version = "0.1.1", features = ["full"] }
 futures-util = { version = "0.3.29", default-features = false }
 futures-channel = { version = "0.3.29", default-features = false }
+
+# http client
+hyper-tls = { version = "0.6.0", features = ["alpn"] }
+tokio-native-tls = { version = "0.3.1" }
 # hyper-rustls = { version = "0.24.2", default-features = false, features = [
 #   "tokio-runtime",
 #   "webpki-tokio",
 #   "http1",
 #   "http2",
 # ] }
-hyper-tls = { version = "0.6.0", features = ["alpn"] }
 
-# tls and cert management
+# tls and cert management for server
 hot_reload = "0.1.4"
 rustls = { version = "0.21.9", default-features = false }
 tokio-rustls = { version = "0.24.1", features = ["early-data"] }

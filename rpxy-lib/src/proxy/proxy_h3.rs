@@ -9,6 +9,7 @@ use crate::{
 use bytes::{Buf, Bytes};
 use http::{Request, Response};
 use http_body_util::BodyExt;
+use hyper_util::client::legacy::connect::Connect;
 use std::{net::SocketAddr, time::Duration};
 use tokio::time::timeout;
 
@@ -17,12 +18,9 @@ use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestSt
 #[cfg(feature = "http3-s2n")]
 use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 
-// use futures::Stream;
-// use hyper_util::client::legacy::connect::Connect;
-
-impl<U> Proxy<U>
+impl<U, T> Proxy<U, T>
 where
-  // T: Connect + Clone + Sync + Send + 'static,
+  T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn h3_serve_connection<C>(

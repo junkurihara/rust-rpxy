@@ -1,7 +1,4 @@
-use super::{
-  handler_main::HandlerContext, utils_headers::*, utils_request::apply_upstream_options_to_request_line,
-  HttpMessageHandler,
-};
+use super::{handler_main::HandlerContext, utils_headers::*, utils_request::update_request_line, HttpMessageHandler};
 use crate::{
   backend::{BackendApp, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
@@ -9,11 +6,13 @@ use crate::{
   CryptoSource,
 };
 use anyhow::{anyhow, ensure, Result};
-use http::{header, uri::Scheme, HeaderValue, Request, Response, Uri, Version};
+use http::{header, HeaderValue, Request, Response, Uri};
+use hyper_util::client::legacy::connect::Connect;
 use std::net::SocketAddr;
 
-impl<U> HttpMessageHandler<U>
+impl<U, C> HttpMessageHandler<U, C>
 where
+  C: Send + Sync + Connect + Clone + 'static,
   U: CryptoSource + Clone,
 {
   ////////////////////////////////////////////////////
@@ -177,18 +176,7 @@ where
         .insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
     }
 
-    // If not specified (force_httpXX_upstream) and https, version is preserved except for http/3
-    if upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
-      // Change version to http/1.1 when destination scheme is http
-      debug!("Change version to http/1.1 when destination scheme is http unless upstream option enabled.");
-      *req.version_mut() = Version::HTTP_11;
-    } else if req.version() == Version::HTTP_3 {
-      // HTTP/3 is always https
-      debug!("HTTP/3 is currently unsupported for request to upstream.");
-      *req.version_mut() = Version::HTTP_2;
-    }
-
-    apply_upstream_options_to_request_line(req, upstream_candidates)?;
+    update_request_line(req, upstream_chosen, upstream_candidates)?;
 
     Ok(context)
   }

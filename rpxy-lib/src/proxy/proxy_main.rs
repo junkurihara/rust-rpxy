@@ -19,23 +19,22 @@ use hyper::{
   rt::{Read, Write},
   service::service_fn,
 };
-use hyper_util::{rt::TokioIo, server::conn::auto::Builder as ConnectionBuilder};
+use hyper_util::{client::legacy::connect::Connect, rt::TokioIo, server::conn::auto::Builder as ConnectionBuilder};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::time::timeout;
 
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
-async fn serve_request<U>(
+async fn serve_request<U, T>(
   req: Request<Incoming>,
-  // handler: Arc<HttpMessageHandler<T, U>>,
-  handler: Arc<HttpMessageHandler<U>>,
+  handler: Arc<HttpMessageHandler<U, T>>,
   client_addr: SocketAddr,
   listen_addr: SocketAddr,
   tls_enabled: bool,
   tls_server_name: Option<ServerName>,
 ) -> RpxyResult<Response<IncomingOr<BoxBody>>>
 where
-  // T: Connect + Clone + Sync + Send + 'static,
+  T: Send + Sync + Connect + Clone,
   U: CryptoSource + Clone,
 {
   handler
@@ -51,9 +50,9 @@ where
 
 #[derive(Clone)]
 /// Proxy main object responsible to serve requests received from clients at the given socket address.
-pub(crate) struct Proxy<U, E = LocalExecutor>
+pub(crate) struct Proxy<U, T, E = LocalExecutor>
 where
-  // T: Connect + Clone + Sync + Send + 'static,
+  T: Send + Sync + Connect + Clone + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   /// global context shared among async tasks
@@ -65,12 +64,12 @@ where
   /// hyper connection builder serving http request
   pub connection_builder: Arc<ConnectionBuilder<E>>,
   /// message handler serving incoming http request
-  pub message_handler: Arc<HttpMessageHandler<U>>,
+  pub message_handler: Arc<HttpMessageHandler<U, T>>,
 }
 
-impl<U> Proxy<U>
+impl<U, T> Proxy<U, T>
 where
-  // T: Connect + Clone + Sync + Send + 'static,
+  T: Send + Sync + Connect + Clone + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   /// Serves requests from clients

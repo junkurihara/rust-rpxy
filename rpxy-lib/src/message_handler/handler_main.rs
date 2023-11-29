@@ -17,7 +17,7 @@ use crate::{
 };
 use derive_builder::Builder;
 use http::{Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{io::copy_bidirectional, time::timeout};
 
@@ -34,19 +34,19 @@ pub(super) struct HandlerContext {
 #[derive(Clone, Builder)]
 /// HTTP message handler for requests from clients and responses from backend applications,
 /// responsible to manipulate and forward messages to upstream backends and downstream clients.
-// pub struct HttpMessageHandler<T, U>
-pub struct HttpMessageHandler<U>
+pub struct HttpMessageHandler<U, C>
 where
+  C: Send + Sync + Connect + Clone + 'static,
   U: CryptoSource + Clone,
 {
-  forwarder: Arc<Forwarder>,
+  forwarder: Arc<Forwarder<C>>,
   pub(super) globals: Arc<Globals>,
   app_manager: Arc<BackendAppManager<U>>,
 }
 
-impl<U> HttpMessageHandler<U>
+impl<U, C> HttpMessageHandler<U, C>
 where
-  // T: Connect + Clone + Sync + Send + 'static,
+  C: Send + Sync + Connect + Clone + 'static,
   U: CryptoSource + Clone,
 {
   /// Handle incoming request message from a client.
