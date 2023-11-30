@@ -86,6 +86,7 @@ where
         .map(|tls| {
           let mut http = HttpConnector::new();
           http.enforce_http(false);
+          http.set_reuse_address(true);
           HttpsConnector::from((http, tls.into()))
         })
     };
