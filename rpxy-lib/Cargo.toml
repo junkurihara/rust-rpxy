@@ -12,7 +12,7 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "sticky-cookie", "cache"]
+default = ["http3-quinn", "sticky-cookie", "cache", "native-tls-backend"]
 http3-quinn = ["socket2", "quinn", "h3", "h3-quinn"]
 http3-s2n = [
   "h3",
@@ -22,6 +22,8 @@ http3-s2n = [
   "s2n-quic-h3",
 ]
 sticky-cookie = ["base64", "sha2", "chrono"]
+native-tls-backend = ["hyper-tls"]
+rustls-backend = []
 cache = [] #"http-cache-semantics", "lru"]
 native-roots = [] #"hyper-rustls/native-tokio"]
 
@@ -53,8 +55,8 @@ hyper-util = { version = "0.1.1", features = ["full"] }
 futures-util = { version = "0.3.29", default-features = false }
 futures-channel = { version = "0.3.29", default-features = false }
 
-# http client
-hyper-tls = { version = "0.6.0", features = ["alpn"] }
+# http client for upstream
+hyper-tls = { version = "0.6.0", features = ["alpn"], optional = true }
 # hyper-rustls = { version = "0.24.2", default-features = false, features = [
 #   "tokio-runtime",
 #   "webpki-tokio",

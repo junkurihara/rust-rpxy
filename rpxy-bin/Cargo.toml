@@ -21,6 +21,7 @@ native-roots = ["rpxy-lib/native-roots"]
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
+  "native-tls-backend",
 ] }
 
 anyhow = "1.0.75"

@@ -5,11 +5,11 @@ use crate::{
     body::{wrap_incoming_body_response, IncomingOr},
     rt::LocalExecutor,
   },
+  log::*,
 };
 use async_trait::async_trait;
 use http::{Request, Response, Version};
 use hyper::body::Body;
-use hyper_tls::HttpsConnector;
 use hyper_util::client::legacy::{
   connect::{Connect, HttpConnector},
   Client,
@@ -66,8 +66,38 @@ where
   }
 }
 
+#[cfg(not(any(feature = "native-tls-backend", feature = "rustls-backend")))]
+impl<B> Forwarder<HttpConnector, B>
+where
+  B: Body + Send + Unpin + 'static,
+  <B as Body>::Data: Send,
+  <B as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
+{
+  /// Build inner client with http
+  pub fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
+    warn!(
+      "
+--------------------------------------------------------------------------------------------------
+Request forwarder is working without TLS support!!!
+We recommend to use this just for testing.
+Please enable native-tls-backend or rustls-backend feature to enable TLS support.
+--------------------------------------------------------------------------------------------------"
+    );
+    let executor = LocalExecutor::new(_globals.runtime_handle.clone());
+    let mut http = HttpConnector::new();
+    http.set_reuse_address(true);
+    let inner = Client::builder(executor).build::<_, B>(http);
+
+    Ok(Self {
+      inner,
+      inner_h2: inner.clone(),
+    })
+  }
+}
+
+#[cfg(feature = "native-tls-backend")]
 /// Build forwarder with hyper-tls (native-tls)
-impl<B1> Forwarder<HttpsConnector<HttpConnector>, B1>
+impl<B1> Forwarder<hyper_tls::HttpsConnector<HttpConnector>, B1>
 where
   B1: Body + Send + Unpin + 'static,
   <B1 as Body>::Data: Send,
@@ -76,6 +106,7 @@ where
   /// Build forwarder
   pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
     // build hyper client with hyper-tls
+    info!("Native TLS support is enabled for the connection to backend applications");
     let executor = LocalExecutor::new(_globals.runtime_handle.clone());
 
     let try_build_connector = |alpns: &[&str]| {
@@ -87,7 +118,7 @@ where
           let mut http = HttpConnector::new();
           http.enforce_http(false);
           http.set_reuse_address(true);
-          HttpsConnector::from((http, tls.into()))
+          hyper_tls::HttpsConnector::from((http, tls.into()))
         })
     };
 
@@ -99,6 +130,27 @@ where
       .http2_only(true)
       .build::<_, B1>(connector_h2);
 
+    // #[cfg(feature = "cache")]
+    // {
+    //   let cache = RpxyCache::new(_globals).await;
+    //   Self { inner, inner_h2, cache }
+    // }
+    // #[cfg(not(feature = "cache"))]
+    Ok(Self { inner, inner_h2 })
+  }
+}
+
+#[cfg(feature = "rustls-backend")]
+/// Build forwarder with hyper-rustls (rustls)
+impl<B1> Forwarder<hyper_tls::HttpsConnector<HttpConnector>, B1>
+where
+  B1: Body + Send + Unpin + 'static,
+  <B1 as Body>::Data: Send,
+  <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
+{
+  /// Build forwarder
+  pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
+    todo!("Not implemented yet. Please use native-tls-backend feature for now.");
     // #[cfg(feature = "native-roots")]
     // let builder = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots();
     // #[cfg(feature = "native-roots")]
@@ -118,13 +170,5 @@ where
 
     // let inner = Client::builder().build::<_, Body>(connector);
     // let inner_h2 = Client::builder().http2_only(true).build::<_, Body>(connector_h2);
-
-    // #[cfg(feature = "cache")]
-    // {
-    //   let cache = RpxyCache::new(_globals).await;
-    //   Self { inner, inner_h2, cache }
-    // }
-    // #[cfg(not(feature = "cache"))]
-    Ok(Self { inner, inner_h2 })
   }
 }
