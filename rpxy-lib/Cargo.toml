@@ -54,7 +54,7 @@ hyper-rustls = { version = "0.24.2", default-features = false, features = [
   "http2",
 ] }
 tokio-rustls = { version = "0.24.1", features = ["early-data"] }
-rustls = { version = "0.21.8", default-features = false }
+rustls = { version = "0.22.0", default-features = false }
 webpki = "0.22.4"
 x509-parser = "0.15.1"
 
