@@ -2,7 +2,7 @@ use crate::{
   error::{RpxyError, RpxyResult},
   globals::Globals,
   hyper_ext::{
-    body::{wrap_incoming_body_response, IncomingOr},
+    body::{wrap_incoming_body_response, BoxBody, IncomingOr},
     rt::LocalExecutor,
   },
   log::*,
@@ -19,7 +19,7 @@ use std::sync::Arc;
 #[cfg(feature = "cache")]
 use super::cache::{get_policy_if_cacheable, RpxyCache};
 #[cfg(feature = "cache")]
-use crate::hyper_ext::body::{full, BoxBody};
+use crate::hyper_ext::body::{full, wrap_synthetic_body_response};
 #[cfg(feature = "cache")]
 use http_body_util::BodyExt;
 
@@ -89,13 +89,16 @@ where
       // };
 
       // response with cached body
-      Ok(Response::from_parts(parts, IncomingOr::Right(full(bytes))))
+      Ok(wrap_synthetic_body_response(Response::from_parts(parts, full(bytes))))
     }
 
     // No cache handling
     #[cfg(not(feature = "cache"))]
     {
-      self.request_directly(req).await.map(wrap_incoming_body_response::<B2>)
+      self
+        .request_directly(req)
+        .await
+        .map(wrap_incoming_body_response::<BoxBody>)
     }
   }
 }

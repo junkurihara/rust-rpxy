@@ -1,3 +1,4 @@
+#[cfg(feature = "cache")]
 mod cache;
 mod client;
 
