@@ -1,10 +1,8 @@
 use async_trait::async_trait;
 use rustc_hash::FxHashSet as HashSet;
-use rustls::{
-  sign::{any_supported_type, CertifiedKey},
-  Certificate, OwnedTrustAnchor, PrivateKey,
-};
-use std::io;
+use rustls::{crypto::ring::sign::any_supported_type, sign::CertifiedKey};
+use rustls_pki_types::{CertificateDer as Certificate, Der, PrivateKeyDer as PrivateKey, TrustAnchor};
+use std::{io, sync::Arc};
 use x509_parser::prelude::*;
 
 #[async_trait]
@@ -22,9 +20,9 @@ pub trait CryptoSource {
 /// Certificates and private keys in rustls loaded from files
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CertsAndKeys {
-  pub certs: Vec<Certificate>,
-  pub cert_keys: Vec<PrivateKey>,
-  pub client_ca_certs: Option<Vec<Certificate>>,
+  pub certs: Vec<Certificate<'static>>,
+  pub cert_keys: Arc<Vec<PrivateKey<'static>>>,
+  pub client_ca_certs: Option<Vec<Certificate<'static>>>,
 }
 
 impl CertsAndKeys {
@@ -49,19 +47,19 @@ impl CertsAndKeys {
     Ok(CertifiedKey::new(self.certs.clone(), signing_key))
   }
 
-  pub fn parse_client_ca_certs(&self) -> Result<(Vec<OwnedTrustAnchor>, HashSet<Vec<u8>>), anyhow::Error> {
+  pub fn parse_client_ca_certs(&self) -> Result<(Vec<TrustAnchor>, HashSet<Vec<u8>>), anyhow::Error> {
     let certs = self.client_ca_certs.as_ref().ok_or(anyhow::anyhow!("No client cert"))?;
 
     let owned_trust_anchors: Vec<_> = certs
       .iter()
       .map(|v| {
         // let trust_anchor = tokio_rustls::webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
-        let trust_anchor = webpki::TrustAnchor::try_from_cert_der(&v.0).unwrap();
-        rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-          trust_anchor.subject,
-          trust_anchor.spki,
-          trust_anchor.name_constraints,
-        )
+        let trust_anchor = webpki::TrustAnchor::try_from_cert_der(v.as_ref()).unwrap();
+        TrustAnchor {
+          subject: Der::from_slice(trust_anchor.subject),
+          subject_public_key_info: Der::from_slice(trust_anchor.spki),
+          name_constraints: trust_anchor.name_constraints.map(|v| Der::from_slice(v)),
+        }
       })
       .collect();
 
@@ -70,7 +68,7 @@ impl CertsAndKeys {
       .iter()
       .filter_map(|v| {
         // retrieve ca key id (subject key id)
-        let cert = parse_x509_certificate(&v.0).unwrap().1;
+        let cert = parse_x509_certificate(v.as_ref()).unwrap().1;
         let subject_key_ids = cert
           .iter_extensions()
           .filter_map(|ext| match ext.parsed_extension() {

@@ -22,11 +22,7 @@ where
     };
     info!("Start UDP proxy serving with HTTP/3 request for configured host names [quinn]");
     // first set as null config server
-    let rustls_server_config = ServerConfig::builder()
-      .with_safe_default_cipher_suites()
-      .with_safe_default_kx_groups()
-      .with_protocol_versions(&[&rustls::version::TLS13])
-      .map_err(|e| RpxyError::QuinnInvalidTlsProtocolVersion(e.to_string()))?
+    let rustls_server_config = ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
       .with_no_client_auth()
       .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()));
 

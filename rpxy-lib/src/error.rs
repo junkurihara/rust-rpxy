@@ -38,9 +38,6 @@ pub enum RpxyError {
   H3TooLargeBody,
 
   #[cfg(feature = "http3-quinn")]
-  #[error("Invalid rustls TLS version: {0}")]
-  QuinnInvalidTlsProtocolVersion(String),
-  #[cfg(feature = "http3-quinn")]
   #[error("Quinn connection error: {0}")]
   QuinnConnectionFailed(#[from] quinn::ConnectionError),
 

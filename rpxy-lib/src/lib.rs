@@ -24,7 +24,7 @@ pub use crate::{
 };
 pub mod reexports {
   pub use hyper::Uri;
-  pub use rustls::{Certificate, PrivateKey};
+  pub use rustls_pki_types::{CertificateDer as Certificate, PrivateKeyDer as PrivateKey};
 }
 
 #[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
