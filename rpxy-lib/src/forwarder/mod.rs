@@ -1,3 +1,4 @@
+mod cache;
 mod client;
 
 use crate::hyper_ext::body::{IncomingLike, IncomingOr};

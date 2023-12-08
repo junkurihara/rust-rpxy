@@ -9,12 +9,19 @@ use crate::{
 };
 use async_trait::async_trait;
 use http::{Request, Response, Version};
-use hyper::body::Body;
+use hyper::body::{Body, Incoming};
 use hyper_util::client::legacy::{
   connect::{Connect, HttpConnector},
   Client,
 };
 use std::sync::Arc;
+
+#[cfg(feature = "cache")]
+use super::cache::{get_policy_if_cacheable, RpxyCache};
+#[cfg(feature = "cache")]
+use crate::hyper_ext::body::{full, BoxBody};
+#[cfg(feature = "cache")]
+use http_body_util::BodyExt;
 
 #[async_trait]
 /// Definition of the forwarder that simply forward requests from downstream client to upstream app servers.
@@ -25,27 +32,71 @@ pub trait ForwardRequest<B1, B2> {
 
 /// Forwarder http client struct responsible to cache handling
 pub struct Forwarder<C, B> {
-  // #[cfg(feature = "cache")]
-  // cache: Option<RpxyCache>,
+  #[cfg(feature = "cache")]
+  cache: Option<RpxyCache>,
   inner: Client<C, B>,
   inner_h2: Client<C, B>, // `h2c` or http/2-only client is defined separately
 }
 
 #[async_trait]
-impl<C, B1, B2> ForwardRequest<B1, IncomingOr<B2>> for Forwarder<C, B1>
+impl<C, B1> ForwardRequest<B1, IncomingOr<BoxBody>> for Forwarder<C, B1>
 where
   C: Send + Sync + Connect + Clone + 'static,
   B1: Body + Send + Sync + Unpin + 'static,
   <B1 as Body>::Data: Send,
   <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
-  B2: Body,
 {
   type Error = RpxyError;
 
-  async fn request(&self, req: Request<B1>) -> Result<Response<IncomingOr<B2>>, Self::Error> {
+  async fn request(&self, req: Request<B1>) -> Result<Response<IncomingOr<BoxBody>>, Self::Error> {
     // TODO: cache handling
+    #[cfg(feature = "cache")]
+    {
+      let mut synth_req = None;
+      if self.cache.is_some() {
+        // if let Some(cached_response) = self.cache.as_ref().unwrap().get(&req).await {
+        //   // if found, return it as response.
+        //   info!("Cache hit - Return from cache");
+        //   return Ok(cached_response);
+        // };
 
-    self.request_directly(req).await
+        // Synthetic request copy used just for caching (cannot clone request object...)
+        synth_req = Some(build_synth_req_for_cache(&req));
+      }
+      let res = self.request_directly(req).await;
+
+      if self.cache.is_none() {
+        return res.map(wrap_incoming_body_response::<BoxBody>);
+      }
+
+      // check cacheability and store it if cacheable
+      let Ok(Some(cache_policy)) = get_policy_if_cacheable(synth_req.as_ref(), res.as_ref().ok()) else {
+        return res.map(wrap_incoming_body_response::<BoxBody>);
+      };
+      let (parts, body) = res.unwrap().into_parts();
+      let Ok(bytes) = body.collect().await.map(|v| v.to_bytes()) else {
+        return Err(RpxyError::FailedToWriteByteBufferForCache);
+      };
+
+      // if let Err(cache_err) = self
+      //   .cache
+      //   .as_ref()
+      //   .unwrap()
+      //   .put(synth_req.unwrap().uri(), &bytes, &cache_policy)
+      //   .await
+      // {
+      //   error!("{:?}", cache_err);
+      // };
+
+      // response with cached body
+      Ok(Response::from_parts(parts, IncomingOr::Right(full(bytes))))
+    }
+
+    // No cache handling
+    #[cfg(not(feature = "cache"))]
+    {
+      self.request_directly(req).await.map(wrap_incoming_body_response::<B2>)
+    }
   }
 }
 
@@ -56,13 +107,15 @@ where
   <B1 as Body>::Data: Send,
   <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
 {
-  async fn request_directly<B2: Body>(&self, req: Request<B1>) -> RpxyResult<Response<IncomingOr<B2>>> {
+  async fn request_directly(&self, req: Request<B1>) -> RpxyResult<Response<Incoming>> {
+    // TODO: This 'match' condition is always evaluated at every 'request' invocation. So, it is inefficient.
+    // Needs to be reconsidered. Currently, this is a kind of work around.
+    // This possibly relates to https://github.com/hyperium/hyper/issues/2417.
     match req.version() {
       Version::HTTP_2 => self.inner_h2.request(req).await, // handles `h2c` requests
       _ => self.inner.request(req).await,
     }
     .map_err(|e| RpxyError::FailedToFetchFromUpstream(e.to_string()))
-    .map(wrap_incoming_body_response::<B2>)
   }
 }
 
@@ -90,7 +143,9 @@ Please enable native-tls-backend or rustls-backend feature to enable TLS support
 
     Ok(Self {
       inner,
-      inner_h2: inner.clone(),
+      inner_h2,
+      #[cfg(feature = "cache")]
+      cache: RpxyCache::new(_globals).await,
     })
   }
 }
@@ -130,13 +185,12 @@ where
       .http2_only(true)
       .build::<_, B1>(connector_h2);
 
-    // #[cfg(feature = "cache")]
-    // {
-    //   let cache = RpxyCache::new(_globals).await;
-    //   Self { inner, inner_h2, cache }
-    // }
-    // #[cfg(not(feature = "cache"))]
-    Ok(Self { inner, inner_h2 })
+    Ok(Self {
+      inner,
+      inner_h2,
+      #[cfg(feature = "cache")]
+      cache: RpxyCache::new(_globals).await,
+    })
   }
 }
 
@@ -171,4 +225,18 @@ where
     // let inner = Client::builder().build::<_, Body>(connector);
     // let inner_h2 = Client::builder().http2_only(true).build::<_, Body>(connector_h2);
   }
+}
+
+#[cfg(feature = "cache")]
+/// Build synthetic request to cache
+fn build_synth_req_for_cache<T>(req: &Request<T>) -> Request<()> {
+  let mut builder = Request::builder()
+    .method(req.method())
+    .uri(req.uri())
+    .version(req.version());
+  // TODO: omit extensions. is this approach correct?
+  for (header_key, header_value) in req.headers() {
+    builder = builder.header(header_key, header_value);
+  }
+  builder.body(()).unwrap()
 }

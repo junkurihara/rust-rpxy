@@ -24,7 +24,7 @@ http3-s2n = [
 sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
 rustls-backend = []
-cache = [] #"http-cache-semantics", "lru"]
+cache = ["http-cache-semantics", "lru"]
 native-roots = [] #"hyper-rustls/native-tokio"]
 
 [dependencies]
@@ -66,7 +66,7 @@ hyper-tls = { version = "0.6.0", features = ["alpn"], optional = true }
 
 # tls and cert management for server
 hot_reload = "0.1.4"
-rustls = { version = "0.21.9", default-features = false }
+rustls = { version = "0.21.10", default-features = false }
 tokio-rustls = { version = "0.24.1", features = ["early-data"] }
 webpki = "0.22.4"
 x509-parser = "0.15.1"
@@ -88,8 +88,8 @@ s2n-quic-rustls = { version = "0.32.0", optional = true }
 socket2 = { version = "0.5.5", features = ["all"], optional = true }
 
 # # cache
-# http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics/", optional = true }
-# lru = { version = "0.12.1", optional = true }
+http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics/", optional = true }
+lru = { version = "0.12.1", optional = true }
 
 # cookie handling for sticky cookie
 chrono = { version = "0.4.31", default-features = false, features = [

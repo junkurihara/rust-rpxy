@@ -84,6 +84,15 @@ pub enum RpxyError {
   #[error("Failed to fetch from upstream: {0}")]
   FailedToFetchFromUpstream(String),
 
+  // Cache errors,
+  #[cfg(feature = "cache")]
+  #[error("Invalid null request and/or response")]
+  NullRequestOrResponse,
+
+  #[cfg(feature = "cache")]
+  #[error("Failed to write byte buffer")]
+  FailedToWriteByteBufferForCache,
+
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,
