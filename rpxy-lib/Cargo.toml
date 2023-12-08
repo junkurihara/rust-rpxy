@@ -78,12 +78,12 @@ tracing = { version = "0.1.40" }
 quinn = { version = "0.10.2", optional = true }
 h3 = { path = "../submodules/h3/h3/", optional = true }
 h3-quinn = { path = "../submodules/h3/h3-quinn/", optional = true }
-s2n-quic = { version = "1.31.0", default-features = false, features = [
+s2n-quic = { version = "1.32.0", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.31.0", default-features = false, optional = true }
+s2n-quic-core = { version = "0.32.0", default-features = false, optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", optional = true }
-s2n-quic-rustls = { version = "0.31.0", optional = true }
+s2n-quic-rustls = { version = "0.32.0", optional = true }
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
 socket2 = { version = "0.5.5", features = ["all"], optional = true }
 
