@@ -40,6 +40,9 @@ where
   #[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
   warn!("Both \"http3-quinn\" and \"http3-s2n\" features are enabled. \"http3-quinn\" will be used");
 
+  #[cfg(all(feature = "native-tls-backend", feature = "rustls-backend"))]
+  warn!("Both \"native-tls-backend\" and \"rustls-backend\" features are enabled. \"rustls-backend\" will be used");
+
   // For initial message logging
   if proxy_config.listen_sockets.iter().any(|addr| addr.is_ipv6()) {
     info!("Listen both IPv4 and IPv6")

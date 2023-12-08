@@ -95,7 +95,7 @@ Please enable native-tls-backend or rustls-backend feature to enable TLS support
   }
 }
 
-#[cfg(feature = "native-tls-backend")]
+#[cfg(all(feature = "native-tls-backend", not(feature = "rustls-backend")))]
 /// Build forwarder with hyper-tls (native-tls)
 impl<B1> Forwarder<hyper_tls::HttpsConnector<HttpConnector>, B1>
 where
