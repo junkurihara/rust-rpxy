@@ -44,13 +44,13 @@ pub enum RpxyError {
   #[error("Quinn connection error: {0}")]
   QuinnConnectionFailed(#[from] quinn::ConnectionError),
 
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   #[error("s2n-quic validation error: {0}")]
   S2nQuicValidationError(#[from] s2n_quic_core::transport::parameters::ValidationError),
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   #[error("s2n-quic connection error: {0}")]
   S2nQuicConnectionError(#[from] s2n_quic_core::connection::Error),
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   #[error("s2n-quic start error: {0}")]
   S2nQuicStartError(#[from] s2n_quic::provider::StartError),
 

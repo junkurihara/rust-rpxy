@@ -15,7 +15,7 @@ use tokio::time::timeout;
 
 #[cfg(feature = "http3-quinn")]
 use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
-#[cfg(feature = "http3-s2n")]
+#[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
 use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 
 impl<U, T> Proxy<U, T>

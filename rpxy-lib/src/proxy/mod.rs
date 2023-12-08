@@ -2,7 +2,7 @@ mod proxy_h3;
 mod proxy_main;
 #[cfg(feature = "http3-quinn")]
 mod proxy_quic_quinn;
-#[cfg(feature = "http3-s2n")]
+#[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
 mod proxy_quic_s2n;
 mod socket;
 
