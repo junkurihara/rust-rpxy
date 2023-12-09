@@ -122,7 +122,7 @@ where
         size += body.remaining();
         if size > max_body_size {
           error!(
-            "Exceeds max request body size for HTTP/3: received {}, maximum_allowd {}",
+            "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
             size, max_body_size
           );
           return Err(RpxyError::H3TooLargeBody);

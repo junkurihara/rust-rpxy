@@ -74,9 +74,14 @@ where
         return res.map(wrap_incoming_body_response::<BoxBody>);
       };
       let (parts, body) = res.unwrap().into_parts();
+
       let Ok(bytes) = body.collect().await.map(|v| v.to_bytes()) else {
         return Err(RpxyError::FailedToWriteByteBufferForCache);
       };
+
+      // TODO: this is inefficient. needs to be reconsidered to avoid unnecessary copy and should spawn async task to store cache.
+      // We may need to use the same logic as h3.
+      // Is bytes.clone() enough?
 
       // if let Err(cache_err) = self
       //   .cache
