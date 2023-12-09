@@ -24,7 +24,7 @@ http3-s2n = [
 sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
 rustls-backend = []
-cache = ["http-cache-semantics", "lru"]
+cache = ["http-cache-semantics", "lru", "sha2", "base64"]
 native-roots = [] #"hyper-rustls/native-tokio"]
 
 [dependencies]
@@ -87,9 +87,10 @@ s2n-quic-rustls = { version = "0.32.0", optional = true }
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
 socket2 = { version = "0.5.5", features = ["all"], optional = true }
 
-# # cache
+# cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics/", optional = true }
 lru = { version = "0.12.1", optional = true }
+sha2 = { version = "0.10.8", default-features = false, optional = true }
 
 # cookie handling for sticky cookie
 chrono = { version = "0.4.31", default-features = false, features = [
@@ -98,7 +99,6 @@ chrono = { version = "0.4.31", default-features = false, features = [
   "clock",
 ], optional = true }
 base64 = { version = "0.21.5", optional = true }
-sha2 = { version = "0.10.8", default-features = false, optional = true }
 
 
 [dev-dependencies]

@@ -4,14 +4,18 @@ use http_cache_semantics::CachePolicy;
 use lru::LruCache;
 use std::{
   path::{Path, PathBuf},
-  sync::{atomic::AtomicUsize, Arc, Mutex},
+  sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+  },
 };
 use tokio::{fs, sync::RwLock};
 
 /* ---------------------------------------------- */
 #[derive(Clone, Debug)]
+/// Cache main manager
 pub struct RpxyCache {
-  /// Lru cache storing http message caching policy
+  /// Inner lru cache manager storing http message caching policy
   inner: LruCacheManager,
   /// Managing cache file objects through RwLock's lock mechanism for file lock
   file_store: FileStore,
@@ -122,7 +126,9 @@ struct CacheObject {
 #[derive(Debug, Clone)]
 /// Lru cache manager that is responsible to handle `Mutex` as an outer of `LruCache`
 struct LruCacheManager {
+  /// Inner lru cache manager main object
   inner: Arc<Mutex<LruCache<String, CacheObject>>>, // TODO: keyはstring urlでいいのか疑問。全requestに対してcheckすることになりそう
+  /// Counter of current cached object (total)
   cnt: Arc<AtomicUsize>,
 }
 
@@ -133,12 +139,42 @@ impl LruCacheManager {
       inner: Arc::new(Mutex::new(LruCache::new(
         std::num::NonZeroUsize::new(cache_max_entry).unwrap(),
       ))),
-      cnt: Arc::new(AtomicUsize::default()),
+      cnt: Default::default(),
     }
+  }
+
+  /// Count entries
+  fn count(&self) -> usize {
+    self.cnt.load(Ordering::Relaxed)
+  }
+
+  /// Evict an entry
+  fn evict(&self, cache_key: &str) -> Option<(String, CacheObject)> {
+    let Ok(mut lock) = self.inner.lock() else {
+      error!("Mutex can't be locked to evict a cache entry");
+      return None;
+    };
+    let res = lock.pop_entry(cache_key);
+    // This may be inconsistent with the actual number of entries
+    self.cnt.store(lock.len(), Ordering::Relaxed);
+    res
+  }
+
+  /// Push an entry
+  fn push(&self, cache_key: &str, cache_object: CacheObject) -> RpxyResult<Option<(String, CacheObject)>> {
+    let Ok(mut lock) = self.inner.lock() else {
+      error!("Failed to acquire mutex lock for writing cache entry");
+      return Err(RpxyError::FailedToAcquiredMutexLockForCache);
+    };
+    let res = Ok(lock.push(cache_key.to_string(), cache_object));
+    // This may be inconsistent with the actual number of entries
+    self.cnt.store(lock.len(), Ordering::Relaxed);
+    res
   }
 }
 
 /* ---------------------------------------------- */
+/// Generate cache policy if the response is cacheable
 pub fn get_policy_if_cacheable<B1, B2>(
   req: Option<&Request<B1>>,
   res: Option<&Response<B2>>,

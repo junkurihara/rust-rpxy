@@ -93,6 +93,10 @@ pub enum RpxyError {
   #[error("Failed to write byte buffer")]
   FailedToWriteByteBufferForCache,
 
+  #[cfg(feature = "cache")]
+  #[error("Failed to acquire mutex lock for cache")]
+  FailedToAcquiredMutexLockForCache,
+
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,
