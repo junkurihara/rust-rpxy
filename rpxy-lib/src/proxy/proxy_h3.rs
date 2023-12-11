@@ -153,20 +153,40 @@ where
       )
       .await?;
 
-    let (new_res_parts, new_body) = res.into_parts();
+    let (new_res_parts, mut new_body) = res.into_parts();
     let new_res = Response::from_parts(new_res_parts, ());
 
     match send_stream.send_response(new_res).await {
       Ok(_) => {
         debug!("HTTP/3 response to connection successful");
-        // aggregate body without copying
-        let body_data = new_body
-          .collect()
-          .await
+        loop {
+          let frame = match new_body.frame().await {
+            Some(frame) => frame,
+            None => {
+              debug!("Response body finished");
+              break;
+            }
+          }
           .map_err(|e| RpxyError::HyperBodyManipulationError(e.to_string()))?;
 
-        // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes inside to_bytes()
-        send_stream.send_data(body_data.to_bytes()).await?;
+          if frame.is_data() {
+            let data = frame.into_data().unwrap_or_default();
+            debug!("Write data to HTTP/3 stream");
+            send_stream.send_data(data).await?;
+          } else if frame.is_trailers() {
+            let trailers = frame.into_trailers().unwrap_or_default();
+            debug!("Write trailer to HTTP/3 stream");
+            send_stream.send_trailers(trailers).await?;
+          }
+        }
+        // // aggregate body without copying
+        // let body_data = new_body
+        //   .collect()
+        //   .await
+        //   .map_err(|e| RpxyError::HyperBodyManipulationError(e.to_string()))?;
+
+        // // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes inside to_bytes()
+        // send_stream.send_data(body_data.to_bytes()).await?;
 
         // TODO: needs handling trailer? should be included in body from handler.
       }

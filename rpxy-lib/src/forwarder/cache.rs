@@ -1,15 +1,22 @@
 use crate::{error::*, globals::Globals, log::*};
+use bytes::{Buf, Bytes, BytesMut};
 use http::{Request, Response};
+use http_body_util::StreamBody;
 use http_cache_semantics::CachePolicy;
 use lru::LruCache;
 use std::{
+  convert::Infallible,
   path::{Path, PathBuf},
   sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
   },
 };
-use tokio::{fs, sync::RwLock};
+use tokio::{
+  fs::{self, File},
+  io::{AsyncReadExt, AsyncWriteExt},
+  sync::RwLock,
+};
 
 /* ---------------------------------------------- */
 #[derive(Clone, Debug)]
@@ -54,6 +61,14 @@ impl RpxyCache {
       max_each_size_on_memory,
     })
   }
+
+  /// Count cache entries
+  pub async fn count(&self) -> (usize, usize, usize) {
+    let total = self.inner.count();
+    let file = self.file_store.count().await;
+    let on_memory = total - file;
+    (total, on_memory, file)
+  }
 }
 
 /* ---------------------------------------------- */
@@ -69,6 +84,32 @@ impl FileStore {
       inner: Arc::new(RwLock::new(FileStoreInner::new(path, runtime_handle).await)),
     }
   }
+}
+
+impl FileStore {
+  /// Count file cache entries
+  async fn count(&self) -> usize {
+    let inner = self.inner.read().await;
+    inner.cnt
+  }
+  /// Create a temporary file cache
+  async fn create(&mut self, cache_filename: &str, body_bytes: &Bytes) -> RpxyResult<CacheFileOrOnMemory> {
+    let mut inner = self.inner.write().await;
+    inner.create(cache_filename, body_bytes).await
+  }
+  // /// Evict a temporary file cache
+  // async fn evict(&self, path: impl AsRef<Path>) {
+  //   // Acquire the write lock
+  //   let mut inner = self.inner.write().await;
+  //   if let Err(e) = inner.remove(path).await {
+  //     warn!("Eviction failed during file object removal: {:?}", e);
+  //   };
+  // }
+  // /// Read a temporary file cache
+  // async fn read(&self, path: impl AsRef<Path>) -> RpxyResult<Bytes> {
+  //   let inner = self.inner.read().await;
+  //   inner.read(&path).await
+  // }
 }
 
 #[derive(Debug)]
@@ -97,6 +138,67 @@ impl FileStoreInner {
       cnt: 0,
       runtime_handle: runtime_handle.clone(),
     }
+  }
+
+  /// Create a new temporary file cache
+  async fn create(&mut self, cache_filename: &str, body_bytes: &Bytes) -> RpxyResult<CacheFileOrOnMemory> {
+    let cache_filepath = self.cache_dir.join(cache_filename);
+    let Ok(mut file) = File::create(&cache_filepath).await else {
+      return Err(RpxyError::FailedToCreateFileCache);
+    };
+    let mut bytes_clone = body_bytes.clone();
+    while bytes_clone.has_remaining() {
+      if let Err(e) = file.write_buf(&mut bytes_clone).await {
+        error!("Failed to write file cache: {e}");
+        return Err(RpxyError::FailedToWriteFileCache);
+      };
+    }
+    self.cnt += 1;
+    Ok(CacheFileOrOnMemory::File(cache_filepath))
+  }
+
+  /// Retrieve a stored temporary file cache
+  async fn read(&self, path: impl AsRef<Path>) -> RpxyResult<()> {
+    let Ok(mut file) = File::open(&path).await else {
+      warn!("Cache file object cannot be opened");
+      return Err(RpxyError::FailedToOpenCacheFile);
+    };
+
+    /* ----------------------------- */
+    // PoC for streaming body
+    use futures::channel::mpsc;
+    let (tx, rx) = mpsc::unbounded::<Result<hyper::body::Frame<bytes::Bytes>, Infallible>>();
+
+    // let (body_sender, res_body) = Body::channel();
+    self.runtime_handle.spawn(async move {
+      //   let mut sender = body_sender;
+      let mut buf = BytesMut::new();
+      loop {
+        match file.read_buf(&mut buf).await {
+          Ok(0) => break,
+          Ok(_) => tx
+            .unbounded_send(Ok(hyper::body::Frame::data(buf.copy_to_bytes(buf.remaining()))))
+            .map_err(|e| anyhow::anyhow!("Failed to read cache file: {e}"))?,
+          //sender.send_data(buf.copy_to_bytes(buf.remaining())).await?,
+          Err(_) => break,
+        };
+      }
+      Ok(()) as anyhow::Result<()>
+    });
+
+    let mut rx = http_body_util::StreamBody::new(rx);
+    // TODO: 結局incominglikeなbodystreamを定義することになる。これだったらh3と合わせて自分で定義した方が良さそう。
+    // typeが長すぎるのでwrapperを作った方がいい。
+    // let response = Response::builder()
+    //   .status(200)
+    //   .header("content-type", "application/octet-stream")
+    //   .body(rx)
+    //   .unwrap();
+
+    todo!()
+    /* ----------------------------- */
+
+    // Ok(res_body)
   }
 }
 

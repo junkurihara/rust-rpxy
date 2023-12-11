@@ -75,9 +75,12 @@ where
       };
       let (parts, body) = res.unwrap().into_parts();
 
+      // TODO: This is inefficient since current strategy needs to copy the whole body onto memory to cache it.
+      // This should be handled by copying buffer simultaneously while forwarding response to downstream.
       let Ok(bytes) = body.collect().await.map(|v| v.to_bytes()) else {
         return Err(RpxyError::FailedToWriteByteBufferForCache);
       };
+      let bytes_clone = bytes.clone();
 
       // TODO: this is inefficient. needs to be reconsidered to avoid unnecessary copy and should spawn async task to store cache.
       // We may need to use the same logic as h3.

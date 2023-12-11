@@ -97,6 +97,18 @@ pub enum RpxyError {
   #[error("Failed to acquire mutex lock for cache")]
   FailedToAcquiredMutexLockForCache,
 
+  #[cfg(feature = "cache")]
+  #[error("Failed to create file cache")]
+  FailedToCreateFileCache,
+
+  #[cfg(feature = "cache")]
+  #[error("Failed to write file cache")]
+  FailedToWriteFileCache,
+
+  #[cfg(feature = "cache")]
+  #[error("Failed to open cache file")]
+  FailedToOpenCacheFile,
+
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,
