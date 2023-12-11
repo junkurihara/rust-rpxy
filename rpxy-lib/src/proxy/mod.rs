@@ -19,9 +19,11 @@ pub(crate) fn connection_builder(globals: &Arc<Globals>) -> Arc<ConnectionBuilde
   http_server
     .http1()
     .keep_alive(globals.proxy_config.keepalive)
+    .header_read_timeout(globals.proxy_config.proxy_idle_timeout)
     .pipeline_flush(true);
   http_server
     .http2()
+    .keep_alive_interval(Some(globals.proxy_config.proxy_idle_timeout))
     .max_concurrent_streams(globals.proxy_config.max_concurrent_streams);
   Arc::new(http_server)
 }

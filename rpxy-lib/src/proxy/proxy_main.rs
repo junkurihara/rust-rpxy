@@ -86,13 +86,11 @@ where
 
     let server_clone = self.connection_builder.clone();
     let message_handler_clone = self.message_handler.clone();
-    let timeout_sec = self.globals.proxy_config.proxy_timeout;
     let tls_enabled = self.tls_enabled;
     let listening_on = self.listening_on;
     self.globals.runtime_handle.clone().spawn(async move {
-      timeout(
-        timeout_sec + Duration::from_secs(1),
-        server_clone.serve_connection_with_upgrades(
+      server_clone
+        .serve_connection_with_upgrades(
           stream,
           service_fn(move |req: Request<Incoming>| {
             serve_request(
@@ -104,10 +102,9 @@ where
               tls_server_name.clone(),
             )
           }),
-        ),
-      )
-      .await
-      .ok();
+        )
+        .await
+        .ok();
 
       request_count.decrement();
       debug!("Request processed: current # {}", request_count.current());
@@ -201,8 +198,7 @@ where
                 return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
               }
             };
-            self_inner.serve_connection(stream, client_addr, server_name);
-            Ok(()) as RpxyResult<()>
+            Ok((stream, client_addr, server_name))
           };
 
           self.globals.runtime_handle.spawn( async move {
@@ -214,8 +210,13 @@ where
               error!("Timeout to handshake TLS");
               return;
             };
-            if let Err(e) = v {
-              error!("{}", e);
+            match v {
+              Ok((stream, client_addr, server_name)) => {
+                self_inner.serve_connection(stream, client_addr, server_name);
+              }
+              Err(e) => {
+                error!("{}", e);
+              }
             }
           });
         }

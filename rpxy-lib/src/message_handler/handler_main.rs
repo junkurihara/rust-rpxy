@@ -19,7 +19,7 @@ use derive_builder::Builder;
 use http::{Request, Response, StatusCode};
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
-use tokio::{io::copy_bidirectional, time::timeout};
+use tokio::io::copy_bidirectional;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -172,15 +172,10 @@ where
 
     //////////////
     // Forward request to a chosen backend
-    let mut res_backend = {
-      let Ok(result) = timeout(self.globals.proxy_config.upstream_timeout, self.forwarder.request(req)).await else {
-        return Err(HttpError::TimeoutUpstreamRequest);
-      };
-      match result {
-        Ok(res) => res,
-        Err(e) => {
-          return Err(HttpError::FailedToGetResponseFromBackend(e.to_string()));
-        }
+    let mut res_backend = match self.forwarder.request(req).await {
+      Ok(v) => v,
+      Err(e) => {
+        return Err(HttpError::FailedToGetResponseFromBackend(e.to_string()));
       }
     };
     //////////////

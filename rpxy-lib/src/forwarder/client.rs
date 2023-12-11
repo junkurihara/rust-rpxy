@@ -8,6 +8,7 @@ use crate::{
   log::*,
 };
 use async_trait::async_trait;
+use chrono::Duration;
 use http::{Request, Response, Version};
 use hyper::body::{Body, Incoming};
 use hyper_util::client::legacy::{
@@ -184,6 +185,7 @@ where
           let mut http = HttpConnector::new();
           http.enforce_http(false);
           http.set_reuse_address(true);
+          http.set_keepalive(Some(_globals.proxy_config.upstream_idle_timeout));
           hyper_tls::HttpsConnector::from((http, tls.into()))
         })
     };
