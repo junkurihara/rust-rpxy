@@ -47,6 +47,7 @@ where
     {
       let mut synth_req = None;
       if self.cache.is_some() {
+        // TODO: try reading from cache
         // if let Some(cached_response) = self.cache.as_ref().unwrap().get(&req).await {
         //   // if found, return it as response.
         //   info!("Cache hit - Return from cache");
