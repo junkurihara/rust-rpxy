@@ -44,4 +44,7 @@ pub enum CacheError {
 
   #[error("Invalid cache target")]
   InvalidCacheTarget,
+
+  #[error("Hash mismatched in cache file")]
+  HashMismatchedInCacheFile,
 }

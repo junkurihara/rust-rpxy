@@ -47,12 +47,12 @@ where
     {
       let mut synth_req = None;
       if self.cache.is_some() {
-        // TODO: try reading from cache
-        // if let Some(cached_response) = self.cache.as_ref().unwrap().get(&req).await {
-        //   // if found, return it as response.
-        //   info!("Cache hit - Return from cache");
-        //   return Ok(cached_response);
-        // };
+        // try reading from cache
+        if let Some(cached_response) = self.cache.as_ref().unwrap().get(&req).await {
+          // if found, return it as response.
+          info!("Cache hit - Return from cache");
+          return Ok(cached_response);
+        };
 
         // Synthetic request copy used just for caching (cannot clone request object...)
         synth_req = Some(build_synth_req_for_cache(&req));

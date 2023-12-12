@@ -1,12 +1,16 @@
 use super::cache_error::*;
-use crate::{globals::Globals, hyper_ext::body::UnboundedStreamBody, log::*};
+use crate::{
+  globals::Globals,
+  hyper_ext::body::{full, BoxBody, ResponseBody, UnboundedStreamBody},
+  log::*,
+};
 use base64::{engine::general_purpose, Engine as _};
 use bytes::{Buf, Bytes, BytesMut};
 use futures::channel::mpsc;
 use http::{Request, Response, Uri};
 use http_body_util::{BodyExt, StreamBody};
 use http_cache_semantics::CachePolicy;
-use hyper::body::{Body, Frame, Incoming};
+use hyper::body::{Frame, Incoming};
 use lru::LruCache;
 use sha2::{Digest, Sha256};
 use std::{
@@ -15,6 +19,7 @@ use std::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
   },
+  time::SystemTime,
 };
 use tokio::{
   fs::{self, File},
@@ -179,6 +184,66 @@ impl RpxyCache {
 
     Ok(stream_body)
   }
+
+  /// Get cached response
+  pub async fn get<R>(&self, req: &Request<R>) -> Option<Response<ResponseBody>> {
+    debug!(
+      "Current cache status: (total, on-memory, file) = {:?}",
+      self.count().await
+    );
+    let cache_key = derive_cache_key_from_uri(req.uri());
+
+    // First check cache chance
+    let Ok(Some(cached_object)) = self.inner.get(&cache_key) else {
+      return None;
+    };
+
+    // Secondly check the cache freshness as an HTTP message
+    let now = SystemTime::now();
+    let http_cache_semantics::BeforeRequest::Fresh(res_parts) = cached_object.policy.before_request(req, now) else {
+      // Evict stale cache entry.
+      // This might be okay to keep as is since it would be updated later.
+      // However, there is no guarantee that newly got objects will be still cacheable.
+      // So, we have to evict stale cache entries and cache file objects if found.
+      debug!("Stale cache entry: {cache_key}");
+      let _evicted_entry = self.inner.evict(&cache_key);
+      // For cache file
+      if let CacheFileOrOnMemory::File(path) = &cached_object.target {
+        self.file_store.evict(&path).await;
+      }
+      return None;
+    };
+
+    // Finally retrieve the file/on-memory object
+    let response_body = match cached_object.target {
+      CacheFileOrOnMemory::File(path) => {
+        let stream_body = match self.file_store.read(path.clone(), &cached_object.hash).await {
+          Ok(s) => s,
+          Err(e) => {
+            warn!("Failed to read from file cache: {e}");
+            let _evicted_entry = self.inner.evict(&cache_key);
+            self.file_store.evict(path).await;
+            return None;
+          }
+        };
+        debug!("Cache hit from file: {cache_key}");
+        ResponseBody::Streamed(stream_body)
+      }
+      CacheFileOrOnMemory::OnMemory(object) => {
+        debug!("Cache hit from on memory: {cache_key}");
+        let mut hasher = Sha256::new();
+        hasher.update(object.as_ref());
+        let hash_bytes = Bytes::copy_from_slice(hasher.finalize().as_ref());
+        if hash_bytes != cached_object.hash {
+          warn!("Hash mismatched. Cache object is corrupted");
+          let _evicted_entry = self.inner.evict(&cache_key);
+          return None;
+        }
+        ResponseBody::Boxed(BoxBody::new(full(object)))
+      }
+    };
+    Some(Response::from_parts(res_parts, response_body))
+  }
 }
 
 /* ---------------------------------------------- */
@@ -202,7 +267,7 @@ impl FileStore {
     inner.cnt
   }
   /// Create a temporary file cache
-  async fn create(&mut self, ref cache_object: &CacheObject, body_bytes: &Bytes) -> CacheResult<()> {
+  async fn create(&mut self, cache_object: &CacheObject, body_bytes: &Bytes) -> CacheResult<()> {
     let mut inner = self.inner.write().await;
     inner.create(cache_object, body_bytes).await
   }
@@ -214,14 +279,18 @@ impl FileStore {
       warn!("Eviction failed during file object removal: {:?}", e);
     };
   }
-  // /// Read a temporary file cache
-  // async fn read(&self, path: impl AsRef<Path>) -> CacheResult<Bytes> {
-  //   let inner = self.inner.read().await;
-  //   inner.read(&path).await
-  // }
+  /// Read a temporary file cache
+  async fn read(
+    &self,
+    path: impl AsRef<Path> + Send + Sync + 'static,
+    hash: &Bytes,
+  ) -> CacheResult<UnboundedStreamBody> {
+    let inner = self.inner.read().await;
+    inner.read(path, hash).await
+  }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Manager inner for cache on file system
 struct FileStoreInner {
   /// Counter of current cached files
@@ -264,25 +333,42 @@ impl FileStoreInner {
   }
 
   /// Retrieve a stored temporary file cache
-  async fn read(&self, path: impl AsRef<Path>) -> CacheResult<UnboundedStreamBody> {
+  async fn read(
+    &self,
+    path: impl AsRef<Path> + Send + Sync + 'static,
+    hash: &Bytes,
+  ) -> CacheResult<UnboundedStreamBody> {
     let Ok(mut file) = File::open(&path).await else {
       warn!("Cache file object cannot be opened");
       return Err(CacheError::FailedToOpenCacheFile);
     };
+    let hash_clone = hash.clone();
+    let mut self_clone = self.clone();
 
     let (body_tx, body_rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
 
     self.runtime_handle.spawn(async move {
-      //   let mut sender = body_sender;
+      let mut hasher = Sha256::new();
       let mut buf = BytesMut::new();
       loop {
         match file.read_buf(&mut buf).await {
           Ok(0) => break,
-          Ok(_) => body_tx
-            .unbounded_send(Ok(Frame::data(buf.copy_to_bytes(buf.remaining()))))
-            .map_err(|e| CacheError::FailedToSendFrameFromCache(e.to_string()))?,
+          Ok(_) => {
+            let bytes = buf.copy_to_bytes(buf.remaining());
+            hasher.update(bytes.as_ref());
+            body_tx
+              .unbounded_send(Ok(Frame::data(bytes)))
+              .map_err(|e| CacheError::FailedToSendFrameFromCache(e.to_string()))?
+          }
           Err(_) => break,
         };
+      }
+      let hash_bytes = Bytes::copy_from_slice(hasher.finalize().as_ref());
+      if hash_bytes != hash_clone {
+        warn!("Hash mismatched. Cache object is corrupted. Force to remove the cache file.");
+        // only file can be evicted
+        let _evicted_entry = self_clone.remove(&path).await;
+        return Err(CacheError::HashMismatchedInCacheFile);
       }
       Ok(()) as CacheResult<()>
     });
