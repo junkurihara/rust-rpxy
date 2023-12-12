@@ -11,7 +11,7 @@ use crate::{
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
-  hyper_ext::body::{BoxBody, IncomingLike, IncomingOr},
+  hyper_ext::body::{RequestBody, ResponseBody},
   log::*,
   name_exp::ServerName,
 };
@@ -19,7 +19,7 @@ use derive_builder::Builder;
 use http::{Request, Response, StatusCode};
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
-use tokio::{io::copy_bidirectional, time::timeout};
+use tokio::io::copy_bidirectional;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -53,12 +53,12 @@ where
   /// Responsible to passthrough responses from backend applications or generate synthetic error responses.
   pub async fn handle_request(
     &self,
-    req: Request<IncomingOr<IncomingLike>>,
+    req: Request<RequestBody>,
     client_addr: SocketAddr, // For access control
     listen_addr: SocketAddr,
     tls_enabled: bool,
     tls_server_name: Option<ServerName>,
-  ) -> RpxyResult<Response<IncomingOr<BoxBody>>> {
+  ) -> RpxyResult<Response<ResponseBody>> {
     // preparing log data
     let mut log_data = HttpMessageLog::from(&req);
     log_data.client_addr(&client_addr);
@@ -94,12 +94,12 @@ where
   async fn handle_request_inner(
     &self,
     log_data: &mut HttpMessageLog,
-    mut req: Request<IncomingOr<IncomingLike>>,
+    mut req: Request<RequestBody>,
     client_addr: SocketAddr, // For access control
     listen_addr: SocketAddr,
     tls_enabled: bool,
     tls_server_name: Option<ServerName>,
-  ) -> HttpResult<Response<IncomingOr<BoxBody>>> {
+  ) -> HttpResult<Response<ResponseBody>> {
     // Here we start to inspect and parse with server_name
     let server_name = req
       .inspect_parse_host()
@@ -172,15 +172,10 @@ where
 
     //////////////
     // Forward request to a chosen backend
-    let mut res_backend = {
-      let Ok(result) = timeout(self.globals.proxy_config.upstream_timeout, self.forwarder.request(req)).await else {
-        return Err(HttpError::TimeoutUpstreamRequest);
-      };
-      match result {
-        Ok(res) => res,
-        Err(e) => {
-          return Err(HttpError::FailedToGetResponseFromBackend(e.to_string()));
-        }
+    let mut res_backend = match self.forwarder.request(req).await {
+      Ok(v) => v,
+      Err(e) => {
+        return Err(HttpError::FailedToGetResponseFromBackend(e.to_string()));
       }
     };
     //////////////

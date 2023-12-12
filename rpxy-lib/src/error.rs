@@ -28,6 +28,8 @@ pub enum RpxyError {
   HyperIncomingLikeNewClosed,
   #[error("New body write aborted")]
   HyperNewBodyWriteAborted,
+  #[error("Hyper error in serving request or response body type: {0}")]
+  HyperBodyError(#[from] hyper::Error),
 
   // http/3 errors
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -87,6 +89,11 @@ pub enum RpxyError {
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,
+
+  // Cache error map
+  #[cfg(feature = "cache")]
+  #[error("Cache error: {0}")]
+  CacheError(#[from] crate::forwarder::CacheError),
 
   // Others
   #[error("Infallible")]
