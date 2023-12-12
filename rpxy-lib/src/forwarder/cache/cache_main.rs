@@ -118,7 +118,7 @@ impl RpxyCache {
           .map(|f| {
             if f.is_data() {
               let data_bytes = f.data_ref().unwrap().clone();
-              println!("ddddde");
+              debug!("cache data bytes of {} bytes", data_bytes.len())
               // TODO: cache data bytes as file or on memory
               // fileにするかmemoryにするかの判断はある程度までバッファしてやってという手を使うことになる。途中までキャッシュしたやつはどうするかとかいう判断も必要。
               // ファイルとObjectのbindをどうやってするか

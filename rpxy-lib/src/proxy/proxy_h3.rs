@@ -2,7 +2,7 @@ use super::proxy_main::Proxy;
 use crate::{
   crypto::CryptoSource,
   error::*,
-  hyper_ext::body::{IncomingLike, IncomingOr},
+  hyper_ext::body::{IncomingLike, RequestBody},
   log::*,
   name_exp::ServerName,
 };
@@ -137,7 +137,7 @@ where
       Ok(()) as RpxyResult<()>
     });
 
-    let new_req: Request<IncomingOr<IncomingLike>> = Request::from_parts(req_parts, IncomingOr::Right(req_body));
+    let new_req: Request<RequestBody> = Request::from_parts(req_parts, RequestBody::IncomingLike(req_body));
     let res = self
       .message_handler
       .handle_request(
@@ -155,6 +155,7 @@ where
     match send_stream.send_response(new_res).await {
       Ok(_) => {
         debug!("HTTP/3 response to connection successful");
+        // on-demand body streaming to downstream without expanding the object onto memory.
         loop {
           let frame = match new_body.frame().await {
             Some(frame) => frame,
@@ -175,16 +176,6 @@ where
             send_stream.send_trailers(trailers).await?;
           }
         }
-        // // aggregate body without copying
-        // let body_data = new_body
-        //   .collect()
-        //   .await
-        //   .map_err(|e| RpxyError::HyperBodyManipulationError(e.to_string()))?;
-
-        // // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes inside to_bytes()
-        // send_stream.send_data(body_data.to_bytes()).await?;
-
-        // TODO: needs handling trailer? should be included in body from handler.
       }
       Err(err) => {
         error!("Unable to send response to connection peer: {:?}", err);

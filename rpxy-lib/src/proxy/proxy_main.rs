@@ -5,7 +5,7 @@ use crate::{
   error::*,
   globals::Globals,
   hyper_ext::{
-    body::{IncomingOr, ResponseBody},
+    body::{RequestBody, ResponseBody},
     rt::LocalExecutor,
   },
   log::*,
@@ -39,7 +39,7 @@ where
 {
   handler
     .handle_request(
-      req.map(IncomingOr::Left),
+      req.map(RequestBody::Incoming),
       client_addr,
       listen_addr,
       tls_enabled,

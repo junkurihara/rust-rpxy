@@ -11,7 +11,7 @@ use crate::{
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
-  hyper_ext::body::{IncomingLike, IncomingOr, ResponseBody},
+  hyper_ext::body::{RequestBody, ResponseBody},
   log::*,
   name_exp::ServerName,
 };
@@ -53,7 +53,7 @@ where
   /// Responsible to passthrough responses from backend applications or generate synthetic error responses.
   pub async fn handle_request(
     &self,
-    req: Request<IncomingOr<IncomingLike>>,
+    req: Request<RequestBody>,
     client_addr: SocketAddr, // For access control
     listen_addr: SocketAddr,
     tls_enabled: bool,
@@ -94,7 +94,7 @@ where
   async fn handle_request_inner(
     &self,
     log_data: &mut HttpMessageLog,
-    mut req: Request<IncomingOr<IncomingLike>>,
+    mut req: Request<RequestBody>,
     client_addr: SocketAddr, // For access control
     listen_addr: SocketAddr,
     tls_enabled: bool,
