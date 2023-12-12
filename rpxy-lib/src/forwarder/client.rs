@@ -1,14 +1,10 @@
 use crate::{
   error::{RpxyError, RpxyResult},
   globals::Globals,
-  hyper_ext::{
-    body::{wrap_incoming_body_response, BoxBody, IncomingOr},
-    rt::LocalExecutor,
-  },
+  hyper_ext::{body::ResponseBody, rt::LocalExecutor},
   log::*,
 };
 use async_trait::async_trait;
-use chrono::Duration;
 use http::{Request, Response, Version};
 use hyper::body::{Body, Incoming};
 use hyper_util::client::legacy::{
@@ -19,10 +15,6 @@ use std::sync::Arc;
 
 #[cfg(feature = "cache")]
 use super::cache::{get_policy_if_cacheable, RpxyCache};
-#[cfg(feature = "cache")]
-use crate::hyper_ext::body::{full, wrap_synthetic_body_response};
-#[cfg(feature = "cache")]
-use http_body_util::BodyExt;
 
 #[async_trait]
 /// Definition of the forwarder that simply forward requests from downstream client to upstream app servers.
@@ -40,7 +32,7 @@ pub struct Forwarder<C, B> {
 }
 
 #[async_trait]
-impl<C, B1> ForwardRequest<B1, IncomingOr<BoxBody>> for Forwarder<C, B1>
+impl<C, B1> ForwardRequest<B1, ResponseBody> for Forwarder<C, B1>
 where
   C: Send + Sync + Connect + Clone + 'static,
   B1: Body + Send + Sync + Unpin + 'static,
@@ -49,7 +41,7 @@ where
 {
   type Error = RpxyError;
 
-  async fn request(&self, req: Request<B1>) -> Result<Response<IncomingOr<BoxBody>>, Self::Error> {
+  async fn request(&self, req: Request<B1>) -> Result<Response<ResponseBody>, Self::Error> {
     // TODO: cache handling
     #[cfg(feature = "cache")]
     {
@@ -67,38 +59,27 @@ where
       let res = self.request_directly(req).await;
 
       if self.cache.is_none() {
-        return res.map(wrap_incoming_body_response::<BoxBody>);
+        return res.map(|inner| inner.map(ResponseBody::Incoming));
       }
 
       // check cacheability and store it if cacheable
       let Ok(Some(cache_policy)) = get_policy_if_cacheable(synth_req.as_ref(), res.as_ref().ok()) else {
-        return res.map(wrap_incoming_body_response::<BoxBody>);
+        return res.map(|inner| inner.map(ResponseBody::Incoming));
       };
       let (parts, body) = res.unwrap().into_parts();
 
-      // TODO: This is inefficient since current strategy needs to copy the whole body onto memory to cache it.
-      // This should be handled by copying buffer simultaneously while forwarding response to downstream.
-      let Ok(bytes) = body.collect().await.map(|v| v.to_bytes()) else {
-        return Err(RpxyError::FailedToWriteByteBufferForCache);
-      };
-      let bytes_clone = bytes.clone();
+      // Get streamed body without waiting for the arrival of the body,
+      // which is done simultaneously with caching.
+      let stream_body = self
+        .cache
+        .as_ref()
+        .unwrap()
+        .put(synth_req.unwrap().uri(), body, &cache_policy)
+        .await?;
 
-      // TODO: this is inefficient. needs to be reconsidered to avoid unnecessary copy and should spawn async task to store cache.
-      // We may need to use the same logic as h3.
-      // Is bytes.clone() enough?
-
-      // if let Err(cache_err) = self
-      //   .cache
-      //   .as_ref()
-      //   .unwrap()
-      //   .put(synth_req.unwrap().uri(), &bytes, &cache_policy)
-      //   .await
-      // {
-      //   error!("{:?}", cache_err);
-      // };
-
-      // response with cached body
-      Ok(wrap_synthetic_body_response(Response::from_parts(parts, full(bytes))))
+      // response with body being cached in background
+      let new_res = Response::from_parts(parts, ResponseBody::Streamed(stream_body));
+      Ok(new_res)
     }
 
     // No cache handling
@@ -107,7 +88,7 @@ where
       self
         .request_directly(req)
         .await
-        .map(wrap_incoming_body_response::<BoxBody>)
+        .map(|inner| inner.map(ResponseBody::Incoming))
     }
   }
 }

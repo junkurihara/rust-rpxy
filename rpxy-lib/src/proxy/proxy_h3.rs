@@ -138,7 +138,6 @@ where
     });
 
     let new_req: Request<IncomingOr<IncomingLike>> = Request::from_parts(req_parts, IncomingOr::Right(req_body));
-    // Response<IncomingOr<BoxBody>> wrapped by RpxyResult
     let res = self
       .message_handler
       .handle_request(

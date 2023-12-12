@@ -11,7 +11,7 @@ use crate::{
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
-  hyper_ext::body::{BoxBody, IncomingLike, IncomingOr},
+  hyper_ext::body::{IncomingLike, IncomingOr, ResponseBody},
   log::*,
   name_exp::ServerName,
 };
@@ -58,7 +58,7 @@ where
     listen_addr: SocketAddr,
     tls_enabled: bool,
     tls_server_name: Option<ServerName>,
-  ) -> RpxyResult<Response<IncomingOr<BoxBody>>> {
+  ) -> RpxyResult<Response<ResponseBody>> {
     // preparing log data
     let mut log_data = HttpMessageLog::from(&req);
     log_data.client_addr(&client_addr);
@@ -99,7 +99,7 @@ where
     listen_addr: SocketAddr,
     tls_enabled: bool,
     tls_server_name: Option<ServerName>,
-  ) -> HttpResult<Response<IncomingOr<BoxBody>>> {
+  ) -> HttpResult<Response<ResponseBody>> {
     // Here we start to inspect and parse with server_name
     let server_name = req
       .inspect_parse_host()

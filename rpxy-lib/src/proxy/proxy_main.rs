@@ -5,7 +5,7 @@ use crate::{
   error::*,
   globals::Globals,
   hyper_ext::{
-    body::{BoxBody, IncomingOr},
+    body::{IncomingOr, ResponseBody},
     rt::LocalExecutor,
   },
   log::*,
@@ -32,7 +32,7 @@ async fn serve_request<U, T>(
   listen_addr: SocketAddr,
   tls_enabled: bool,
   tls_server_name: Option<ServerName>,
-) -> RpxyResult<Response<IncomingOr<BoxBody>>>
+) -> RpxyResult<Response<ResponseBody>>
 where
   T: Send + Sync + Connect + Clone,
   U: CryptoSource + Clone,

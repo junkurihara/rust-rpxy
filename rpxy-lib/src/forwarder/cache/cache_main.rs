@@ -1,8 +1,11 @@
-use crate::{error::*, globals::Globals, log::*};
+use super::cache_error::*;
+use crate::{globals::Globals, hyper_ext::body::UnboundedStreamBody, log::*};
 use bytes::{Buf, Bytes, BytesMut};
+use futures::channel::mpsc;
 use http::{Request, Response};
-use http_body_util::StreamBody;
+use http_body_util::{BodyExt, StreamBody};
 use http_cache_semantics::CachePolicy;
+use hyper::body::{Body, Frame, Incoming};
 use lru::LruCache;
 use std::{
   convert::Infallible,
@@ -69,6 +72,73 @@ impl RpxyCache {
     let on_memory = total - file;
     (total, on_memory, file)
   }
+
+  /// Put response into the cache
+  pub async fn put(
+    &self,
+    uri: &hyper::Uri,
+    mut body: Incoming,
+    policy: &CachePolicy,
+  ) -> CacheResult<UnboundedStreamBody> {
+    let my_cache = self.inner.clone();
+    let mut file_store = self.file_store.clone();
+    let uri = uri.clone();
+    let policy_clone = policy.clone();
+    let max_each_size = self.max_each_size;
+    let max_each_size_on_memory = self.max_each_size_on_memory;
+
+    let (body_tx, body_rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+
+    self.runtime_handle.spawn(async move {
+      let mut size = 0usize;
+      loop {
+        let frame = match body.frame().await {
+          Some(frame) => frame,
+          None => {
+            debug!("Response body finished");
+            break;
+          }
+        };
+        let frame_size = frame.as_ref().map(|f| {
+          if f.is_data() {
+            f.data_ref().map(|bytes| bytes.remaining()).unwrap_or_default()
+          } else {
+            0
+          }
+        });
+        size += frame_size.unwrap_or_default();
+
+        // check size
+        if size > max_each_size {
+          warn!("Too large to cache");
+          return Err(CacheError::TooLargeToCache);
+        }
+        frame
+          .as_ref()
+          .map(|f| {
+            if f.is_data() {
+              let data_bytes = f.data_ref().unwrap().clone();
+              println!("ddddde");
+              // TODO: cache data bytes as file or on memory
+              // fileにするかmemoryにするかの判断はある程度までバッファしてやってという手を使うことになる。途中までキャッシュしたやつはどうするかとかいう判断も必要。
+              // ファイルとObjectのbindをどうやってするか
+            }
+          })
+          .map_err(|e| CacheError::FailedToCacheBytes(e.to_string()))?;
+
+        // send data to use response downstream
+        body_tx
+          .unbounded_send(frame)
+          .map_err(|e| CacheError::FailedToSendFrameToCache(e.to_string()))?;
+      }
+
+      Ok(()) as CacheResult<()>
+    });
+
+    let stream_body = StreamBody::new(body_rx);
+
+    Ok(stream_body)
+  }
 }
 
 /* ---------------------------------------------- */
@@ -93,7 +163,7 @@ impl FileStore {
     inner.cnt
   }
   /// Create a temporary file cache
-  async fn create(&mut self, cache_filename: &str, body_bytes: &Bytes) -> RpxyResult<CacheFileOrOnMemory> {
+  async fn create(&mut self, cache_filename: &str, body_bytes: &Bytes) -> CacheResult<CacheFileOrOnMemory> {
     let mut inner = self.inner.write().await;
     inner.create(cache_filename, body_bytes).await
   }
@@ -106,7 +176,7 @@ impl FileStore {
   //   };
   // }
   // /// Read a temporary file cache
-  // async fn read(&self, path: impl AsRef<Path>) -> RpxyResult<Bytes> {
+  // async fn read(&self, path: impl AsRef<Path>) -> CacheResult<Bytes> {
   //   let inner = self.inner.read().await;
   //   inner.read(&path).await
   // }
@@ -141,16 +211,16 @@ impl FileStoreInner {
   }
 
   /// Create a new temporary file cache
-  async fn create(&mut self, cache_filename: &str, body_bytes: &Bytes) -> RpxyResult<CacheFileOrOnMemory> {
+  async fn create(&mut self, cache_filename: &str, body_bytes: &Bytes) -> CacheResult<CacheFileOrOnMemory> {
     let cache_filepath = self.cache_dir.join(cache_filename);
     let Ok(mut file) = File::create(&cache_filepath).await else {
-      return Err(RpxyError::FailedToCreateFileCache);
+      return Err(CacheError::FailedToCreateFileCache);
     };
     let mut bytes_clone = body_bytes.clone();
     while bytes_clone.has_remaining() {
       if let Err(e) = file.write_buf(&mut bytes_clone).await {
         error!("Failed to write file cache: {e}");
-        return Err(RpxyError::FailedToWriteFileCache);
+        return Err(CacheError::FailedToWriteFileCache);
       };
     }
     self.cnt += 1;
@@ -158,15 +228,14 @@ impl FileStoreInner {
   }
 
   /// Retrieve a stored temporary file cache
-  async fn read(&self, path: impl AsRef<Path>) -> RpxyResult<()> {
+  async fn read(&self, path: impl AsRef<Path>) -> CacheResult<()> {
     let Ok(mut file) = File::open(&path).await else {
       warn!("Cache file object cannot be opened");
-      return Err(RpxyError::FailedToOpenCacheFile);
+      return Err(CacheError::FailedToOpenCacheFile);
     };
 
     /* ----------------------------- */
     // PoC for streaming body
-    use futures::channel::mpsc;
     let (tx, rx) = mpsc::unbounded::<Result<hyper::body::Frame<bytes::Bytes>, Infallible>>();
 
     // let (body_sender, res_body) = Body::channel();
@@ -263,10 +332,10 @@ impl LruCacheManager {
   }
 
   /// Push an entry
-  fn push(&self, cache_key: &str, cache_object: CacheObject) -> RpxyResult<Option<(String, CacheObject)>> {
+  fn push(&self, cache_key: &str, cache_object: CacheObject) -> CacheResult<Option<(String, CacheObject)>> {
     let Ok(mut lock) = self.inner.lock() else {
       error!("Failed to acquire mutex lock for writing cache entry");
-      return Err(RpxyError::FailedToAcquiredMutexLockForCache);
+      return Err(CacheError::FailedToAcquiredMutexLockForCache);
     };
     let res = Ok(lock.push(cache_key.to_string(), cache_object));
     // This may be inconsistent with the actual number of entries
@@ -280,13 +349,13 @@ impl LruCacheManager {
 pub fn get_policy_if_cacheable<B1, B2>(
   req: Option<&Request<B1>>,
   res: Option<&Response<B2>>,
-) -> RpxyResult<Option<CachePolicy>>
+) -> CacheResult<Option<CachePolicy>>
 // where
 //   B1: core::fmt::Debug,
 {
   // deduce cache policy from req and res
   let (Some(req), Some(res)) = (req, res) else {
-    return Err(RpxyError::NullRequestOrResponse);
+    return Err(CacheError::NullRequestOrResponse);
   };
 
   let new_policy = CachePolicy::new(req, res);

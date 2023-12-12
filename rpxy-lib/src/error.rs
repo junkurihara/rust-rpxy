@@ -84,34 +84,14 @@ pub enum RpxyError {
   #[error("Failed to fetch from upstream: {0}")]
   FailedToFetchFromUpstream(String),
 
-  // Cache errors,
-  #[cfg(feature = "cache")]
-  #[error("Invalid null request and/or response")]
-  NullRequestOrResponse,
-
-  #[cfg(feature = "cache")]
-  #[error("Failed to write byte buffer")]
-  FailedToWriteByteBufferForCache,
-
-  #[cfg(feature = "cache")]
-  #[error("Failed to acquire mutex lock for cache")]
-  FailedToAcquiredMutexLockForCache,
-
-  #[cfg(feature = "cache")]
-  #[error("Failed to create file cache")]
-  FailedToCreateFileCache,
-
-  #[cfg(feature = "cache")]
-  #[error("Failed to write file cache")]
-  FailedToWriteFileCache,
-
-  #[cfg(feature = "cache")]
-  #[error("Failed to open cache file")]
-  FailedToOpenCacheFile,
-
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,
+
+  // Cache error map
+  #[cfg(feature = "cache")]
+  #[error("Cache error: {0}")]
+  CacheError(#[from] crate::forwarder::CacheError),
 
   // Others
   #[error("Infallible")]
