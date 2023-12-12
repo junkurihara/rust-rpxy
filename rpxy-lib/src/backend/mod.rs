@@ -3,10 +3,11 @@ mod load_balance;
 mod upstream;
 mod upstream_opts;
 
-// #[cfg(feature = "sticky-cookie")]
-// pub use self::load_balance::{StickyCookie, StickyCookieValue};
+#[cfg(feature = "sticky-cookie")]
+pub(crate) use self::load_balance::{StickyCookie, StickyCookieValue};
+#[allow(unused)]
 pub(crate) use self::{
-  load_balance::{LoadBalance, LoadBalanceContext, StickyCookie, StickyCookieValue},
+  load_balance::{LoadBalance, LoadBalanceContext},
   upstream::{PathManager, Upstream, UpstreamCandidates},
   upstream_opts::UpstreamOption,
 };

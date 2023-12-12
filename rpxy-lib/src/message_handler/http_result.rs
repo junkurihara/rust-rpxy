@@ -22,8 +22,6 @@ pub enum HttpError {
   NoUpstreamCandidates,
   #[error("Failed to generate upstream request for backend application: {0}")]
   FailedToGenerateUpstreamRequest(String),
-  #[error("Timeout in upstream request")]
-  TimeoutUpstreamRequest,
   #[error("Failed to get response from backend: {0}")]
   FailedToGetResponseFromBackend(String),
 
@@ -53,7 +51,6 @@ impl From<HttpError> for StatusCode {
       HttpError::FailedToRedirect(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::NoUpstreamCandidates => StatusCode::NOT_FOUND,
       HttpError::FailedToGenerateUpstreamRequest(_) => StatusCode::INTERNAL_SERVER_ERROR,
-      HttpError::TimeoutUpstreamRequest => StatusCode::GATEWAY_TIMEOUT,
       HttpError::FailedToAddSetCookeInResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToGenerateDownstreamResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToUpgrade(_) => StatusCode::INTERNAL_SERVER_ERROR,

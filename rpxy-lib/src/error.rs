@@ -28,6 +28,8 @@ pub enum RpxyError {
   HyperIncomingLikeNewClosed,
   #[error("New body write aborted")]
   HyperNewBodyWriteAborted,
+  #[error("Hyper error in serving request or response body type: {0}")]
+  HyperBodyError(#[from] hyper::Error),
 
   // http/3 errors
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -41,13 +43,13 @@ pub enum RpxyError {
   #[error("Quinn connection error: {0}")]
   QuinnConnectionFailed(#[from] quinn::ConnectionError),
 
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   #[error("s2n-quic validation error: {0}")]
   S2nQuicValidationError(#[from] s2n_quic_core::transport::parameters::ValidationError),
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   #[error("s2n-quic connection error: {0}")]
   S2nQuicConnectionError(#[from] s2n_quic_core::connection::Error),
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   #[error("s2n-quic start error: {0}")]
   S2nQuicStartError(#[from] s2n_quic::provider::StartError),
 
@@ -84,6 +86,11 @@ pub enum RpxyError {
   // Upstream connection setting errors
   #[error("Unsupported upstream option")]
   UnsupportedUpstreamOption,
+
+  // Cache error map
+  #[cfg(feature = "cache")]
+  #[error("Cache error: {0}")]
+  CacheError(#[from] crate::forwarder::CacheError),
 
   // Others
   #[error("Infallible")]

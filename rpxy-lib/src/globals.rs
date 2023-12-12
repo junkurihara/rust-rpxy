@@ -33,8 +33,10 @@ pub struct ProxyConfig {
   /// tcp listen backlog
   pub tcp_listen_backlog: u32,
 
-  pub proxy_timeout: Duration,    // when serving requests at Proxy
-  pub upstream_timeout: Duration, // when serving requests at Handler
+  /// Idle timeout as an HTTP server, used as the keep alive interval and timeout for reading request header
+  pub proxy_idle_timeout: Duration,
+  /// Idle timeout as an HTTP client, used as the keep alive interval for upstream connections
+  pub upstream_idle_timeout: Duration,
 
   pub max_clients: usize,          // when serving requests
   pub max_concurrent_streams: u32, // when instantiate server
@@ -80,8 +82,8 @@ impl Default for ProxyConfig {
       tcp_listen_backlog: TCP_LISTEN_BACKLOG,
 
       // TODO: Reconsider each timeout values
-      proxy_timeout: Duration::from_secs(PROXY_TIMEOUT_SEC),
-      upstream_timeout: Duration::from_secs(UPSTREAM_TIMEOUT_SEC),
+      proxy_idle_timeout: Duration::from_secs(PROXY_IDLE_TIMEOUT_SEC),
+      upstream_idle_timeout: Duration::from_secs(UPSTREAM_IDLE_TIMEOUT_SEC),
 
       max_clients: MAX_CLIENTS,
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,

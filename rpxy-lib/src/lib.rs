@@ -27,9 +27,6 @@ pub mod reexports {
   pub use rustls_pki_types::{CertificateDer as Certificate, PrivateKeyDer as PrivateKey};
 }
 
-#[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
-compile_error!("feature \"http3-quinn\" and feature \"http3-s2n\" cannot be enabled at the same time");
-
 /// Entrypoint that creates and spawns tasks of reverse proxy services
 pub async fn entrypoint<T>(
   proxy_config: &ProxyConfig,
@@ -40,6 +37,12 @@ pub async fn entrypoint<T>(
 where
   T: CryptoSource + Clone + Send + Sync + 'static,
 {
+  #[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
+  warn!("Both \"http3-quinn\" and \"http3-s2n\" features are enabled. \"http3-quinn\" will be used");
+
+  #[cfg(all(feature = "native-tls-backend", feature = "rustls-backend"))]
+  warn!("Both \"native-tls-backend\" and \"rustls-backend\" features are enabled. \"rustls-backend\" will be used");
+
   // For initial message logging
   if proxy_config.listen_sockets.iter().any(|addr| addr.is_ipv6()) {
     info!("Listen both IPv4 and IPv6")

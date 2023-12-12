@@ -4,6 +4,7 @@
 - [Initial implementation in v0.6.0] ~~**Cache option for the response with `Cache-Control: public` header directive ([#55](https://github.com/junkurihara/rust-rpxy/issues/55))**~~ Using `lru` crate might be inefficient in terms of the speed.
   - Consider more sophisticated architecture for cache
   - Persistent cache (if possible).
+  - More secure cache file object naming
   - etc etc
 - Improvement of path matcher
 - More flexible option for rewriting path

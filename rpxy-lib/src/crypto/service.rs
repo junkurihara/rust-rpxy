@@ -22,7 +22,7 @@ pub struct ServerCrypto {
   // For Quic/HTTP3, only servers with no client authentication
   #[cfg(feature = "http3-quinn")]
   pub inner_global_no_client_auth: Arc<ServerConfig>,
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   pub inner_global_no_client_auth: s2n_quic_rustls::Server,
   // For TLS over TCP/HTTP2 and 1.1, map of SNI to server_crypto for all given servers
   pub inner_local_map: Arc<SniServerCryptoMap>,
@@ -74,7 +74,7 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
     Ok(Arc::new(ServerCrypto {
       #[cfg(feature = "http3-quinn")]
       inner_global_no_client_auth: Arc::new(server_crypto_global),
-      #[cfg(feature = "http3-s2n")]
+      #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
       inner_global_no_client_auth: server_crypto_global,
       inner_local_map: Arc::new(server_crypto_local_map),
     }))
@@ -208,7 +208,7 @@ impl ServerCryptoBase {
     Ok(server_crypto_global)
   }
 
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   fn build_server_crypto_global(&self) -> Result<s2n_quic_rustls::Server, ReloaderError<ServerCryptoBase>> {
     let mut resolver_global = s2n_quic_rustls::rustls::server::ResolvesServerCertUsingSni::new();
 
@@ -249,7 +249,7 @@ impl ServerCryptoBase {
   }
 }
 
-#[cfg(feature = "http3-s2n")]
+#[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
 /// This is workaround for the version difference between rustls and s2n-quic-rustls
 fn parse_server_certs_and_keys_s2n(
   certs_and_keys: &CertsAndKeys,

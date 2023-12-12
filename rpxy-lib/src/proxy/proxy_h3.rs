@@ -2,7 +2,7 @@ use super::proxy_main::Proxy;
 use crate::{
   crypto::CryptoSource,
   error::*,
-  hyper_ext::body::{IncomingLike, IncomingOr},
+  hyper_ext::body::{IncomingLike, RequestBody},
   log::*,
   name_exp::ServerName,
 };
@@ -10,12 +10,11 @@ use bytes::{Buf, Bytes};
 use http::{Request, Response};
 use http_body_util::BodyExt;
 use hyper_util::client::legacy::connect::Connect;
-use std::{net::SocketAddr, time::Duration};
-use tokio::time::timeout;
+use std::net::SocketAddr;
 
 #[cfg(feature = "http3-quinn")]
 use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
-#[cfg(feature = "http3-s2n")]
+#[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
 use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 
 impl<U, T> Proxy<U, T>
@@ -71,13 +70,11 @@ where
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
           self.globals.runtime_handle.spawn(async move {
-            if let Err(e) = timeout(
-              self_inner.globals.proxy_config.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
-              self_inner.h3_serve_stream(req, stream, client_addr, tls_server_name_inner),
-            )
-            .await
+            if let Err(e) = self_inner
+              .h3_serve_stream(req, stream, client_addr, tls_server_name_inner)
+              .await
             {
-              error!("HTTP/3 failed to process stream: {}", e);
+              warn!("HTTP/3 error on serve stream: {}", e);
             }
             request_count.decrement();
             debug!("Request processed: current # {}", request_count.current());
@@ -122,7 +119,7 @@ where
         size += body.remaining();
         if size > max_body_size {
           error!(
-            "Exceeds max request body size for HTTP/3: received {}, maximum_allowd {}",
+            "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
             size, max_body_size
           );
           return Err(RpxyError::H3TooLargeBody);
@@ -140,8 +137,7 @@ where
       Ok(()) as RpxyResult<()>
     });
 
-    let new_req: Request<IncomingOr<IncomingLike>> = Request::from_parts(req_parts, IncomingOr::Right(req_body));
-    // Response<IncomingOr<BoxBody>> wrapped by RpxyResult
+    let new_req: Request<RequestBody> = Request::from_parts(req_parts, RequestBody::IncomingLike(req_body));
     let res = self
       .message_handler
       .handle_request(
@@ -153,22 +149,33 @@ where
       )
       .await?;
 
-    let (new_res_parts, new_body) = res.into_parts();
+    let (new_res_parts, mut new_body) = res.into_parts();
     let new_res = Response::from_parts(new_res_parts, ());
 
     match send_stream.send_response(new_res).await {
       Ok(_) => {
         debug!("HTTP/3 response to connection successful");
-        // aggregate body without copying
-        let body_data = new_body
-          .collect()
-          .await
+        // on-demand body streaming to downstream without expanding the object onto memory.
+        loop {
+          let frame = match new_body.frame().await {
+            Some(frame) => frame,
+            None => {
+              debug!("Response body finished");
+              break;
+            }
+          }
           .map_err(|e| RpxyError::HyperBodyManipulationError(e.to_string()))?;
 
-        // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes inside to_bytes()
-        send_stream.send_data(body_data.to_bytes()).await?;
-
-        // TODO: needs handling trailer? should be included in body from handler.
+          if frame.is_data() {
+            let data = frame.into_data().unwrap_or_default();
+            debug!("Write data to HTTP/3 stream");
+            send_stream.send_data(data).await?;
+          } else if frame.is_trailers() {
+            let trailers = frame.into_trailers().unwrap_or_default();
+            debug!("Write trailer to HTTP/3 stream");
+            send_stream.send_trailers(trailers).await?;
+          }
+        }
       }
       Err(err) => {
         error!("Unable to send response to connection peer: {:?}", err);
