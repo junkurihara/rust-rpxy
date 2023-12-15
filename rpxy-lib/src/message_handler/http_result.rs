@@ -8,8 +8,8 @@ pub(crate) type HttpResult<T> = std::result::Result<T, HttpError>;
 /// Describes things that can go wrong in the forwarder
 #[derive(Debug, Error)]
 pub enum HttpError {
-  #[error("No host is give nin request header")]
-  NoHostInRequestHeader,
+  // #[error("No host is give in request header")]
+  // NoHostInRequestHeader,
   #[error("Invalid host in request header")]
   InvalidHostInRequestHeader,
   #[error("SNI and Host header mismatch")]
@@ -43,7 +43,7 @@ pub enum HttpError {
 impl From<HttpError> for StatusCode {
   fn from(e: HttpError) -> StatusCode {
     match e {
-      HttpError::NoHostInRequestHeader => StatusCode::BAD_REQUEST,
+      // HttpError::NoHostInRequestHeader => StatusCode::BAD_REQUEST,
       HttpError::InvalidHostInRequestHeader => StatusCode::BAD_REQUEST,
       HttpError::SniHostInconsistency => StatusCode::MISDIRECTED_REQUEST,
       HttpError::NoMatchingBackendApp => StatusCode::SERVICE_UNAVAILABLE,

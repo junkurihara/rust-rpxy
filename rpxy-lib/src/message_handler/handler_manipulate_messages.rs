@@ -177,8 +177,11 @@ where
         .headers_mut()
         .insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
     }
+    if upgrade.is_none() {
+      // can update request line i.e., http version, only if not upgrade (http 1.1)
+      update_request_line(req, upstream_chosen, upstream_candidates)?;
+    }
 
-    update_request_line(req, upstream_chosen, upstream_candidates)?;
 
     Ok(context)
   }

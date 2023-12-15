@@ -143,6 +143,12 @@ where
 
     // Upgrade in request header
     let upgrade_in_request = extract_upgrade(req.headers());
+    if upgrade_in_request.is_some() && req.version() != http::Version::HTTP_11 {
+      return Err(HttpError::FailedToUpgrade(format!(
+        "Unsupported HTTP version: {:?}",
+        req.version()
+      )));
+    }
     // let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
     let req_on_upgrade = hyper::upgrade::on(&mut req);
 
