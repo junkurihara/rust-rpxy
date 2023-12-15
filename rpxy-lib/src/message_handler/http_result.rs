@@ -32,11 +32,10 @@ pub enum HttpError {
 
   #[error("Failed to upgrade connection: {0}")]
   FailedToUpgrade(String),
-  #[error("Request does not have an upgrade extension")]
-  NoUpgradeExtensionInRequest,
-  #[error("Response does not have an upgrade extension")]
-  NoUpgradeExtensionInResponse,
-
+  // #[error("Request does not have an upgrade extension")]
+  // NoUpgradeExtensionInRequest,
+  // #[error("Response does not have an upgrade extension")]
+  // NoUpgradeExtensionInResponse,
   #[error(transparent)]
   Other(#[from] anyhow::Error),
 }
@@ -54,8 +53,8 @@ impl From<HttpError> for StatusCode {
       HttpError::FailedToAddSetCookeInResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToGenerateDownstreamResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToUpgrade(_) => StatusCode::INTERNAL_SERVER_ERROR,
-      HttpError::NoUpgradeExtensionInRequest => StatusCode::BAD_REQUEST,
-      HttpError::NoUpgradeExtensionInResponse => StatusCode::BAD_GATEWAY,
+      // HttpError::NoUpgradeExtensionInRequest => StatusCode::BAD_REQUEST,
+      // HttpError::NoUpgradeExtensionInResponse => StatusCode::BAD_GATEWAY,
       _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
   }
