@@ -1,6 +1,6 @@
 use super::socket::bind_tcp_socket;
 use crate::{
-  constants::TLS_HANDSHAKE_TIMEOUT_SEC,
+  constants::{CONNECTION_TIMEOUT_SEC, TLS_HANDSHAKE_TIMEOUT_SEC},
   crypto::{CryptoSource, ServerCrypto, SniServerCryptoMap},
   error::*,
   globals::Globals,
@@ -88,9 +88,11 @@ where
     let message_handler_clone = self.message_handler.clone();
     let tls_enabled = self.tls_enabled;
     let listening_on = self.listening_on;
+    let timeout_sec = Duration::from_secs(CONNECTION_TIMEOUT_SEC + 1); // just in case...
     self.globals.runtime_handle.clone().spawn(async move {
-      server_clone
-        .serve_connection_with_upgrades(
+      timeout(
+        timeout_sec + Duration::from_secs(1), // just in case...
+        server_clone.serve_connection_with_upgrades(
           stream,
           service_fn(move |req: Request<Incoming>| {
             serve_request(
@@ -102,9 +104,10 @@ where
               tls_server_name.clone(),
             )
           }),
-        )
-        .await
-        .ok();
+        ),
+      )
+      .await
+      .ok();
 
       request_count.decrement();
       debug!("Request processed: current # {}", request_count.current());

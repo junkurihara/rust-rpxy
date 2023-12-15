@@ -2,6 +2,7 @@ name: Release - Build and publish docker, and trigger package release
 on:
   push:
     branches:
+      - "feat/*"
       - "develop"
   pull_request:
     types: [closed]
@@ -134,6 +135,23 @@ jobs:
       #     cache-to: type=gha,mode=max,scope=rpxy-nightly-${{ matrix.target }}
       #     platforms: linux/amd64
       #     labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Unstable build and push from develop branch
+        if: ${{ (github.ref_name == 'feat/*') && (github.event_name == 'push') }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          build-args: ${{ matrix.build-args }}
+          push: true
+          tags: |
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:unstable${{ matrix.tags-suffix }}
+            ${{ env.DH_REGISTRY_NAME }}:unstable${{ matrix.tags-suffix }}
+          build-contexts: ${{ matrix.build-contexts }}
+          file: ${{ matrix.dockerfile }}
+          cache-from: type=gha,scope=rpxy-unstable-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=rpxy-unstable-${{ matrix.target }}
+          platforms: ${{ matrix.platforms }}
+          labels: ${{ steps.meta.outputs.labels }}
 
       - name: Nightly build and push from develop branch
         if: ${{ (github.ref_name == 'develop') && (github.event_name == 'push') }}
