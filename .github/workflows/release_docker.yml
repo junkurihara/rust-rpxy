@@ -137,7 +137,7 @@ jobs:
       #     labels: ${{ steps.meta.outputs.labels }}
 
       - name: Unstable build and push from develop branch
-        if: ${{ (github.ref_name == 'feat/*') && (github.event_name == 'push') }}
+        if: ${{ startsWith(github.ref_name, 'feat/') && (github.event_name == 'push') }}
         uses: docker/build-push-action@v5
         with:
           context: .
