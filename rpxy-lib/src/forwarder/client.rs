@@ -121,7 +121,7 @@ where
   <B as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
 {
   /// Build inner client with http
-  pub fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
+  pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
     warn!(
       "
 --------------------------------------------------------------------------------------------------
@@ -134,6 +134,7 @@ Please enable native-tls-backend or rustls-backend feature to enable TLS support
     let mut http = HttpConnector::new();
     http.set_reuse_address(true);
     let inner = Client::builder(executor).build::<_, B>(http);
+    let inner_h2 = inner.clone();
 
     Ok(Self {
       inner,
@@ -191,7 +192,7 @@ where
 
 #[cfg(feature = "rustls-backend")]
 /// Build forwarder with hyper-rustls (rustls)
-impl<B1> Forwarder<hyper_tls::HttpsConnector<HttpConnector>, B1>
+impl<B1> Forwarder<HttpConnector, B1>
 where
   B1: Body + Send + Unpin + 'static,
   <B1 as Body>::Data: Send,

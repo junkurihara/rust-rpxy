@@ -30,7 +30,7 @@ use tokio::{
 /* ---------------------------------------------- */
 #[derive(Clone, Debug)]
 /// Cache main manager
-pub struct RpxyCache {
+pub(crate) struct RpxyCache {
   /// Inner lru cache manager storing http message caching policy
   inner: LruCacheManager,
   /// Managing cache file objects through RwLock's lock mechanism for file lock
@@ -47,7 +47,7 @@ pub struct RpxyCache {
 
 impl RpxyCache {
   /// Generate cache storage
-  pub async fn new(globals: &Globals) -> Option<Self> {
+  pub(crate) async fn new(globals: &Globals) -> Option<Self> {
     if !globals.proxy_config.cache_enabled {
       return None;
     }
@@ -80,7 +80,7 @@ impl RpxyCache {
   }
 
   /// Count cache entries
-  pub async fn count(&self) -> (usize, usize, usize) {
+  pub(crate) async fn count(&self) -> (usize, usize, usize) {
     let total = self.inner.count();
     let file = self.file_store.count().await;
     let on_memory = total - file;
@@ -88,7 +88,7 @@ impl RpxyCache {
   }
 
   /// Put response into the cache
-  pub async fn put(
+  pub(crate) async fn put(
     &self,
     uri: &hyper::Uri,
     mut body: Incoming,
@@ -186,7 +186,7 @@ impl RpxyCache {
   }
 
   /// Get cached response
-  pub async fn get<R>(&self, req: &Request<R>) -> Option<Response<ResponseBody>> {
+  pub(crate) async fn get<R>(&self, req: &Request<R>) -> Option<Response<ResponseBody>> {
     debug!(
       "Current cache status: (total, on-memory, file) = {:?}",
       self.count().await
@@ -394,7 +394,7 @@ impl FileStoreInner {
 
 #[derive(Clone, Debug)]
 /// Cache target in hybrid manner of on-memory and file system
-pub enum CacheFileOrOnMemory {
+pub(crate) enum CacheFileOrOnMemory {
   /// Pointer to the temporary cache file
   File(PathBuf),
   /// Cached body itself
@@ -418,11 +418,11 @@ impl CacheFileOrOnMemory {
 /// Cache object definition
 struct CacheObject {
   /// Cache policy to determine if the stored cache can be used as a response to a new incoming request
-  pub policy: CachePolicy,
+  policy: CachePolicy,
   /// Cache target: on-memory object or temporary file
-  pub target: CacheFileOrOnMemory,
+  target: CacheFileOrOnMemory,
   /// SHA256 hash of target to strongly bind the cache metadata (this object) and file target
-  pub hash: Bytes,
+  hash: Bytes,
 }
 
 /* ---------------------------------------------- */
@@ -490,7 +490,7 @@ impl LruCacheManager {
 
 /* ---------------------------------------------- */
 /// Generate cache policy if the response is cacheable
-pub fn get_policy_if_cacheable<B1, B2>(
+pub(crate) fn get_policy_if_cacheable<B1, B2>(
   req: Option<&Request<B1>>,
   res: Option<&Response<B2>>,
 ) -> CacheResult<Option<CachePolicy>>

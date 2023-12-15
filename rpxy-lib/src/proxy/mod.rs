@@ -1,10 +1,12 @@
-mod proxy_h3;
 mod proxy_main;
+mod socket;
+
+#[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+mod proxy_h3;
 #[cfg(feature = "http3-quinn")]
 mod proxy_quic_quinn;
 #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
 mod proxy_quic_s2n;
-mod socket;
 
 use crate::{
   globals::Globals,

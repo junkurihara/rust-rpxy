@@ -19,6 +19,7 @@ where
   // Functions to generate messages
   ////////////////////////////////////////////////////
 
+  #[allow(unused_variables)]
   /// Manipulate a response message sent from a backend application to forward downstream to a client.
   pub(super) fn generate_response_forwarded<B>(
     &self,
