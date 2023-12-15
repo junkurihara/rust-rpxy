@@ -150,7 +150,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           cache-from: type=gha,scope=rpxy-unstable-${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=rpxy-unstable-${{ matrix.target }}
-          platforms: ${{ matrix.platforms }}
+          platforms: linux/amd64
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Nightly build and push from develop branch
