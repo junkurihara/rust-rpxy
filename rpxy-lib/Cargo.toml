@@ -52,15 +52,22 @@ thiserror = "1.0.50"
 http = "1.0.0"
 http-body-util = "0.1.0"
 hyper = { version = "1.0.1", default-features = false }
-hyper-util = { version = "0.1.1", features = ["full"] }
+# hyper-util = { version = "0.1.1", features = ["full"] }
+hyper-util = { git = "https://github.com/junkurihara/hyper-util", features = [
+  "full",
+], rev = "99409f5c4059633b7e2fa8b9c2e6c110b0f2f64b" }
 futures-util = { version = "0.3.29", default-features = false }
 futures-channel = { version = "0.3.29", default-features = false }
 
 # http client for upstream
-hyper-tls = { version = "0.6.0", features = [
+hyper-tls = { git = "https://github.com/junkurihara/hyper-tls", features = [
   "alpn",
   "vendored",
-], optional = true }
+], rev = "06fb462ee67ec349936ceb64849d64d05e58458a", optional = true }
+# hyper-tls = { version = "0.6.0", features = [
+#   "alpn",
+#   "vendored",
+# ], optional = true }
 # hyper-rustls = { version = "0.24.2", default-features = false, features = [
 #   "tokio-runtime",
 #   "webpki-tokio",
