@@ -2,7 +2,7 @@ use crate::error::*;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum UpstreamOption {
-  OverrideHost,
+  DisableOverrideHost,
   UpgradeInsecureRequests,
   ForceHttp11Upstream,
   ForceHttp2Upstream,
@@ -10,13 +10,13 @@ pub enum UpstreamOption {
 }
 impl TryFrom<&str> for UpstreamOption {
   type Error = RpxyError;
-  fn try_from(val: &str) -> Result<Self> {
+  fn try_from(val: &str) -> RpxyResult<Self> {
     match val {
-      "override_host" => Ok(Self::OverrideHost),
+      "diaable_override_host" => Ok(Self::DisableOverrideHost),
       "upgrade_insecure_requests" => Ok(Self::UpgradeInsecureRequests),
       "force_http11_upstream" => Ok(Self::ForceHttp11Upstream),
       "force_http2_upstream" => Ok(Self::ForceHttp2Upstream),
-      _ => Err(RpxyError::Other(anyhow!("Unsupported header option"))),
+      _ => Err(RpxyError::UnsupportedUpstreamOption),
     }
   }
 }

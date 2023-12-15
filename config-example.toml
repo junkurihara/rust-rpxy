@@ -57,8 +57,8 @@ upstream = [
 ]
 load_balance = "round_robin" # or "random" or "sticky" (sticky session) or "none" (fix to the first one, default)
 upstream_options = [
-  "override_host",
-  "force_http2_upstream", # mutually exclusive with "force_http11_upstream"
+  "disable_override_host", # do not overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
+  "force_http2_upstream",  # mutually exclusive with "force_http11_upstream"
 ]
 
 # Non-default destination in "localhost" app, which is routed by "path"
@@ -76,7 +76,7 @@ upstream = [
 ]
 load_balance = "random" # or "round_robin" or "sticky" (sticky session) or "none" (fix to the first one, default)
 upstream_options = [
-  "override_host",
+  "disable_override_host",
   "upgrade_insecure_requests",
   "force_http11_upstream",
 ]

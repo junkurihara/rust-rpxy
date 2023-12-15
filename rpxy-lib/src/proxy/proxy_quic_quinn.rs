@@ -1,30 +1,32 @@
+use super::proxy_main::Proxy;
 use super::socket::bind_udp_socket;
-use super::{
-  crypto_service::{ServerCrypto, ServerCryptoBase},
-  proxy_main::Proxy,
+use crate::{
+  crypto::{CryptoSource, ServerCrypto},
+  error::*,
+  log::*,
+  name_exp::ByteName,
 };
-use crate::{certs::CryptoSource, error::*, log::*, utils::BytesName};
-use hot_reload::ReloaderReceiver;
-use hyper::client::connect::Connect;
+use hyper_util::client::legacy::connect::Connect;
 use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
 use rustls::ServerConfig;
 use std::sync::Arc;
 
-impl<T, U> Proxy<T, U>
+impl<U, T> Proxy<U, T>
 where
-  T: Connect + Clone + Sync + Send + 'static,
+  T: Send + Sync + Connect + Clone + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
-  pub(super) async fn listener_service_h3(
-    &self,
-    mut server_crypto_rx: ReloaderReceiver<ServerCryptoBase>,
-  ) -> Result<()> {
+  pub(super) async fn h3_listener_service(&self) -> RpxyResult<()> {
+    let Some(mut server_crypto_rx) = self.globals.cert_reloader_rx.clone() else {
+      return Err(RpxyError::NoCertificateReloader);
+    };
     info!("Start UDP proxy serving with HTTP/3 request for configured host names [quinn]");
     // first set as null config server
     let rustls_server_config = ServerConfig::builder()
       .with_safe_default_cipher_suites()
       .with_safe_default_kx_groups()
-      .with_protocol_versions(&[&rustls::version::TLS13])?
+      .with_protocol_versions(&[&rustls::version::TLS13])
+      .map_err(|e| RpxyError::QuinnInvalidTlsProtocolVersion(e.to_string()))?
       .with_no_client_auth()
       .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()));
 
@@ -90,11 +92,11 @@ where
               },
               Err(e) => {
                 warn!("QUIC accepting connection failed: {:?}", e);
-                return Err(RpxyError::QuicConn(e));
+                return Err(RpxyError::QuinnConnectionFailed(e));
               }
             };
             // Timeout is based on underlying quic
-            if let Err(e) = self_clone.connection_serve_h3(quic_connection, new_server_name.to_server_name_vec(), client_addr).await {
+            if let Err(e) = self_clone.h3_serve_connection(quic_connection, new_server_name.to_server_name(), client_addr).await {
               warn!("QUIC or HTTP/3 connection failed: {}", e);
             };
             Ok(())
@@ -119,6 +121,6 @@ where
       }
     }
     endpoint.wait_idle().await;
-    Ok(()) as Result<()>
+    Ok(()) as RpxyResult<()>
   }
 }

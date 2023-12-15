@@ -104,11 +104,11 @@ If you want to host multiple and distinct domain names in a single IP address/po
 ```toml
 default_application = "app1"
 
-[app.app1]
+[apps.app1]
 server_name = "app1.example.com"
 #...
 
-[app.app2]
+[apps.app2]
 server_name = "app2.example.org"
 #...
 ```

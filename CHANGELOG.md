@@ -2,6 +2,13 @@
 
 ## 0.7.0  (unreleased)
 
+- Breaking: `hyper`-1.0 for both server and client modules.
+- Breaking: Remove `override_host` option in upstream options. Add a reverse option, i.e., `disable_override_host`. That is, `rpxy` always override the host header by the upstream hostname by default.
+- Breaking: Introduced `native-tls-backend` feature to use the native TLS engine to access backend applications.
+- Redesigned: Cache structure is totally redesigned with more memory-efficient way to read from cache file, and more secure way to strongly bind memory-objects with files with hash values.
+- Redesigned: HTTP body handling flow is also redesigned with more memory-and-time efficient techniques without putting the whole objects on memory by using `futures::stream::Stream` and `futures::channel::mpsc`
+- Refactor: lots of minor improvements
+
 ## 0.6.2
 
 ### Improvement
