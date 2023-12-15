@@ -1,12 +1,6 @@
 [submodule "submodules/h3"]
 	path = submodules/h3
 	url = git@github.com:junkurihara/h3.git
-[submodule "submodules/quinn"]
-	path = submodules/quinn
-	url = git@github.com:junkurihara/quinn.git
-[submodule "submodules/s2n-quic"]
-	path = submodules/s2n-quic
-	url = git@github.com:junkurihara/s2n-quic.git
 [submodule "submodules/rusty-http-cache-semantics"]
 	path = submodules/rusty-http-cache-semantics
 	url = git@github.com:junkurihara/rusty-http-cache-semantics.git

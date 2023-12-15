@@ -15,9 +15,6 @@ use crate::{
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use rpxy_lib::entrypoint;
 
-#[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
-compile_error!("feature \"http3-quinn\" and feature \"http3-s2n\" cannot be enabled at the same time");
-
 fn main() {
   init_logger();
 
@@ -29,8 +26,8 @@ fn main() {
   runtime.block_on(async {
     // Initially load options
     let Ok(parsed_opts) = parse_opts() else {
-        error!("Invalid toml file");
-        std::process::exit(1);
+      error!("Invalid toml file");
+      std::process::exit(1);
     };
 
     if !parsed_opts.watch {

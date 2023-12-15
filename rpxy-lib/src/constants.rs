@@ -4,13 +4,15 @@ pub const RESPONSE_HEADER_SERVER: &str = "rpxy";
 pub const TCP_LISTEN_BACKLOG: u32 = 1024;
 // pub const HTTP_LISTEN_PORT: u16 = 8080;
 // pub const HTTPS_LISTEN_PORT: u16 = 8443;
-pub const PROXY_TIMEOUT_SEC: u64 = 60;
-pub const UPSTREAM_TIMEOUT_SEC: u64 = 60;
+pub const PROXY_IDLE_TIMEOUT_SEC: u64 = 20;
+pub const UPSTREAM_IDLE_TIMEOUT_SEC: u64 = 20;
 pub const TLS_HANDSHAKE_TIMEOUT_SEC: u64 = 15; // default as with firefox browser
 pub const MAX_CLIENTS: usize = 512;
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 pub const CERTS_WATCH_DELAY_SECS: u32 = 60;
 pub const LOAD_CERTS_ONLY_WHEN_UPDATED: bool = true;
+
+pub const CONNECTION_TIMEOUT_SEC: u64 = 30; // timeout to serve a connection. this might limits the max length of response.
 
 // #[cfg(feature = "http3")]
 // pub const H3_RESPONSE_BUF_SIZE: usize = 65_536; // 64KB

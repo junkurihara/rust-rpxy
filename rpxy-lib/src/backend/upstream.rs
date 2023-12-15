@@ -1,8 +1,18 @@
 #[cfg(feature = "sticky-cookie")]
-use super::load_balance::LbStickyRoundRobinBuilder;
-use super::load_balance::{load_balance_options as lb_opts, LbRandomBuilder, LbRoundRobinBuilder, LoadBalance};
-use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
-use crate::log::*;
+use super::load_balance::LoadBalanceStickyBuilder;
+use super::load_balance::{
+  load_balance_options as lb_opts, LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder,
+  LoadBalanceRoundRobinBuilder,
+};
+// use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
+use super::upstream_opts::UpstreamOption;
+use crate::{
+  crypto::CryptoSource,
+  error::RpxyError,
+  globals::{AppConfig, UpstreamUri},
+  log::*,
+  name_exp::{ByteName, PathName},
+};
 #[cfg(feature = "sticky-cookie")]
 use base64::{engine::general_purpose, Engine as _};
 use derive_builder::Builder;
@@ -10,38 +20,80 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 #[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
+
 #[derive(Debug, Clone)]
-pub struct ReverseProxy {
-  pub upstream: HashMap<PathNameBytesExp, UpstreamGroup>, // TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
+/// Handler for given path to route incoming request to path's corresponding upstream server(s).
+pub struct PathManager {
+  /// HashMap of upstream candidate server info, key is path name
+  /// TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
+  inner: HashMap<PathName, UpstreamCandidates>,
 }
 
-impl ReverseProxy {
-  /// Get an appropriate upstream destination for given path string.
-  pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamGroup> {
-    // trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
-    // コスト的にこの程度で十分
-    let path_bytes = &path_str.to_path_name_vec();
+impl<T> TryFrom<&AppConfig<T>> for PathManager
+where
+  T: CryptoSource,
+{
+  type Error = RpxyError;
+  fn try_from(app_config: &AppConfig<T>) -> Result<Self, Self::Error> {
+    let mut inner: HashMap<PathName, UpstreamCandidates> = HashMap::default();
+
+    app_config.reverse_proxy.iter().for_each(|rpc| {
+      let upstream_vec: Vec<Upstream> = rpc.upstream.iter().map(Upstream::from).collect();
+      let elem = UpstreamCandidatesBuilder::default()
+        .upstream(&upstream_vec)
+        .path(&rpc.path)
+        .replace_path(&rpc.replace_path)
+        .load_balance(&rpc.load_balance, &upstream_vec, &app_config.server_name, &rpc.path)
+        .options(&rpc.upstream_options)
+        .build()
+        .unwrap();
+      inner.insert(elem.path.clone(), elem);
+    });
+
+    if app_config.reverse_proxy.iter().filter(|rpc| rpc.path.is_none()).count() >= 2 {
+      error!("Multiple default reverse proxy setting");
+      return Err(RpxyError::InvalidReverseProxyConfig);
+    }
+
+    if !(inner.iter().all(|(_, elem)| {
+      !(elem.options.contains(&UpstreamOption::ForceHttp11Upstream)
+        && elem.options.contains(&UpstreamOption::ForceHttp2Upstream))
+    })) {
+      error!("Either one of force_http11 or force_http2 can be enabled");
+      return Err(RpxyError::InvalidUpstreamOptionSetting);
+    }
+
+    Ok(PathManager { inner })
+  }
+}
+
+impl PathManager {
+  /// Get an appropriate upstream destinations for given path string.
+  /// trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
+  /// コスト的にこの程度で十分では。
+  pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamCandidates> {
+    let path_name = &path_str.to_path_name();
 
     let matched_upstream = self
-      .upstream
+      .inner
       .iter()
       .filter(|(route_bytes, _)| {
-        match path_bytes.starts_with(route_bytes) {
+        match path_name.starts_with(route_bytes) {
           true => {
             route_bytes.len() == 1 // route = '/', i.e., default
-            || match path_bytes.get(route_bytes.len()) {
-              None => true, // exact case
-              Some(p) => p == &b'/', // sub-path case
-            }
+              || match path_name.get(route_bytes.len()) {
+                None => true, // exact case
+                Some(p) => p == &b'/', // sub-path case
+              }
           }
           _ => false,
         }
       })
       .max_by_key(|(route_bytes, _)| route_bytes.len());
-    if let Some((_path, u)) = matched_upstream {
+    if let Some((path, u)) = matched_upstream {
       debug!(
         "Found upstream: {:?}",
-        String::from_utf8(_path.0.clone()).unwrap_or_else(|_| "<none>".to_string())
+        path.try_into().unwrap_or_else(|_| "<none>".to_string())
       );
       Some(u)
     } else {
@@ -56,6 +108,13 @@ pub struct Upstream {
   /// Base uri without specific path
   pub uri: hyper::Uri,
 }
+impl From<&UpstreamUri> for Upstream {
+  fn from(value: &UpstreamUri) -> Self {
+    Self {
+      uri: value.inner.clone(),
+    }
+  }
+}
 impl Upstream {
   #[cfg(feature = "sticky-cookie")]
   /// Hashing uri with index to avoid collision
@@ -69,47 +128,50 @@ impl Upstream {
 }
 #[derive(Debug, Clone, Builder)]
 /// Struct serving multiple upstream servers for, e.g., load balancing.
-pub struct UpstreamGroup {
+pub struct UpstreamCandidates {
   #[builder(setter(custom))]
   /// Upstream server(s)
-  pub upstream: Vec<Upstream>,
+  pub inner: Vec<Upstream>,
+
   #[builder(setter(custom), default)]
-  /// Path like "/path" in [[PathNameBytesExp]] associated with the upstream server(s)
-  pub path: PathNameBytesExp,
+  /// Path like "/path" in [[PathName]] associated with the upstream server(s)
+  pub path: PathName,
+
   #[builder(setter(custom), default)]
-  /// Path in [[PathNameBytesExp]] that will be used to replace the "path" part of incoming url
-  pub replace_path: Option<PathNameBytesExp>,
+  /// Path in [[PathName]] that will be used to replace the "path" part of incoming url
+  pub replace_path: Option<PathName>,
 
   #[builder(setter(custom), default)]
   /// Load balancing option
-  pub lb: LoadBalance,
+  pub load_balance: LoadBalance,
+
   #[builder(setter(custom), default)]
   /// Activated upstream options defined in [[UpstreamOption]]
-  pub opts: HashSet<UpstreamOption>,
+  pub options: HashSet<UpstreamOption>,
 }
 
-impl UpstreamGroupBuilder {
+impl UpstreamCandidatesBuilder {
+  /// Set the upstream server(s)
   pub fn upstream(&mut self, upstream_vec: &[Upstream]) -> &mut Self {
-    self.upstream = Some(upstream_vec.to_vec());
+    self.inner = Some(upstream_vec.to_vec());
     self
   }
+  /// Set the path like "/path" in [[PathName]] associated with the upstream server(s), default is "/"
   pub fn path(&mut self, v: &Option<String>) -> &mut Self {
     let path = match v {
-      Some(p) => p.to_path_name_vec(),
-      None => "/".to_path_name_vec(),
+      Some(p) => p.to_path_name(),
+      None => "/".to_path_name(),
     };
     self.path = Some(path);
     self
   }
+  /// Set the path in [[PathName]] that will be used to replace the "path" part of incoming url
   pub fn replace_path(&mut self, v: &Option<String>) -> &mut Self {
-    self.replace_path = Some(
-      v.to_owned()
-        .as_ref()
-        .map_or_else(|| None, |v| Some(v.to_path_name_vec())),
-    );
+    self.replace_path = Some(v.to_owned().as_ref().map_or_else(|| None, |v| Some(v.to_path_name())));
     self
   }
-  pub fn lb(
+  /// Set the load balancing option
+  pub fn load_balance(
     &mut self,
     v: &Option<String>,
     // upstream_num: &usize,
@@ -121,16 +183,21 @@ impl UpstreamGroupBuilder {
     let lb = if let Some(x) = v {
       match x.as_str() {
         lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
-        lb_opts::RANDOM => LoadBalance::Random(LbRandomBuilder::default().num_upstreams(upstream_num).build().unwrap()),
+        lb_opts::RANDOM => LoadBalance::Random(
+          LoadBalanceRandomBuilder::default()
+            .num_upstreams(upstream_num)
+            .build()
+            .unwrap(),
+        ),
         lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(
-          LbRoundRobinBuilder::default()
+          LoadBalanceRoundRobinBuilder::default()
             .num_upstreams(upstream_num)
             .build()
             .unwrap(),
         ),
         #[cfg(feature = "sticky-cookie")]
         lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
-          LbStickyRoundRobinBuilder::default()
+          LoadBalanceStickyBuilder::default()
             .num_upstreams(upstream_num)
             .sticky_config(_server_name, _path_opt)
             .upstream_maps(upstream_vec) // TODO:
@@ -145,10 +212,11 @@ impl UpstreamGroupBuilder {
     } else {
       LoadBalance::default()
     };
-    self.lb = Some(lb);
+    self.load_balance = Some(lb);
     self
   }
-  pub fn opts(&mut self, v: &Option<Vec<String>>) -> &mut Self {
+  /// Set the activated upstream options defined in [[UpstreamOption]]
+  pub fn options(&mut self, v: &Option<Vec<String>>) -> &mut Self {
     let opts = if let Some(opts) = v {
       opts
         .iter()
@@ -157,25 +225,22 @@ impl UpstreamGroupBuilder {
     } else {
       Default::default()
     };
-    self.opts = Some(opts);
+    self.options = Some(opts);
     self
   }
 }
 
-impl UpstreamGroup {
+impl UpstreamCandidates {
   /// Get an enabled option of load balancing [[LoadBalance]]
-  pub fn get(&self, context_to_lb: &Option<LbContext>) -> (Option<&Upstream>, Option<LbContext>) {
-    let pointer_to_upstream = self.lb.get_context(context_to_lb);
+  pub fn get(&self, context_to_lb: &Option<LoadBalanceContext>) -> (Option<&Upstream>, Option<LoadBalanceContext>) {
+    let pointer_to_upstream = self.load_balance.get_context(context_to_lb);
     debug!("Upstream of index {} is chosen.", pointer_to_upstream.ptr);
-    debug!("Context to LB (Cookie in Req): {:?}", context_to_lb);
+    debug!("Context to LB (Cookie in Request): {:?}", context_to_lb);
     debug!(
-      "Context from LB (Set-Cookie in Res): {:?}",
-      pointer_to_upstream.context_lb
+      "Context from LB (Set-Cookie in Response): {:?}",
+      pointer_to_upstream.context
     );
-    (
-      self.upstream.get(pointer_to_upstream.ptr),
-      pointer_to_upstream.context_lb,
-    )
+    (self.inner.get(pointer_to_upstream.ptr), pointer_to_upstream.context)
   }
 }
 

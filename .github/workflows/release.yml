@@ -44,35 +44,35 @@ jobs:
             platform: linux/arm64
             tags-suffix: "-s2n"
 
-          - target: "gnu"
-            build-feature: "-native-roots"
-            platform: linux/amd64
-            tags-suffix: "-native-roots"
+          # - target: "gnu"
+          #   build-feature: "-native-roots"
+          #   platform: linux/amd64
+          #   tags-suffix: "-native-roots"
 
-          - target: "gnu"
-            build-feature: "-native-roots"
-            platform: linux/arm64
-            tags-suffix: "-native-roots"
+          # - target: "gnu"
+          #   build-feature: "-native-roots"
+          #   platform: linux/arm64
+          #   tags-suffix: "-native-roots"
 
-          - target: "musl"
-            build-feature: "-native-roots"
-            platform: linux/amd64
-            tags-suffix: "-slim-native-roots"
+          # - target: "musl"
+          #   build-feature: "-native-roots"
+          #   platform: linux/amd64
+          #   tags-suffix: "-slim-native-roots"
 
-          - target: "musl"
-            build-feature: "-native-roots"
-            platform: linux/arm64
-            tags-suffix: "-slim-native-roots"
+          # - target: "musl"
+          #   build-feature: "-native-roots"
+          #   platform: linux/arm64
+          #   tags-suffix: "-slim-native-roots"
 
-          - target: "gnu"
-            build-feature: "-s2n-native-roots"
-            platform: linux/amd64
-            tags-suffix: "-s2n-native-roots"
+          # - target: "gnu"
+          #   build-feature: "-s2n-native-roots"
+          #   platform: linux/amd64
+          #   tags-suffix: "-s2n-native-roots"
 
-          - target: "gnu"
-            build-feature: "-s2n-native-roots"
-            platform: linux/arm64
-            tags-suffix: "-s2n-native-roots"
+          # - target: "gnu"
+          #   build-feature: "-s2n-native-roots"
+          #   platform: linux/arm64
+          #   tags-suffix: "-s2n-native-roots"
 
     steps:
       - run: "echo 'The relese triggering workflows passed'"
@@ -81,8 +81,8 @@ jobs:
         id: "set-env"
         run: |
           if [ ${{ matrix.platform }} == 'linux/amd64' ]; then PLATFORM_MAP="x86_64"; else PLATFORM_MAP="aarch64"; fi
-          if [ ${{ github.ref_name }} == 'develop' ]; then BUILD_NAME="-nightly"; else BUILD_NAME=""; fi
-          if [ ${{ github.ref_name }} == 'develop' ]; then BUILD_IMG="nightly"; else BUILD_IMG="latest"; fi
+          if [ ${{ github.ref_name == 'develop' && github.event.client_payload.pull_request.head == 'develop' && github.event.client_payload.pull_request.base == 'main' }} || ${{ github.ref_name == 'main' }}]; then BUILD_NAME=""; else BUILD_NAME="-nightly"; fi
+          if [ ${{ github.ref_name }} == 'main' ]; then BUILD_IMG="latest"; else BUILD_IMG="nightly"; fi
           echo "build_img=${BUILD_IMG}" >> $GITHUB_OUTPUT
           echo "target_name=rpxy${BUILD_NAME}-${PLATFORM_MAP}-unknown-linux-${{ matrix.target }}${{ matrix.build-feature }}" >> $GITHUB_OUTPUT
 
@@ -93,7 +93,7 @@ jobs:
           docker cp ${CONTAINER_ID}:/rpxy/bin/rpxy /tmp/${{ steps.set-env.outputs.target_name }}
 
       - name: "upload artifacts"
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.set-env.outputs.target_name }}
           path: "/tmp/${{ steps.set-env.outputs.target_name }}"
@@ -122,7 +122,7 @@ jobs:
 
       - name: download artifacts
         if: ${{ steps.regex-match.outputs.match != ''}}
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: /tmp/rpxy
 

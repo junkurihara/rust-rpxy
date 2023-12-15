@@ -1,25 +1,21 @@
 use super::{
   crypto_service::{CryptoReloader, ServerCrypto, ServerCryptoBase, SniServerCryptoMap},
-  proxy_main::{LocalExecutor, Proxy},
+  proxy_main::Proxy,
   socket::bind_tcp_socket,
 };
 use crate::{certs::CryptoSource, constants::*, error::*, log::*, utils::BytesName};
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use hyper::{client::connect::Connect, server::conn::Http};
+use hyper_util::{client::legacy::connect::Connect, rt::TokioIo, server::conn::auto::Builder as ConnectionBuilder};
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
 
-impl<T, U> Proxy<T, U>
+impl<U> Proxy<U>
 where
-  T: Connect + Clone + Sync + Send + 'static,
+  // T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
   // TCP Listener Service, i.e., http/2 and http/1.1
-  async fn listener_service(
-    &self,
-    server: Http<LocalExecutor>,
-    mut server_crypto_rx: ReloaderReceiver<ServerCryptoBase>,
-  ) -> Result<()> {
+  async fn listener_service(&self, mut server_crypto_rx: ReloaderReceiver<ServerCryptoBase>) -> Result<()> {
     let tcp_socket = bind_tcp_socket(&self.listening_on)?;
     let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
     info!("Start TCP proxy serving with HTTPS request for configured host names");
@@ -33,7 +29,6 @@ where
           }
           let (raw_stream, client_addr) = tcp_cnx.unwrap();
           let sc_map_inner = server_crypto_map.clone();
-          let server_clone = server.clone();
           let self_inner = self.clone();
 
           // spawns async handshake to avoid blocking thread by sequential handshake.
@@ -55,30 +50,27 @@ where
               return Err(RpxyError::Proxy(format!("No TLS serving app for {:?}", server_name.unwrap())));
             }
             let stream = match start.into_stream(server_crypto.unwrap().clone()).await {
-              Ok(s) => s,
+              Ok(s) => TokioIo::new(s),
               Err(e) => {
                 return Err(RpxyError::Proxy(format!("Failed to handshake TLS: {e}")));
               }
             };
-            self_inner.client_serve(stream, server_clone, client_addr, server_name_in_bytes);
+            self_inner.serve_connection(stream, client_addr, server_name_in_bytes);
             Ok(())
           };
 
           self.globals.runtime_handle.spawn( async move {
             // timeout is introduced to avoid get stuck here.
-            match timeout(
+            let Ok(v) = timeout(
               Duration::from_secs(TLS_HANDSHAKE_TIMEOUT_SEC),
               handshake_fut
-            ).await {
-              Ok(a) => {
-                if let Err(e) = a {
-                  error!("{}", e);
-                }
-              },
-              Err(e) => {
-                error!("Timeout to handshake TLS: {}", e);
-              }
+            ).await else {
+              error!("Timeout to handshake TLS");
+              return;
             };
+            if let Err(e) = v {
+              error!("{}", e);
+            }
           });
         }
         _ = server_crypto_rx.changed() => {
@@ -99,7 +91,7 @@ where
     Ok(()) as Result<()>
   }
 
-  pub async fn start_with_tls(self, server: Http<LocalExecutor>) -> Result<()> {
+  pub async fn start_with_tls(&self) -> Result<()> {
     let (cert_reloader_service, cert_reloader_rx) = ReloaderService::<CryptoReloader<U>, ServerCryptoBase>::new(
       &self.globals.clone(),
       CERTS_WATCH_DELAY_SECS,
@@ -114,7 +106,7 @@ where
         _= cert_reloader_service.start() => {
           error!("Cert service for TLS exited");
         },
-        _ = self.listener_service(server, cert_reloader_rx) => {
+        _ = self.listener_service(cert_reloader_rx) => {
           error!("TCP proxy service for TLS exited");
         },
         else => {
@@ -131,7 +123,7 @@ where
           _= cert_reloader_service.start() => {
             error!("Cert service for TLS exited");
           },
-          _ = self.listener_service(server, cert_reloader_rx.clone()) => {
+          _ = self.listener_service(cert_reloader_rx.clone()) => {
             error!("TCP proxy service for TLS exited");
           },
           _= self.listener_service_h3(cert_reloader_rx) => {
@@ -148,7 +140,7 @@ where
           _= cert_reloader_service.start() => {
             error!("Cert service for TLS exited");
           },
-          _ = self.listener_service(server, cert_reloader_rx) => {
+          _ = self.listener_service(cert_reloader_rx) => {
             error!("TCP proxy service for TLS exited");
           },
           else => {
