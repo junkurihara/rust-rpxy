@@ -4,3 +4,4 @@ bench/
 .private/
 .github/
 example-certs/
+legacy-lib/

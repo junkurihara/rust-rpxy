@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-pub type CacheResult<T> = std::result::Result<T, CacheError>;
+pub(crate) type CacheResult<T> = std::result::Result<T, CacheError>;
 
 /// Describes things that can go wrong in the Rpxy
 #[derive(Debug, Error)]
@@ -8,9 +8,6 @@ pub enum CacheError {
   // Cache errors,
   #[error("Invalid null request and/or response")]
   NullRequestOrResponse,
-
-  #[error("Failed to write byte buffer")]
-  FailedToWriteByteBufferForCache,
 
   #[error("Failed to acquire mutex lock for cache")]
   FailedToAcquiredMutexLockForCache,

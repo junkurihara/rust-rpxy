@@ -1,6 +1,6 @@
 [package]
 name = "rpxy"
-version = "0.7.0"
+version = "0.7.0-alpha.0"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -12,23 +12,25 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "cache"]
+default = ["http3-quinn", "cache", "native-tls-backend"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
+native-tls-backend = ["rpxy-lib/native-tls-backend"]
+# Not yet implemented
+rustls-backend = ["rpxy-lib/rustls-backend"]
 cache = ["rpxy-lib/cache"]
 native-roots = ["rpxy-lib/native-roots"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
-  "native-tls-backend",
 ] }
 
 anyhow = "1.0.75"
 rustc-hash = "1.1.0"
 serde = { version = "1.0.193", default-features = false, features = ["derive"] }
 derive_builder = "0.12.0"
-tokio = { version = "1.34.0", default-features = false, features = [
+tokio = { version = "1.35.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
