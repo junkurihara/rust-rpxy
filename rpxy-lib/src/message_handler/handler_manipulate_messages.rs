@@ -85,14 +85,14 @@ where
       }
     };
 
-    let uri = req.uri().to_string();
+    let original_uri = req.uri().to_string();
     let headers = req.headers_mut();
     // delete headers specified in header.connection
     remove_connection_header(headers);
     // delete hop headers including header.connection
     remove_hop_header(headers);
     // X-Forwarded-For
-    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &uri)?;
+    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &original_uri)?;
 
     // Add te: trailer if te_trailer
     if contains_te_trailers {
@@ -106,6 +106,7 @@ where
         .headers_mut()
         .insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
+    let original_host_header = req.headers().get(header::HOST).unwrap().clone();
 
     /////////////////////////////////////////////
     // Fix unique upstream destination since there could be multiple ones.
@@ -135,7 +136,7 @@ where
     // by default, host header is overwritten with upstream hostname
     override_host_header(headers, &upstream_chosen.uri)?;
     // apply upstream options to header
-    apply_upstream_options_to_header(headers, upstream_candidates)?;
+    apply_upstream_options_to_header(headers, &original_host_header, upstream_candidates)?;
 
     // update uri in request
     ensure!(

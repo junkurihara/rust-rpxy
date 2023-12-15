@@ -105,17 +105,18 @@ pub(super) fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &
 /// Apply options to request header, which are specified in the configuration
 pub(super) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
+  original_host_header: &HeaderValue,
   // _client_addr: &SocketAddr,
   upstream: &UpstreamCandidates,
   // _upstream_base_uri: &Uri,
 ) -> Result<()> {
   for opt in upstream.options.iter() {
     match opt {
-      UpstreamOption::DisableOverrideHost => {
-        // simply remove HOST header value
+      UpstreamOption::KeepOriginalHost => {
+        // revert hostname
         headers
-          .remove(header::HOST)
-          .ok_or_else(|| anyhow!("Failed to remove host header in disable_override_host option"))?;
+          .insert(header::HOST, original_host_header.to_owned())
+          .ok_or_else(|| anyhow!("Failed to revert host header in keep_original_host option"))?;
       }
       UpstreamOption::UpgradeInsecureRequests => {
         // add upgrade-insecure-requests in request header if not exist

@@ -135,7 +135,7 @@ impl RpxyCache {
           .map(|f| {
             if f.is_data() {
               let data_bytes = f.data_ref().unwrap().clone();
-              debug!("cache data bytes of {} bytes", data_bytes.len());
+              // debug!("cache data bytes of {} bytes", data_bytes.len());
               // We do not use stream-type buffering since it needs to lock file during operation.
               buf.extend(data_bytes.as_ref());
             }

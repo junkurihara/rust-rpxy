@@ -14,11 +14,11 @@ pub fn init_logger() {
 
   // This limits the logger to emits only proxy crate
   let pkg_name = env!("CARGO_PKG_NAME").replace('-', "_");
-  // let level_string = std::env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| "info".to_string());
-  // let filter_layer = EnvFilter::new(format!("{}={}", pkg_name, level_string));
-  let filter_layer = EnvFilter::try_from_default_env()
-    .unwrap_or_else(|_| EnvFilter::new("info"))
-    .add_directive(format!("{}=trace", pkg_name).parse().unwrap());
+  let level_string = std::env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| "info".to_string());
+  let filter_layer = EnvFilter::new(format!("{}={}", pkg_name, level_string));
+  // let filter_layer = EnvFilter::try_from_default_env()
+  //   .unwrap_or_else(|_| EnvFilter::new("info"))
+  //   .add_directive(format!("{}=trace", pkg_name).parse().unwrap());
 
   tracing_subscriber::registry()
     .with(format_layer)

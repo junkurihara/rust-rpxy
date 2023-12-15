@@ -168,11 +168,11 @@ where
 
           if frame.is_data() {
             let data = frame.into_data().unwrap_or_default();
-            debug!("Write data to HTTP/3 stream");
+            // debug!("Write data to HTTP/3 stream");
             send_stream.send_data(data).await?;
           } else if frame.is_trailers() {
             let trailers = frame.into_trailers().unwrap_or_default();
-            debug!("Write trailer to HTTP/3 stream");
+            // debug!("Write trailer to HTTP/3 stream");
             send_stream.send_trailers(trailers).await?;
           }
         }
