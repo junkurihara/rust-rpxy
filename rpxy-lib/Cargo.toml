@@ -51,7 +51,7 @@ thiserror = "1.0.51"
 # http for both server and client
 http = "1.0.0"
 http-body-util = "0.1.0"
-hyper = { version = "1.0.1", default-features = false }
+hyper = { version = "1.1.0", default-features = false }
 # hyper-util = { version = "0.1.1", features = ["full"] }
 hyper-util = { git = "https://github.com/junkurihara/hyper-util", features = [
   "full",
