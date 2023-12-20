@@ -55,7 +55,7 @@ hyper = { version = "1.1.0", default-features = false }
 # hyper-util = { version = "0.1.1", features = ["full"] }
 hyper-util = { git = "https://github.com/junkurihara/hyper-util", features = [
   "full",
-], rev = "61724d117163adf2195c701fa8e06f5c22c0a64d" }
+], rev = "85a92f3da3c1b8b0d20c71f8d9a7063f98ab4eb9" }
 futures-util = { version = "0.3.29", default-features = false }
 futures-channel = { version = "0.3.29", default-features = false }
 
@@ -63,7 +63,7 @@ futures-channel = { version = "0.3.29", default-features = false }
 hyper-tls = { git = "https://github.com/junkurihara/hyper-tls", features = [
   "alpn",
   "vendored",
-], rev = "6faeba09c7c881f362b84f84ef1f292b04eabea9", optional = true }
+], rev = "c4e94dd3a5d2b97ad3c972d3bdc8e4f8b9925e72", optional = true }
 # hyper-tls = { version = "0.6.0", features = [
 #   "alpn",
 #   "vendored",
