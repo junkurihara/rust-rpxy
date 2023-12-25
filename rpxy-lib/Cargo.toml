@@ -32,8 +32,8 @@ rand = "0.8.5"
 rustc-hash = "1.1.0"
 bytes = "1.5.0"
 derive_builder = "0.12.0"
-futures = { version = "0.3.29", features = ["alloc", "async-await"] }
-tokio = { version = "1.35.0", default-features = false, features = [
+futures = { version = "0.3.30", features = ["alloc", "async-await"] }
+tokio = { version = "1.35.1", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -55,7 +55,7 @@ hyper = { version = "1.1.0", default-features = false }
 # hyper-util = { version = "0.1.1", features = ["full"] }
 hyper-util = { git = "https://github.com/junkurihara/hyper-util", features = [
   "full",
-], rev = "85a92f3da3c1b8b0d20c71f8d9a7063f98ab4eb9" }
+], rev = "324408be9666670b47bf84180a4306fdd649cffc" }
 futures-util = { version = "0.3.29", default-features = false }
 futures-channel = { version = "0.3.29", default-features = false }
 
@@ -63,7 +63,7 @@ futures-channel = { version = "0.3.29", default-features = false }
 hyper-tls = { git = "https://github.com/junkurihara/hyper-tls", features = [
   "alpn",
   "vendored",
-], rev = "c4e94dd3a5d2b97ad3c972d3bdc8e4f8b9925e72", optional = true }
+], rev = "17478f86118ca5b1dba3c76b660f4e7e0f17c020", optional = true }
 # hyper-tls = { version = "0.6.0", features = [
 #   "alpn",
 #   "vendored",
