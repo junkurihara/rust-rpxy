@@ -52,10 +52,10 @@ thiserror = "1.0.56"
 http = "1.0.0"
 http-body-util = "0.1.0"
 hyper = { version = "1.1.0", default-features = false }
-# hyper-util = { version = "0.1.1", features = ["full"] }
+# hyper-util = { version = "0.1.2", features = ["full"] }
 hyper-util = { git = "https://github.com/junkurihara/hyper-util", features = [
   "full",
-], rev = "324408be9666670b47bf84180a4306fdd649cffc" }
+], rev = "784109db021d076b0822ea5344a315e530831973" }
 futures-util = { version = "0.3.30", default-features = false }
 futures-channel = { version = "0.3.30", default-features = false }
 
@@ -63,7 +63,7 @@ futures-channel = { version = "0.3.30", default-features = false }
 hyper-tls = { git = "https://github.com/junkurihara/hyper-tls", features = [
   "alpn",
   "vendored",
-], rev = "17478f86118ca5b1dba3c76b660f4e7e0f17c020", optional = true }
+], rev = "33dafc7251866260b66b0fc93c09f04f1923827f", optional = true }
 # hyper-tls = { version = "0.6.0", features = [
 #   "alpn",
 #   "vendored",
@@ -109,7 +109,7 @@ chrono = { version = "0.4.31", default-features = false, features = [
   "alloc",
   "clock",
 ], optional = true }
-base64 = { version = "0.21.5", optional = true }
+base64 = { version = "0.21.6", optional = true }
 
 
 [dev-dependencies]

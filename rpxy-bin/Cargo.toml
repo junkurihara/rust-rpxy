@@ -42,7 +42,7 @@ rustls-pemfile = "1.0.4"
 mimalloc = { version = "*", default-features = false }
 
 # config
-clap = { version = "4.4.13", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.4.14", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8.8", default-features = false, features = ["parse"] }
 hot_reload = "0.1.4"
 
