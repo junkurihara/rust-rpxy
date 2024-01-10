@@ -1,3 +1,4 @@
+#[allow(unused)]
 #[cfg(feature = "sticky-cookie")]
 pub use super::{
   load_balance_sticky::{LoadBalanceSticky, LoadBalanceStickyBuilder},

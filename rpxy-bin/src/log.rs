@@ -1,3 +1,4 @@
+#[allow(unused)]
 pub use tracing::{debug, error, info, warn};
 
 pub fn init_logger() {
