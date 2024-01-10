@@ -99,14 +99,14 @@ where
       headers.insert(header::TE, HeaderValue::from_bytes("trailers".as_bytes()).unwrap());
     }
 
-    // add "host" header of original server_name if not exist (default)
+    // by default, add "host" header of original server_name if not exist
     if req.headers().get(header::HOST).is_none() {
       let org_host = req.uri().host().ok_or_else(|| anyhow!("Invalid request"))?.to_owned();
       req
         .headers_mut()
         .insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
-    let original_host_header = req.headers().get(header::HOST).unwrap().clone();
+    println!("{:?}", req.headers().get(header::HOST));
 
     /////////////////////////////////////////////
     // Fix unique upstream destination since there could be multiple ones.
@@ -133,10 +133,8 @@ where
 
     // apply upstream-specific headers given in upstream_option
     let headers = req.headers_mut();
-    // by default, host header is overwritten with upstream hostname
-    override_host_header(headers, &upstream_chosen.uri)?;
     // apply upstream options to header
-    apply_upstream_options_to_header(headers, &original_host_header, upstream_candidates)?;
+    apply_upstream_options_to_header(headers, &upstream_chosen.uri, upstream_candidates)?;
 
     // update uri in request
     ensure!(
@@ -181,7 +179,6 @@ where
       // can update request line i.e., http version, only if not upgrade (http 1.1)
       update_request_line(req, upstream_chosen, upstream_candidates)?;
     }
-
 
     Ok(context)
   }

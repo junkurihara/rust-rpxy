@@ -3,7 +3,7 @@
 ## 0.7.0  (unreleased)
 
 - Breaking: `hyper`-1.0 for both server and client modules.
-- Breaking: Remove `override_host` option in upstream options. Add a reverse option, i.e., `keep_original_host`. That is, `rpxy` always override the host header by the upstream hostname (backend uri host name) by default. If this reverse option specified, original `host` header is maintained or added from the value of url request line.
+- Breaking: Remove `override_host` option in upstream options. Add a reverse option, i.e., `keep_original_host`, and the similar option `set_upstream_host`. While `keep_original_host` can be explicitly specified, `rpxy` keeps the original `host` given by the incoming request by default. Then, the original `host` header is maintained or added from the value of url request line. If `host` header needs to be overridden with the upstream host name (backend uri's host name), `set_upstream_host` has to be set. If both of `set_upstream_host` and `keep_original_host` are set, `keep_original_host` is prioritized since it is explicitly specified.
 - Breaking: Introduced `native-tls-backend` feature to use the native TLS engine to access backend applications.
 - Redesigned: Cache structure is totally redesigned with more memory-efficient way to read from cache file, and more secure way to strongly bind memory-objects with files with hash values.
 - Redesigned: HTTP body handling flow is also redesigned with more memory-and-time efficient techniques without putting the whole objects on memory by using `futures::stream::Stream` and `futures::channel::mpsc`
