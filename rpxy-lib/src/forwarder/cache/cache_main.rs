@@ -46,6 +46,7 @@ pub(crate) struct RpxyCache {
 }
 
 impl RpxyCache {
+  #[allow(unused)]
   /// Generate cache storage
   pub(crate) async fn new(globals: &Globals) -> Option<Self> {
     if !globals.proxy_config.cache_enabled {
@@ -254,6 +255,7 @@ struct FileStore {
   inner: Arc<RwLock<FileStoreInner>>,
 }
 impl FileStore {
+  #[allow(unused)]
   /// Build manager
   async fn new(runtime_handle: &tokio::runtime::Handle) -> Self {
     Self {
@@ -300,6 +302,7 @@ struct FileStoreInner {
 }
 
 impl FileStoreInner {
+  #[allow(unused)]
   /// Build new cache file manager.
   /// This first creates cache file dir if not exists, and cleans up the file inside the directory.
   /// TODO: Persistent cache is really difficult. `sqlite` or something like that is needed.
@@ -436,6 +439,7 @@ struct LruCacheManager {
 }
 
 impl LruCacheManager {
+  #[allow(unused)]
   /// Build LruCache
   fn new(cache_max_entry: usize) -> Self {
     Self {

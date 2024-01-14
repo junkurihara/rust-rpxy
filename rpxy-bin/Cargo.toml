@@ -1,6 +1,6 @@
 [package]
 name = "rpxy"
-version = "0.7.0-alpha.1"
+version = "0.7.0-alpha.2"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -12,14 +12,13 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "cache", "native-tls-backend"]
+default = ["http3-quinn", "cache", "rustls-backend"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
-# Not yet implemented
 rustls-backend = ["rpxy-lib/rustls-backend"]
+rustls-backend-webpki = ["rpxy-lib/rustls-backend-webpki"]
 cache = ["rpxy-lib/cache"]
-native-roots = ["rpxy-lib/native-roots"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
@@ -42,7 +41,7 @@ rustls-pemfile = "1.0.4"
 mimalloc = { version = "*", default-features = false }
 
 # config
-clap = { version = "4.4.14", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.4.16", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8.8", default-features = false, features = ["parse"] }
 hot_reload = "0.1.4"
 
