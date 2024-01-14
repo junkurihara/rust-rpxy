@@ -25,7 +25,7 @@ cache = ["http-cache-semantics", "lru", "sha2", "base64"]
 sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
 rustls-backend = ["hyper-rustls"]
-rustls-backend-webpki = ["rustls-backend", "hyper-rustls/webpki-tokio"]
+webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
 
 [dependencies]
 rand = "0.8.5"
