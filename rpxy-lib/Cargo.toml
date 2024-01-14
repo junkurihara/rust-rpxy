@@ -1,6 +1,6 @@
 [package]
 name = "rpxy-lib"
-version = "0.7.0-alpha.1"
+version = "0.7.0-alpha.2"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -12,7 +12,7 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "sticky-cookie", "cache", "native-tls-backend"]
+default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
 http3-quinn = ["socket2", "quinn", "h3", "h3-quinn"]
 http3-s2n = [
   "h3",
@@ -24,8 +24,8 @@ http3-s2n = [
 cache = ["http-cache-semantics", "lru", "sha2", "base64"]
 sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
-rustls-backend = [] # not implemented yet
-native-roots = [] #"hyper-rustls/native-tokio"] # not implemented yet
+rustls-backend = ["hyper-rustls"]
+webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
 
 [dependencies]
 rand = "0.8.5"
@@ -52,28 +52,21 @@ thiserror = "1.0.56"
 http = "1.0.0"
 http-body-util = "0.1.0"
 hyper = { version = "1.1.0", default-features = false }
-# hyper-util = { version = "0.1.2", features = ["full"] }
-hyper-util = { git = "https://github.com/junkurihara/hyper-util", features = [
-  "full",
-], rev = "784109db021d076b0822ea5344a315e530831973" }
+hyper-util = { version = "0.1.2", features = ["full"] }
 futures-util = { version = "0.3.30", default-features = false }
 futures-channel = { version = "0.3.30", default-features = false }
 
 # http client for upstream
-hyper-tls = { git = "https://github.com/junkurihara/hyper-tls", features = [
+hyper-tls = { version = "0.6.0", features = [
   "alpn",
   "vendored",
-], rev = "33dafc7251866260b66b0fc93c09f04f1923827f", optional = true }
-# hyper-tls = { version = "0.6.0", features = [
-#   "alpn",
-#   "vendored",
-# ], optional = true }
-# hyper-rustls = { version = "0.24.2", default-features = false, features = [
-#   "tokio-runtime",
-#   "webpki-tokio",
-#   "http1",
-#   "http2",
-# ] }
+], optional = true }
+hyper-rustls = { version = "0.26.0", default-features = false, features = [
+  "ring",
+  "native-tokio",
+  "http1",
+  "http2",
+], optional = true }
 
 # tls and cert management for server
 hot_reload = "0.1.4"
@@ -109,7 +102,7 @@ chrono = { version = "0.4.31", default-features = false, features = [
   "alloc",
   "clock",
 ], optional = true }
-base64 = { version = "0.21.6", optional = true }
+base64 = { version = "0.21.7", optional = true }
 
 
 [dev-dependencies]

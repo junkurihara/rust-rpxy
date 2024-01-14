@@ -1,3 +1,4 @@
+#[allow(unused)]
 use crate::{
   error::{RpxyError, RpxyResult},
   globals::Globals,
@@ -192,7 +193,7 @@ where
 
 #[cfg(feature = "rustls-backend")]
 /// Build forwarder with hyper-rustls (rustls)
-impl<B1> Forwarder<HttpConnector, B1>
+impl<B1> Forwarder<hyper_rustls::HttpsConnector<HttpConnector>, B1>
 where
   B1: Body + Send + Unpin + 'static,
   <B1 as Body>::Data: Send,
@@ -200,26 +201,32 @@ where
 {
   /// Build forwarder
   pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
-    todo!("Not implemented yet. Please use native-tls-backend feature for now.");
-    // #[cfg(feature = "native-roots")]
-    // let builder = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots();
-    // #[cfg(feature = "native-roots")]
-    // let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots();
-    // #[cfg(feature = "native-roots")]
-    // info!("Native cert store is used for the connection to backend applications");
+    // build hyper client with rustls and webpki, only https is allowed
+    #[cfg(feature = "rustls-backend-webpki")]
+    let builder = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
+    #[cfg(feature = "rustls-backend-webpki")]
+    let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
+    #[cfg(feature = "rustls-backend-webpki")]
+    info!("Mozilla WebPKI root certs with rustls is used for the connection to backend applications");
 
-    // #[cfg(not(feature = "native-roots"))]
-    // let builder = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
-    // #[cfg(not(feature = "native-roots"))]
-    // let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
-    // #[cfg(not(feature = "native-roots"))]
-    // info!("Mozilla WebPKI root certs is used for the connection to backend applications");
+    #[cfg(not(feature = "rustls-backend-webpki"))]
+    let builder = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots()?;
+    #[cfg(not(feature = "rustls-backend-webpki"))]
+    let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots()?;
+    #[cfg(not(feature = "rustls-backend-webpki"))]
+    info!("Native cert store with rustls is used for the connection to backend applications");
 
-    // let connector = builder.https_or_http().enable_http1().enable_http2().build();
-    // let connector_h2 = builder_h2.https_or_http().enable_http2().build();
+    let connector = builder.https_or_http().enable_all_versions().build();
+    let connector_h2 = builder_h2.https_or_http().enable_http2().build();
+    let inner = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone())).build::<_, B1>(connector);
+    let inner_h2 = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone())).build::<_, B1>(connector_h2);
 
-    // let inner = Client::builder().build::<_, Body>(connector);
-    // let inner_h2 = Client::builder().http2_only(true).build::<_, Body>(connector_h2);
+    Ok(Self {
+      inner,
+      inner_h2,
+      #[cfg(feature = "cache")]
+      cache: RpxyCache::new(_globals).await,
+    })
   }
 }
 
