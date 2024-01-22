@@ -217,7 +217,7 @@ impl Application {
       let inner = CryptoFileSourceBuilder::default()
         .tls_cert_path(tls.tls_cert_path.as_ref().unwrap())
         .tls_cert_key_path(tls.tls_cert_key_path.as_ref().unwrap())
-        .client_ca_cert_path(&tls.client_ca_cert_path)
+        .client_ca_cert_path(tls.client_ca_cert_path.as_deref())
         .build()?;
 
       let https_redirection = if tls.https_redirection.is_none() {

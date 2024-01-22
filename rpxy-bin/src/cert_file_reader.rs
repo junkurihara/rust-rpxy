@@ -8,7 +8,7 @@ use rpxy_lib::{
 use std::{
   fs::File,
   io::{self, BufReader, Cursor, Read},
-  path::PathBuf,
+  path::{Path, PathBuf},
 };
 
 #[derive(Builder, Debug, Clone)]
@@ -28,16 +28,16 @@ pub struct CryptoFileSource {
 }
 
 impl CryptoFileSourceBuilder {
-  pub fn tls_cert_path(&mut self, v: &str) -> &mut Self {
-    self.tls_cert_path = Some(PathBuf::from(v));
+  pub fn tls_cert_path<T: AsRef<Path>>(&mut self, v: T) -> &mut Self {
+    self.tls_cert_path = Some(v.as_ref().to_path_buf());
     self
   }
-  pub fn tls_cert_key_path(&mut self, v: &str) -> &mut Self {
-    self.tls_cert_key_path = Some(PathBuf::from(v));
+  pub fn tls_cert_key_path<T: AsRef<Path>>(&mut self, v: T) -> &mut Self {
+    self.tls_cert_key_path = Some(v.as_ref().to_path_buf());
     self
   }
-  pub fn client_ca_cert_path(&mut self, v: &Option<String>) -> &mut Self {
-    self.client_ca_cert_path = Some(v.to_owned().as_ref().map(PathBuf::from));
+  pub fn client_ca_cert_path<T: AsRef<Path>>(&mut self, v: Option<T>) -> &mut Self {
+    self.client_ca_cert_path = Some(v.map(|p| p.as_ref().to_path_buf()));
     self
   }
 }
@@ -167,11 +167,11 @@ mod tests {
   async fn read_server_crt_key_files_with_client_ca_crt() {
     let tls_cert_path = "../example-certs/server.crt";
     let tls_cert_key_path = "../example-certs/server.key";
-    let client_ca_cert_path = Some("../example-certs/client.ca.crt".to_string());
+    let client_ca_cert_path = Some("../example-certs/client.ca.crt");
     let crypto_file_source = CryptoFileSourceBuilder::default()
       .tls_cert_key_path(tls_cert_key_path)
       .tls_cert_path(tls_cert_path)
-      .client_ca_cert_path(&client_ca_cert_path)
+      .client_ca_cert_path(client_ca_cert_path)
       .build();
     assert!(crypto_file_source.is_ok());
 
