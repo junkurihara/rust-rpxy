@@ -133,7 +133,9 @@ Please enable native-tls-backend or rustls-backend feature to enable TLS support
     );
     let executor = LocalExecutor::new(_globals.runtime_handle.clone());
     let mut http = HttpConnector::new();
+    http.enforce_http(true);
     http.set_reuse_address(true);
+    http.set_keepalive(Some(_globals.proxy_config.upstream_idle_timeout));
     let inner = Client::builder(executor).build::<_, B>(http);
     let inner_h2 = inner.clone();
 
@@ -216,8 +218,16 @@ where
     #[cfg(not(feature = "rustls-backend-webpki"))]
     info!("Native cert store with rustls is used for the connection to backend applications");
 
-    let connector = builder.https_or_http().enable_all_versions().build();
-    let connector_h2 = builder_h2.https_or_http().enable_http2().build();
+    let mut http = HttpConnector::new();
+    http.enforce_http(false);
+    http.set_reuse_address(true);
+    http.set_keepalive(Some(_globals.proxy_config.upstream_idle_timeout));
+
+    let connector = builder
+      .https_or_http()
+      .enable_all_versions()
+      .wrap_connector(http.clone());
+    let connector_h2 = builder_h2.https_or_http().enable_http2().wrap_connector(http);
     let inner = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone())).build::<_, B1>(connector);
     let inner_h2 = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone())).build::<_, B1>(connector_h2);
 

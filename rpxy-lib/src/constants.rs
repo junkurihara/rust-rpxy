@@ -12,7 +12,7 @@ pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 pub const CERTS_WATCH_DELAY_SECS: u32 = 60;
 pub const LOAD_CERTS_ONLY_WHEN_UPDATED: bool = true;
 
-pub const CONNECTION_TIMEOUT_SEC: u64 = 30; // timeout to serve a connection. this might limits the max length of response.
+pub const CONNECTION_TIMEOUT_SEC: u64 = 60; // timeout to serve a connection, total time of receive request, serve, and send response. this might limits the max length of response.
 
 // #[cfg(feature = "http3")]
 // pub const H3_RESPONSE_BUF_SIZE: usize = 65_536; // 64KB
