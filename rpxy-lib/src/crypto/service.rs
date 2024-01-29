@@ -111,7 +111,8 @@ impl ServerCryptoBase {
         // add client certificate if specified
         match certs_and_keys.parse_client_ca_certs() {
           Ok((owned_trust_anchors, _subject_key_ids)) => {
-            client_ca_roots_local.add_trust_anchors(owned_trust_anchors.into_iter());
+            client_ca_roots_local.extend(owned_trust_anchors);
+            // client_ca_roots_local.add_trust_anchors(owned_trust_anchors.into_iter());
           }
           Err(e) => {
             warn!(
@@ -128,14 +129,12 @@ impl ServerCryptoBase {
         #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
         {
           ServerConfig::builder()
-            .with_safe_defaults()
             .with_no_client_auth()
             .with_cert_resolver(Arc::new(resolver_local))
         }
         #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
         {
           let mut sc = ServerConfig::builder()
-            .with_safe_defaults()
             .with_no_client_auth()
             .with_cert_resolver(Arc::new(resolver_local));
           sc.alpn_protocols = vec![b"h3".to_vec(), b"hq-29".to_vec()]; // TODO: remove hq-29 later?
@@ -144,10 +143,20 @@ impl ServerCryptoBase {
       } else {
         // with client auth, enable only http1.1 and 2
         // let client_certs_verifier = rustls::server::AllowAnyAnonymousOrAuthenticatedClient::new(client_ca_roots);
-        let client_certs_verifier = rustls::server::AllowAnyAuthenticatedClient::new(client_ca_roots_local);
+        let client_certs_verifier =
+          match rustls::server::WebPkiClientVerifier::builder(Arc::new(client_ca_roots_local)).build() {
+            Ok(v) => v,
+            Err(e) => {
+              warn!(
+                "Failed to build client CA certificate verifier for {}: {}",
+                server_name.as_str(),
+                e
+              );
+              continue;
+            }
+          };
         ServerConfig::builder()
-          .with_safe_defaults()
-          .with_client_cert_verifier(Arc::new(client_certs_verifier))
+          .with_client_cert_verifier(client_certs_verifier)
           .with_cert_resolver(Arc::new(resolver_local))
       };
       server_config_local.alpn_protocols.push(b"h2".to_vec());
@@ -185,7 +194,6 @@ impl ServerCryptoBase {
 
     //////////////
     let mut server_crypto_global = ServerConfig::builder()
-      .with_safe_defaults()
       .with_no_client_auth()
       .with_cert_resolver(Arc::new(resolver_global));
 
