@@ -7,6 +7,7 @@ use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, TlsCo
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
 use std::{fs, net::SocketAddr};
+use tokio::time::Duration;
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct ConfigToml {
@@ -48,6 +49,7 @@ pub struct Experimental {
   #[cfg(feature = "cache")]
   pub cache: Option<CacheOption>,
   pub ignore_sni_consistency: Option<bool>,
+  pub connection_handling_timeout: Option<u64>,
 }
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
@@ -162,7 +164,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
             if x == 0u64 {
               proxy_config.h3_max_idle_timeout = None;
             } else {
-              proxy_config.h3_max_idle_timeout = Some(tokio::time::Duration::from_secs(x))
+              proxy_config.h3_max_idle_timeout = Some(Duration::from_secs(x))
             }
           }
         }
@@ -170,6 +172,14 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 
       if let Some(ignore) = exp.ignore_sni_consistency {
         proxy_config.sni_consistency = !ignore;
+      }
+
+      if let Some(timeout) = exp.connection_handling_timeout {
+        if timeout == 0u64 {
+          proxy_config.connection_handling_timeout = Duration::from_secs(u64::MAX);
+        } else {
+          proxy_config.connection_handling_timeout = Duration::from_secs(timeout);
+        }
       }
 
       #[cfg(feature = "cache")]

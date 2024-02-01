@@ -98,6 +98,11 @@ reverse_proxy = [{ upstream = [{ location = 'www.google.com', tls = true }] }]
 # We should note that this strongly depends on the client implementation.
 ignore_sni_consistency = false
 
+# Force connection handling timeout regardless of the connection status, i.e., idle or not.
+# 0 represents an infinite timeout. [default: 0]
+# Note that idel and header read timeouts are always specified independently of this.
+connection_handling_timeout = 0 # sec
+
 # If this specified, h3 is enabled
 [experimental.h3]
 alt_svc_max_age = 3600             # sec
