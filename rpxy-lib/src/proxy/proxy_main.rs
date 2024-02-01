@@ -1,6 +1,6 @@
 use super::socket::bind_tcp_socket;
 use crate::{
-  constants::{CONNECTION_TIMEOUT_SEC, TLS_HANDSHAKE_TIMEOUT_SEC},
+  constants::TLS_HANDSHAKE_TIMEOUT_SEC,
   crypto::{CryptoSource, ServerCrypto, SniServerCryptoMap},
   error::*,
   globals::Globals,
@@ -88,9 +88,11 @@ where
     let message_handler_clone = self.message_handler.clone();
     let tls_enabled = self.tls_enabled;
     let listening_on = self.listening_on;
+    let handling_timeout = self.globals.proxy_config.connection_handling_timeout;
+
     self.globals.runtime_handle.clone().spawn(async move {
       timeout(
-        Duration::from_secs(CONNECTION_TIMEOUT_SEC) + Duration::from_secs(1), // just in case...
+        handling_timeout,
         server_clone.serve_connection_with_upgrades(
           stream,
           service_fn(move |req: Request<Incoming>| {

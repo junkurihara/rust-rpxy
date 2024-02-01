@@ -1,6 +1,5 @@
 use super::proxy_main::Proxy;
 use crate::{
-  constants::CONNECTION_TIMEOUT_SEC,
   crypto::CryptoSource,
   error::*,
   hyper_ext::body::{IncomingLike, RequestBody},
@@ -11,7 +10,7 @@ use bytes::{Buf, Bytes};
 use http::{Request, Response};
 use http_body_util::BodyExt;
 use hyper_util::client::legacy::connect::Connect;
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
 #[cfg(feature = "http3-quinn")]
 use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
@@ -72,7 +71,7 @@ where
           let tls_server_name_inner = tls_server_name.clone();
           self.globals.runtime_handle.spawn(async move {
             if let Err(e) = tokio::time::timeout(
-              Duration::from_secs(CONNECTION_TIMEOUT_SEC + 1), // just in case...
+              self_inner.globals.proxy_config.connection_handling_timeout,
               self_inner.h3_serve_stream(req, stream, client_addr, tls_server_name_inner),
             )
             .await
