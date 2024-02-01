@@ -8,6 +8,7 @@
 - Breaking: Changed the policy of the default cert store from `webpki` to the system-native store. Thus we terminated the feature `native-roots` and introduced `webpki-roots` feature to use `webpki` root cert store.
 - Redesigned: Cache structure is totally redesigned with more memory-efficient way to read from cache file, and more secure way to strongly bind memory-objects with files with hash values.
 - Redesigned: HTTP body handling flow is also redesigned with more memory-and-time efficient techniques without putting the whole objects on memory by using `futures::stream::Stream` and `futures::channel::mpsc`
+- Feat: Allow to disable/enable forced-connection-timeout regardless of connection status (idle or not). [default: disabled]
 - Refactor: lots of minor improvements
 
 ## 0.6.2
