@@ -1,13 +1,14 @@
 [package]
 name = "rpxy"
-version = "0.7.0-alpha.4"
-authors = ["Jun Kurihara"]
-homepage = "https://github.com/junkurihara/rust-rpxy"
-repository = "https://github.com/junkurihara/rust-rpxy"
-license = "MIT"
-readme = "../README.md"
-edition = "2021"
-publish = false
+description = "`rpxy`: a simple and ultrafast http reverse proxy"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,7 +29,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 anyhow = "1.0.79"
 rustc-hash = "1.1.0"
 serde = { version = "1.0.196", default-features = false, features = ["derive"] }
-derive_builder = "0.13.1"
+derive_builder = "0.20.0"
 tokio = { version = "1.36.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
