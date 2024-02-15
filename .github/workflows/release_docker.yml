@@ -2,6 +2,7 @@ name: Release - Build and publish docker, and trigger package release
 on:
   push:
     branches:
+      - "feat/*"
       - "develop"
   pull_request:
     types: [closed]
@@ -44,7 +45,7 @@ jobs:
           - target: "s2n"
             dockerfile: ./docker/Dockerfile
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache"
+              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,rustls-backend"
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n"
@@ -53,42 +54,42 @@ jobs:
               jqtype/rpxy:s2n
               ghcr.io/junkurihara/rust-rpxy:s2n
 
-          - target: "native-roots"
+          - target: "webpki-roots"
             dockerfile: ./docker/Dockerfile
             platforms: linux/amd64,linux/arm64
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,native-roots"
-            tags-suffix: "-native-roots"
+              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots"
+            tags-suffix: "-webpki-roots"
             # Aliases must be used only for release builds
             aliases: |
-              jqtype/rpxy:native-roots
-              ghcr.io/junkurihara/rust-rpxy:native-roots
+              jqtype/rpxy:webpki-roots
+              ghcr.io/junkurihara/rust-rpxy:webpki-roots
 
-          - target: "slim-native-roots"
+          - target: "slim-webpki-roots"
             dockerfile: ./docker/Dockerfile-slim
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,native-roots"
+              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots"
             build-contexts: |
               messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
               messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
             platforms: linux/amd64,linux/arm64
-            tags-suffix: "-slim-native-roots"
+            tags-suffix: "-slim-webpki-roots"
             # Aliases must be used only for release builds
             aliases: |
-              jqtype/rpxy:slim-native-roots
-              ghcr.io/junkurihara/rust-rpxy:slim-native-roots
+              jqtype/rpxy:slim-webpki-roots
+              ghcr.io/junkurihara/rust-rpxy:slim-webpki-roots
 
-          - target: "s2n-native-roots"
+          - target: "s2n-webpki-roots"
             dockerfile: ./docker/Dockerfile
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,native-roots"
+              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,webpki-roots"
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
             platforms: linux/amd64,linux/arm64
-            tags-suffix: "-s2n-native-roots"
+            tags-suffix: "-s2n-webpki-roots"
             # Aliases must be used only for release builds
             aliases: |
-              jqtype/rpxy:s2n-native-roots
-              ghcr.io/junkurihara/rust-rpxy:s2n-native-roots
+              jqtype/rpxy:s2n-webpki-roots
+              ghcr.io/junkurihara/rust-rpxy:s2n-webpki-roots
 
     steps:
       - name: Checkout
@@ -135,6 +136,23 @@ jobs:
       #     platforms: linux/amd64
       #     labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Unstable build and push from develop branch
+        if: ${{ startsWith(github.ref_name, 'feat/') && (github.event_name == 'push') }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          build-args: ${{ matrix.build-args }}
+          push: true
+          tags: |
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:unstable${{ matrix.tags-suffix }}
+            ${{ env.DH_REGISTRY_NAME }}:unstable${{ matrix.tags-suffix }}
+          build-contexts: ${{ matrix.build-contexts }}
+          file: ${{ matrix.dockerfile }}
+          cache-from: type=gha,scope=rpxy-unstable-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=rpxy-unstable-${{ matrix.target }}
+          platforms: linux/amd64
+          labels: ${{ steps.meta.outputs.labels }}
+
       - name: Nightly build and push from develop branch
         if: ${{ (github.ref_name == 'develop') && (github.event_name == 'push') }}
         uses: docker/build-push-action@v5
@@ -176,7 +194,7 @@ jobs:
     needs: build_and_push
     steps:
       - name: Repository dispatch for release
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
           event-type: release-event
           client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "pull_request": { "title": "${{ github.event.pull_request.title }}", "body": ${{ toJson(github.event.pull_request.body) }}, "number": "${{ github.event.pull_request.number }}", "head": "${{ github.event.pull_request.head.ref }}", "base": "${{ github.event.pull_request.base.ref}}"}}'

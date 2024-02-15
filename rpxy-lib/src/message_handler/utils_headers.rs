@@ -1,26 +1,27 @@
-#[cfg(feature = "sticky-cookie")]
-use crate::backend::{LbContext, StickyCookie, StickyCookieValue};
-use crate::backend::{UpstreamGroup, UpstreamOption};
-
-use crate::{error::*, log::*, utils::*};
-use bytes::BufMut;
-use hyper::{
-  header::{self, HeaderMap, HeaderName, HeaderValue},
-  Uri,
+use super::canonical_address::ToCanonical;
+use crate::{
+  backend::{UpstreamCandidates, UpstreamOption},
+  log::*,
 };
+use anyhow::{anyhow, ensure, Result};
+use bytes::BufMut;
+use http::{header, HeaderMap, HeaderName, HeaderValue, Uri};
 use std::{borrow::Cow, net::SocketAddr};
 
-////////////////////////////////////////////////////
-// Functions to manipulate headers
+#[cfg(feature = "sticky-cookie")]
+use crate::backend::{LoadBalanceContext, StickyCookie, StickyCookieValue};
+// use crate::backend::{UpstreamGroup, UpstreamOption};
 
+// ////////////////////////////////////////////////////
+// // Functions to manipulate headers
 #[cfg(feature = "sticky-cookie")]
 /// Take sticky cookie header value from request header,
-/// and returns LbContext to be forwarded to LB if exist and if needed.
+/// and returns LoadBalanceContext to be forwarded to LB if exist and if needed.
 /// Removing sticky cookie is needed and it must not be passed to the upstream.
 pub(super) fn takeout_sticky_cookie_lb_context(
   headers: &mut HeaderMap,
   expected_cookie_name: &str,
-) -> Result<Option<LbContext>> {
+) -> Result<Option<LoadBalanceContext>> {
   let mut headers_clone = headers.clone();
 
   match headers_clone.entry(header::COOKIE) {
@@ -35,12 +36,11 @@ pub(super) fn takeout_sticky_cookie_lb_context(
       if sticky_cookies.is_empty() {
         return Ok(None);
       }
-      if sticky_cookies.len() > 1 {
-        error!("Multiple sticky cookie values in request");
-        return Err(RpxyError::Other(anyhow!(
-          "Invalid cookie: Multiple sticky cookie values"
-        )));
-      }
+      ensure!(
+        sticky_cookies.len() == 1,
+        "Invalid cookie: Multiple sticky cookie values"
+      );
+
       let cookies_passed_to_upstream = without_sticky_cookies.join("; ");
       let cookie_passed_to_lb = sticky_cookies.first().unwrap();
       headers.remove(header::COOKIE);
@@ -50,7 +50,7 @@ pub(super) fn takeout_sticky_cookie_lb_context(
         value: StickyCookieValue::try_from(cookie_passed_to_lb, expected_cookie_name)?,
         info: None,
       };
-      Ok(Some(LbContext { sticky_cookie }))
+      Ok(Some(LoadBalanceContext { sticky_cookie }))
     }
   }
 }
@@ -59,7 +59,10 @@ pub(super) fn takeout_sticky_cookie_lb_context(
 /// Set-Cookie if LB Sticky is enabled and if cookie is newly created/updated.
 /// Set-Cookie response header could be in multiple lines.
 /// https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Set-Cookie
-pub(super) fn set_sticky_cookie_lb_context(headers: &mut HeaderMap, context_from_lb: &LbContext) -> Result<()> {
+pub(super) fn set_sticky_cookie_lb_context(
+  headers: &mut HeaderMap,
+  context_from_lb: &LoadBalanceContext,
+) -> Result<()> {
   let sticky_cookie_string: String = context_from_lb.sticky_cookie.clone().try_into()?;
   let new_header_val: HeaderValue = sticky_cookie_string.parse()?;
   let expected_cookie_name = &context_from_lb.sticky_cookie.value.name;
@@ -83,23 +86,37 @@ pub(super) fn set_sticky_cookie_lb_context(headers: &mut HeaderMap, context_from
   Ok(())
 }
 
+/// overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
+fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &Uri) -> Result<()> {
+  let mut upstream_host = upstream_base_uri
+    .host()
+    .ok_or_else(|| anyhow!("No hostname is given"))?
+    .to_string();
+  // add port if it is not default
+  if let Some(port) = upstream_base_uri.port_u16() {
+    upstream_host = format!("{}:{}", upstream_host, port);
+  }
+
+  // overwrite host header, this removes all the HOST header values
+  headers.insert(header::HOST, HeaderValue::from_str(&upstream_host)?);
+  Ok(())
+}
+
 /// Apply options to request header, which are specified in the configuration
 pub(super) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
-  _client_addr: &SocketAddr,
-  upstream: &UpstreamGroup,
   upstream_base_uri: &Uri,
+  // _client_addr: &SocketAddr,
+  upstream: &UpstreamCandidates,
 ) -> Result<()> {
-  for opt in upstream.opts.iter() {
+  for opt in upstream.options.iter() {
     match opt {
-      UpstreamOption::OverrideHost => {
-        // overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
-        let upstream_host = upstream_base_uri
-          .host()
-          .ok_or_else(|| anyhow!("No hostname is given in override_host option"))?;
-        headers
-          .insert(header::HOST, HeaderValue::from_str(upstream_host)?)
-          .ok_or_else(|| anyhow!("Failed to insert host header in override_host option"))?;
+      UpstreamOption::SetUpstreamHost => {
+        // prioritize KeepOriginalHost
+        if !upstream.options.contains(&UpstreamOption::KeepOriginalHost) {
+          // overwrite host header, this removes all the HOST header values
+          override_host_header(headers, upstream_base_uri)?;
+        }
       }
       UpstreamOption::UpgradeInsecureRequests => {
         // add upgrade-insecure-requests in request header if not exist

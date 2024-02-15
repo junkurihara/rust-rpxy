@@ -1,9 +1,5 @@
-use crate::{
-  certs::{CertsAndKeys, CryptoSource},
-  globals::Globals,
-  log::*,
-  utils::ServerNameBytesExp,
-};
+use super::certs::{CertsAndKeys, CryptoSource};
+use crate::{backend::BackendAppManager, log::*, name_exp::ServerName};
 use async_trait::async_trait;
 use hot_reload::*;
 use rustc_hash::FxHashMap as HashMap;
@@ -16,15 +12,17 @@ pub struct CryptoReloader<T>
 where
   T: CryptoSource,
 {
-  globals: Arc<Globals<T>>,
+  inner: Arc<BackendAppManager<T>>,
 }
 
-pub type SniServerCryptoMap = HashMap<ServerNameBytesExp, Arc<ServerConfig>>;
+/// SNI to ServerConfig map type
+pub type SniServerCryptoMap = HashMap<ServerName, Arc<ServerConfig>>;
+/// SNI to ServerConfig map
 pub struct ServerCrypto {
   // For Quic/HTTP3, only servers with no client authentication
   #[cfg(feature = "http3-quinn")]
   pub inner_global_no_client_auth: Arc<ServerConfig>,
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   pub inner_global_no_client_auth: s2n_quic_rustls::Server,
   // For TLS over TCP/HTTP2 and 1.1, map of SNI to server_crypto for all given servers
   pub inner_local_map: Arc<SniServerCryptoMap>,
@@ -33,7 +31,7 @@ pub struct ServerCrypto {
 /// Reloader target for the certificate reloader service
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct ServerCryptoBase {
-  inner: HashMap<ServerNameBytesExp, CertsAndKeys>,
+  inner: HashMap<ServerName, CertsAndKeys>,
 }
 
 #[async_trait]
@@ -41,17 +39,15 @@ impl<T> Reload<ServerCryptoBase> for CryptoReloader<T>
 where
   T: CryptoSource + Sync + Send,
 {
-  type Source = Arc<Globals<T>>;
+  type Source = Arc<BackendAppManager<T>>;
   async fn new(source: &Self::Source) -> Result<Self, ReloaderError<ServerCryptoBase>> {
-    Ok(Self {
-      globals: source.clone(),
-    })
+    Ok(Self { inner: source.clone() })
   }
 
   async fn reload(&self) -> Result<Option<ServerCryptoBase>, ReloaderError<ServerCryptoBase>> {
     let mut certs_and_keys_map = ServerCryptoBase::default();
 
-    for (server_name_bytes_exp, backend) in self.globals.backends.apps.iter() {
+    for (server_name_bytes_exp, backend) in self.inner.apps.iter() {
       if let Some(crypto_source) = &backend.crypto_source {
         let certs_and_keys = crypto_source
           .read()
@@ -78,7 +74,7 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
     Ok(Arc::new(ServerCrypto {
       #[cfg(feature = "http3-quinn")]
       inner_global_no_client_auth: Arc::new(server_crypto_global),
-      #[cfg(feature = "http3-s2n")]
+      #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
       inner_global_no_client_auth: server_crypto_global,
       inner_local_map: Arc::new(server_crypto_local_map),
     }))
@@ -204,7 +200,7 @@ impl ServerCryptoBase {
     Ok(server_crypto_global)
   }
 
-  #[cfg(feature = "http3-s2n")]
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
   fn build_server_crypto_global(&self) -> Result<s2n_quic_rustls::Server, ReloaderError<ServerCryptoBase>> {
     let mut resolver_global = s2n_quic_rustls::rustls::server::ResolvesServerCertUsingSni::new();
 
@@ -245,7 +241,7 @@ impl ServerCryptoBase {
   }
 }
 
-#[cfg(feature = "http3-s2n")]
+#[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
 /// This is workaround for the version difference between rustls and s2n-quic-rustls
 fn parse_server_certs_and_keys_s2n(
   certs_and_keys: &CertsAndKeys,

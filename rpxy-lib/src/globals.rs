@@ -1,57 +1,53 @@
 use crate::{
-  backend::{
-    Backend, BackendBuilder, Backends, ReverseProxy, Upstream, UpstreamGroup, UpstreamGroupBuilder, UpstreamOption,
-  },
-  certs::CryptoSource,
   constants::*,
-  error::RpxyError,
-  log::*,
-  utils::{BytesName, PathNameBytesExp},
+  count::RequestCount,
+  crypto::{CryptoSource, ServerCryptoBase},
 };
-use rustc_hash::FxHashMap as HashMap;
-use std::net::SocketAddr;
-use std::sync::{
-  atomic::{AtomicUsize, Ordering},
-  Arc,
-};
-use tokio::time::Duration;
+use hot_reload::ReloaderReceiver;
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 /// Global object containing proxy configurations and shared object like counters.
 /// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
-pub struct Globals<T>
-where
-  T: CryptoSource,
-{
+pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
-  pub proxy_config: ProxyConfig, // TODO: proxy configはarcに包んでこいつだけ使いまわせばいいように変えていく。backendsも？
-
-  /// Backend application objects to which http request handler forward incoming requests
-  pub backends: Backends<T>,
-
+  pub proxy_config: ProxyConfig,
   /// Shared context - Counter for serving requests
   pub request_count: RequestCount,
-
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
+  /// Shared context - Notify object to stop async tasks
+  pub term_notify: Option<Arc<tokio::sync::Notify>>,
+  /// Shared context - Certificate reloader service receiver
+  pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
 }
 
 /// Configuration parameters for proxy transport and request handlers
 #[derive(PartialEq, Eq, Clone)]
 pub struct ProxyConfig {
-  pub listen_sockets: Vec<SocketAddr>, // when instantiate server
-  pub http_port: Option<u16>,          // when instantiate server
-  pub https_port: Option<u16>,         // when instantiate server
-  pub tcp_listen_backlog: u32,         // when instantiate server
+  /// listen socket addresses
+  pub listen_sockets: Vec<SocketAddr>,
+  /// http port
+  pub http_port: Option<u16>,
+  /// https port
+  pub https_port: Option<u16>,
+  /// tcp listen backlog
+  pub tcp_listen_backlog: u32,
 
-  pub proxy_timeout: Duration,    // when serving requests at Proxy
-  pub upstream_timeout: Duration, // when serving requests at Handler
+  /// Idle timeout as an HTTP server, used as the keep alive interval and timeout for reading request header
+  pub proxy_idle_timeout: Duration,
+  /// Idle timeout as an HTTP client, used as the keep alive interval for upstream connections
+  pub upstream_idle_timeout: Duration,
 
   pub max_clients: usize,          // when serving requests
   pub max_concurrent_streams: u32, // when instantiate server
   pub keepalive: bool,             // when instantiate server
 
   // experimentals
+  /// SNI consistency check
   pub sni_consistency: bool, // Handler
+  /// Connection handling timeout
+  /// timeout to handle a connection, total time of receive request, serve, and send response. this might limits the max length of response.
+  pub connection_handling_timeout: Option<Duration>,
 
   #[cfg(feature = "cache")]
   pub cache_enabled: bool,
@@ -90,14 +86,15 @@ impl Default for ProxyConfig {
       tcp_listen_backlog: TCP_LISTEN_BACKLOG,
 
       // TODO: Reconsider each timeout values
-      proxy_timeout: Duration::from_secs(PROXY_TIMEOUT_SEC),
-      upstream_timeout: Duration::from_secs(UPSTREAM_TIMEOUT_SEC),
+      proxy_idle_timeout: Duration::from_secs(PROXY_IDLE_TIMEOUT_SEC),
+      upstream_idle_timeout: Duration::from_secs(UPSTREAM_IDLE_TIMEOUT_SEC),
 
       max_clients: MAX_CLIENTS,
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,
       keepalive: true,
 
       sni_consistency: true,
+      connection_handling_timeout: None,
 
       #[cfg(feature = "cache")]
       cache_enabled: false,
@@ -137,44 +134,6 @@ where
   pub inner: Vec<AppConfig<T>>,
   pub default_app: Option<String>,
 }
-impl<T> TryInto<Backends<T>> for AppConfigList<T>
-where
-  T: CryptoSource + Clone,
-{
-  type Error = RpxyError;
-
-  fn try_into(self) -> Result<Backends<T>, Self::Error> {
-    let mut backends = Backends::new();
-    for app_config in self.inner.iter() {
-      let backend = app_config.try_into()?;
-      backends
-        .apps
-        .insert(app_config.server_name.clone().to_server_name_vec(), backend);
-      info!(
-        "Registering application {} ({})",
-        &app_config.server_name, &app_config.app_name
-      );
-    }
-
-    // default backend application for plaintext http requests
-    if let Some(d) = self.default_app {
-      let d_sn: Vec<&str> = backends
-        .apps
-        .iter()
-        .filter(|(_k, v)| v.app_name == d)
-        .map(|(_, v)| v.server_name.as_ref())
-        .collect();
-      if !d_sn.is_empty() {
-        info!(
-          "Serving plaintext http for requests to unconfigured server_name by app {} (server_name: {}).",
-          d, d_sn[0]
-        );
-        backends.default_server_name_bytes = Some(d_sn[0].to_server_name_vec());
-      }
-    }
-    Ok(backends)
-  }
-}
 
 /// Configuration parameters for single backend application
 #[derive(PartialEq, Eq, Clone)]
@@ -186,77 +145,6 @@ where
   pub server_name: String,
   pub reverse_proxy: Vec<ReverseProxyConfig>,
   pub tls: Option<TlsConfig<T>>,
-}
-impl<T> TryInto<Backend<T>> for &AppConfig<T>
-where
-  T: CryptoSource + Clone,
-{
-  type Error = RpxyError;
-
-  fn try_into(self) -> Result<Backend<T>, Self::Error> {
-    // backend builder
-    let mut backend_builder = BackendBuilder::default();
-    // reverse proxy settings
-    let reverse_proxy = self.try_into()?;
-
-    backend_builder
-      .app_name(self.app_name.clone())
-      .server_name(self.server_name.clone())
-      .reverse_proxy(reverse_proxy);
-
-    // TLS settings and build backend instance
-    let backend = if self.tls.is_none() {
-      backend_builder.build().map_err(RpxyError::BackendBuild)?
-    } else {
-      let tls = self.tls.as_ref().unwrap();
-
-      backend_builder
-        .https_redirection(Some(tls.https_redirection))
-        .crypto_source(Some(tls.inner.clone()))
-        .build()?
-    };
-    Ok(backend)
-  }
-}
-impl<T> TryInto<ReverseProxy> for &AppConfig<T>
-where
-  T: CryptoSource + Clone,
-{
-  type Error = RpxyError;
-
-  fn try_into(self) -> Result<ReverseProxy, Self::Error> {
-    let mut upstream: HashMap<PathNameBytesExp, UpstreamGroup> = HashMap::default();
-
-    self.reverse_proxy.iter().for_each(|rpo| {
-      let upstream_vec: Vec<Upstream> = rpo.upstream.iter().map(|x| x.try_into().unwrap()).collect();
-      // let upstream_iter = rpo.upstream.iter().map(|x| x.to_upstream().unwrap());
-      // let lb_upstream_num = vec_upstream.len();
-      let elem = UpstreamGroupBuilder::default()
-        .upstream(&upstream_vec)
-        .path(&rpo.path)
-        .replace_path(&rpo.replace_path)
-        .lb(&rpo.load_balance, &upstream_vec, &self.server_name, &rpo.path)
-        .opts(&rpo.upstream_options)
-        .build()
-        .unwrap();
-
-      upstream.insert(elem.path.clone(), elem);
-    });
-    if self.reverse_proxy.iter().filter(|rpo| rpo.path.is_none()).count() >= 2 {
-      error!("Multiple default reverse proxy setting");
-      return Err(RpxyError::ConfigBuild("Invalid reverse proxy setting"));
-    }
-
-    if !(upstream.iter().all(|(_, elem)| {
-      !(elem.opts.contains(&UpstreamOption::ForceHttp11Upstream)
-        && elem.opts.contains(&UpstreamOption::ForceHttp2Upstream))
-    })) {
-      error!("Either one of force_http11 or force_http2 can be enabled");
-      return Err(RpxyError::ConfigBuild("Invalid upstream option setting"));
-    }
-
-    Ok(ReverseProxy { upstream })
-  }
 }
 
 /// Configuration parameters for single reverse proxy corresponding to the path
@@ -272,16 +160,7 @@ pub struct ReverseProxyConfig {
 /// Configuration parameters for single upstream destination from a reverse proxy
 #[derive(PartialEq, Eq, Clone)]
 pub struct UpstreamUri {
-  pub inner: hyper::Uri,
-}
-impl TryInto<Upstream> for &UpstreamUri {
-  type Error = anyhow::Error;
-
-  fn try_into(self) -> std::result::Result<Upstream, Self::Error> {
-    Ok(Upstream {
-      uri: self.inner.clone(),
-    })
-  }
+  pub inner: http::Uri,
 }
 
 /// Configuration parameters on TLS for a single backend application
@@ -292,31 +171,4 @@ where
 {
   pub inner: T,
   pub https_redirection: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-/// Counter for serving requests
-pub struct RequestCount(Arc<AtomicUsize>);
-
-impl RequestCount {
-  pub fn current(&self) -> usize {
-    self.0.load(Ordering::Relaxed)
-  }
-
-  pub fn increment(&self) -> usize {
-    self.0.fetch_add(1, Ordering::Relaxed)
-  }
-
-  pub fn decrement(&self) -> usize {
-    let mut count;
-    while {
-      count = self.0.load(Ordering::Relaxed);
-      count > 0
-        && self
-          .0
-          .compare_exchange(count, count - 1, Ordering::Relaxed, Ordering::Relaxed)
-          != Ok(count)
-    } {}
-    count
-  }
 }

@@ -1,5 +1,5 @@
 use super::{
-  load_balance::{LbContext, LbWithPointer, PointerToUpstream},
+  load_balance_main::{LoadBalanceContext, LoadBalanceWithPointer, PointerToUpstream},
   sticky_cookie::StickyCookieConfig,
   Upstream,
 };
@@ -16,7 +16,7 @@ use std::{
 
 #[derive(Debug, Clone, Builder)]
 /// Round Robin LB object in the sticky cookie manner
-pub struct LbStickyRoundRobin {
+pub struct LoadBalanceSticky {
   #[builder(default)]
   /// Pointer to the index of the last served upstream destination
   ptr: Arc<AtomicUsize>,
@@ -39,11 +39,13 @@ pub struct UpstreamMap {
   /// Hashmap that maps server ids (string) to server indices, for fast reverse lookup
   upstream_id_map: HashMap<String, usize>,
 }
-impl LbStickyRoundRobinBuilder {
+impl LoadBalanceStickyBuilder {
+  /// Set the number of upstream destinations
   pub fn num_upstreams(&mut self, v: &usize) -> &mut Self {
     self.num_upstreams = Some(*v);
     self
   }
+  /// Set the information to build the cookie to stick clients to specific backends
   pub fn sticky_config(&mut self, server_name: &str, path_opt: &Option<String>) -> &mut Self {
     self.sticky_config = Some(StickyCookieConfig {
       name: STICKY_COOKIE_NAME.to_string(), // TODO: config等で変更できるように
@@ -57,6 +59,7 @@ impl LbStickyRoundRobinBuilder {
     });
     self
   }
+  /// Set the hashmaps: upstream_index_map and upstream_id_map
   pub fn upstream_maps(&mut self, upstream_vec: &[Upstream]) -> &mut Self {
     let upstream_index_map: Vec<String> = upstream_vec
       .iter()
@@ -74,7 +77,8 @@ impl LbStickyRoundRobinBuilder {
     self
   }
 }
-impl<'a> LbStickyRoundRobin {
+impl<'a> LoadBalanceSticky {
+  /// Increment the count of upstream served up to the max value
   fn simple_increment_ptr(&self) -> usize {
     // Get a current count of upstream served
     let current_ptr = self.ptr.load(Ordering::Relaxed);
@@ -96,8 +100,9 @@ impl<'a> LbStickyRoundRobin {
     self.upstream_maps.upstream_id_map.get(&id_str).map(|v| v.to_owned())
   }
 }
-impl LbWithPointer for LbStickyRoundRobin {
-  fn get_ptr(&self, req_info: Option<&LbContext>) -> PointerToUpstream {
+impl LoadBalanceWithPointer for LoadBalanceSticky {
+  /// Get the pointer to the upstream server to serve the incoming request.
+  fn get_ptr(&self, req_info: Option<&LoadBalanceContext>) -> PointerToUpstream {
     // If given context is None or invalid (not contained), get_ptr() is invoked to increment the pointer.
     // Otherwise, get the server index indicated by the server_id inside the cookie
     let ptr = match req_info {
@@ -121,12 +126,12 @@ impl LbWithPointer for LbStickyRoundRobin {
     // TODO: This should be simplified and optimized if ptr is not changed (id value exists in cookie).
     let upstream_id = self.get_server_id_from_index(ptr);
     let new_cookie = self.sticky_config.build_sticky_cookie(upstream_id).unwrap();
-    let new_context = Some(LbContext {
+    let new_context = Some(LoadBalanceContext {
       sticky_cookie: new_cookie,
     });
     PointerToUpstream {
       ptr,
-      context_lb: new_context,
+      context: new_context,
     }
   }
 }

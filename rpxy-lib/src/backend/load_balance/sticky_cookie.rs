@@ -1,8 +1,7 @@
-use std::borrow::Cow;
-
-use crate::error::*;
+use super::{LoadBalanceError, LoadBalanceResult};
 use chrono::{TimeZone, Utc};
 use derive_builder::Builder;
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Builder)]
 /// Cookie value only, used for COOKIE in req
@@ -25,18 +24,16 @@ impl<'a> StickyCookieValueBuilder {
   }
 }
 impl StickyCookieValue {
-  pub fn try_from(value: &str, expected_name: &str) -> Result<Self> {
+  pub fn try_from(value: &str, expected_name: &str) -> LoadBalanceResult<Self> {
     if !value.starts_with(expected_name) {
-      return Err(RpxyError::LoadBalance(
-        "Failed to cookie conversion from string".to_string(),
-      ));
+      return Err(LoadBalanceError::FailedToConversionStickyCookie);
     };
     let kv = value.split('=').map(|v| v.trim()).collect::<Vec<&str>>();
     if kv.len() != 2 {
-      return Err(RpxyError::LoadBalance("Invalid cookie structure".to_string()));
+      return Err(LoadBalanceError::InvalidStickyCookieStructure);
     };
     if kv[1].is_empty() {
-      return Err(RpxyError::LoadBalance("No sticky cookie value".to_string()));
+      return Err(LoadBalanceError::NoStickyCookieValue);
     }
     Ok(StickyCookieValue {
       name: expected_name.to_string(),
@@ -88,10 +85,12 @@ pub struct StickyCookie {
 }
 
 impl<'a> StickyCookieBuilder {
+  /// Set the value of sticky cookie
   pub fn value(&mut self, n: impl Into<Cow<'a, str>>, v: impl Into<Cow<'a, str>>) -> &mut Self {
     self.value = Some(StickyCookieValueBuilder::default().name(n).value(v).build().unwrap());
     self
   }
+  /// Set the meta information of sticky cookie
   pub fn info(
     &mut self,
     domain: impl Into<Cow<'a, str>>,
@@ -110,17 +109,15 @@ impl<'a> StickyCookieBuilder {
 }
 
 impl TryInto<String> for StickyCookie {
-  type Error = RpxyError;
+  type Error = LoadBalanceError;
 
-  fn try_into(self) -> Result<String> {
+  fn try_into(self) -> LoadBalanceResult<String> {
     if self.info.is_none() {
-      return Err(RpxyError::LoadBalance(
-        "Failed to cookie conversion into string: no meta information".to_string(),
-      ));
+      return Err(LoadBalanceError::NoStickyCookieNoMetaInfo);
     }
     let info = self.info.unwrap();
     let chrono::LocalResult::Single(expires_timestamp) = Utc.timestamp_opt(info.expires, 0) else {
-      return Err(RpxyError::LoadBalance("Failed to cookie conversion into string".to_string()));
+      return Err(LoadBalanceError::FailedToConversionStickyCookie);
     };
     let exp_str = expires_timestamp.format("%a, %d-%b-%Y %T GMT").to_string();
     let max_age = info.expires - Utc::now().timestamp();
@@ -144,12 +141,12 @@ pub struct StickyCookieConfig {
   pub duration: i64,
 }
 impl<'a> StickyCookieConfig {
-  pub fn build_sticky_cookie(&self, v: impl Into<Cow<'a, str>>) -> Result<StickyCookie> {
+  pub fn build_sticky_cookie(&self, v: impl Into<Cow<'a, str>>) -> LoadBalanceResult<StickyCookie> {
     StickyCookieBuilder::default()
       .value(self.name.clone(), v)
       .info(&self.domain, &self.path, self.duration)
       .build()
-      .map_err(|_| RpxyError::LoadBalance("Failed to build sticky cookie from config".to_string()))
+      .map_err(|_| LoadBalanceError::FailedToBuildStickyCookie)
   }
 }
 
@@ -167,7 +164,7 @@ mod tests {
       duration: 100,
     };
     let expires_unix = Utc::now().timestamp() + 100;
-    let sc_string: Result<String> = config.build_sticky_cookie("test_value").unwrap().try_into();
+    let sc_string: LoadBalanceResult<String> = config.build_sticky_cookie("test_value").unwrap().try_into();
     let expires_date_string = Utc
       .timestamp_opt(expires_unix, 0)
       .unwrap()
@@ -194,7 +191,7 @@ mod tests {
         path: "/path".to_string(),
       }),
     };
-    let sc_string: Result<String> = sc.try_into();
+    let sc_string: LoadBalanceResult<String> = sc.try_into();
     let max_age = 1686221173i64 - Utc::now().timestamp();
     assert!(sc_string.is_ok());
     assert_eq!(

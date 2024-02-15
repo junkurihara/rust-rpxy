@@ -1,25 +1,33 @@
-use super::Proxy;
-use crate::{certs::CryptoSource, error::*, log::*, utils::ServerNameBytesExp};
+use super::proxy_main::Proxy;
+use crate::{
+  crypto::CryptoSource,
+  error::*,
+  hyper_ext::body::{IncomingLike, RequestBody},
+  log::*,
+  name_exp::ServerName,
+};
 use bytes::{Buf, Bytes};
+use http::{Request, Response};
+use http_body_util::BodyExt;
+use hyper_util::client::legacy::connect::Connect;
+use std::net::SocketAddr;
+
 #[cfg(feature = "http3-quinn")]
 use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
-use hyper::{client::connect::Connect, Body, Request, Response};
-#[cfg(feature = "http3-s2n")]
+#[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
 use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
-use std::net::SocketAddr;
-use tokio::time::{timeout, Duration};
 
-impl<T, U> Proxy<T, U>
+impl<U, T> Proxy<U, T>
 where
   T: Connect + Clone + Sync + Send + 'static,
   U: CryptoSource + Clone + Sync + Send + 'static,
 {
-  pub(super) async fn connection_serve_h3<C>(
+  pub(super) async fn h3_serve_connection<C>(
     &self,
     quic_connection: C,
-    tls_server_name: ServerNameBytesExp,
+    tls_server_name: ServerName,
     client_addr: SocketAddr,
-  ) -> Result<()>
+  ) -> RpxyResult<()>
   where
     C: ConnectionQuic<Bytes>,
     <C as ConnectionQuic<Bytes>>::BidiStream: BidiStream<Bytes> + Send + 'static,
@@ -28,9 +36,11 @@ where
   {
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
     info!(
-      "QUIC/HTTP3 connection established from {:?} {:?}",
-      client_addr, tls_server_name
+      "QUIC/HTTP3 connection established from {:?} {}",
+      client_addr,
+      <&ServerName as TryInto<String>>::try_into(&tls_server_name).unwrap_or_default()
     );
+
     // TODO: Is here enough to fetch server_name from NewConnection?
     // to avoid deep nested call from listener_service_h3
     loop {
@@ -60,13 +70,13 @@ where
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
           self.globals.runtime_handle.spawn(async move {
-            if let Err(e) = timeout(
-              self_inner.globals.proxy_config.proxy_timeout + Duration::from_secs(1), // timeout per stream are considered as same as one in http2
-              self_inner.stream_serve_h3(req, stream, client_addr, tls_server_name_inner),
-            )
-            .await
-            {
-              error!("HTTP/3 failed to process stream: {}", e);
+            let fut = self_inner.h3_serve_stream(req, stream, client_addr, tls_server_name_inner);
+            if let Some(connection_handling_timeout) = self_inner.globals.proxy_config.connection_handling_timeout {
+              if let Err(e) = tokio::time::timeout(connection_handling_timeout, fut).await {
+                warn!("HTTP/3 error on serve stream: {}", e);
+              };
+            } else if let Err(e) = fut.await {
+              warn!("HTTP/3 error on serve stream: {}", e);
             }
             request_count.decrement();
             debug!("Request processed: current # {}", request_count.current());
@@ -78,13 +88,17 @@ where
     Ok(())
   }
 
-  async fn stream_serve_h3<S>(
+  /// Serves a request stream from a client
+  /// Body in hyper-0.14 was changed to Incoming in hyper-1.0, and it is not accessible from outside.
+  /// Thus, we needed to implement IncomingLike trait using channel. Also, the backend handler must feed the body in the form of
+  /// Either<Incoming, IncomingLike> as body.
+  async fn h3_serve_stream<S>(
     &self,
     req: Request<()>,
     stream: RequestStream<S, Bytes>,
     client_addr: SocketAddr,
-    tls_server_name: ServerNameBytesExp,
-  ) -> Result<()>
+    tls_server_name: ServerName,
+  ) -> RpxyResult<()>
   where
     S: BidiStream<Bytes> + Send + 'static,
     <S as BidiStream<Bytes>>::RecvStream: Send,
@@ -94,7 +108,7 @@ where
     let (mut send_stream, mut recv_stream) = stream.split();
 
     // generate streamed body with trailers using channel
-    let (body_sender, req_body) = Body::channel();
+    let (body_sender, req_body) = IncomingLike::channel();
 
     // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
     // The underling buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
@@ -107,10 +121,10 @@ where
         size += body.remaining();
         if size > max_body_size {
           error!(
-            "Exceeds max request body size for HTTP/3: received {}, maximum_allowd {}",
+            "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
             size, max_body_size
           );
-          return Err(RpxyError::Proxy("Exceeds max request body size for HTTP/3".to_string()));
+          return Err(RpxyError::H3TooLargeBody);
         }
         // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
         sender.send_data(body.copy_to_bytes(body.remaining())).await?;
@@ -122,13 +136,12 @@ where
         debug!("HTTP/3 incoming request trailers");
         sender.send_trailers(trailers.unwrap()).await?;
       }
-      Ok(())
+      Ok(()) as RpxyResult<()>
     });
 
-    let new_req: Request<Body> = Request::from_parts(req_parts, req_body);
+    let new_req: Request<RequestBody> = Request::from_parts(req_parts, RequestBody::IncomingLike(req_body));
     let res = self
-      .msg_handler
-      .clone()
+      .message_handler
       .handle_request(
         new_req,
         client_addr,
@@ -138,21 +151,33 @@ where
       )
       .await?;
 
-    let (new_res_parts, new_body) = res.into_parts();
+    let (new_res_parts, mut new_body) = res.into_parts();
     let new_res = Response::from_parts(new_res_parts, ());
 
     match send_stream.send_response(new_res).await {
       Ok(_) => {
         debug!("HTTP/3 response to connection successful");
-        // aggregate body without copying
-        let mut body_data = hyper::body::aggregate(new_body).await?;
+        // on-demand body streaming to downstream without expanding the object onto memory.
+        loop {
+          let frame = match new_body.frame().await {
+            Some(frame) => frame,
+            None => {
+              debug!("Response body finished");
+              break;
+            }
+          }
+          .map_err(|e| RpxyError::HyperBodyManipulationError(e.to_string()))?;
 
-        // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
-        send_stream
-          .send_data(body_data.copy_to_bytes(body_data.remaining()))
-          .await?;
-
-        // TODO: needs handling trailer? should be included in body from handler.
+          if frame.is_data() {
+            let data = frame.into_data().unwrap_or_default();
+            // debug!("Write data to HTTP/3 stream");
+            send_stream.send_data(data).await?;
+          } else if frame.is_trailers() {
+            let trailers = frame.into_trailers().unwrap_or_default();
+            // debug!("Write trailer to HTTP/3 stream");
+            send_stream.send_trailers(trailers).await?;
+          }
+        }
       }
       Err(err) => {
         error!("Unable to send response to connection peer: {:?}", err);

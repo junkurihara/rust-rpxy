@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
-![Docker](https://github.com/junkurihara/rust-rpxy/actions/workflows/docker_build_push.yml/badge.svg)
+![Docker](https://github.com/junkurihara/rust-rpxy/actions/workflows/release_docker.yml/badge.svg)
 ![ShiftLeft Scan](https://github.com/junkurihara/rust-rpxy/actions/workflows/shift_left.yml/badge.svg)
 [![Docker Image Size (latest by date)](https://img.shields.io/docker/image-size/jqtype/rpxy)](https://hub.docker.com/r/jqtype/rpxy)
 
@@ -104,11 +104,11 @@ If you want to host multiple and distinct domain names in a single IP address/po
 ```toml
 default_application = "app1"
 
-[app.app1]
+[apps.app1]
 server_name = "app1.example.com"
 #...
 
-[app.app2]
+[apps.app2]
 server_name = "app2.example.org"
 #...
 ```

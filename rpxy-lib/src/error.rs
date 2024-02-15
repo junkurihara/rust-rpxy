@@ -1,86 +1,101 @@
-pub use anyhow::{anyhow, bail, ensure, Context};
-use std::io;
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, RpxyError>;
+pub type RpxyResult<T> = std::result::Result<T, RpxyError>;
 
 /// Describes things that can go wrong in the Rpxy
 #[derive(Debug, Error)]
 pub enum RpxyError {
-  #[error("Proxy build error: {0}")]
-  ProxyBuild(#[from] crate::proxy::ProxyBuilderError),
+  // general errors
+  #[error("IO error: {0}")]
+  Io(#[from] std::io::Error),
 
-  #[error("Backend build error: {0}")]
-  BackendBuild(#[from] crate::backend::BackendBuilderError),
+  // TLS errors
+  #[error("Failed to build TLS acceptor: {0}")]
+  FailedToTlsHandshake(String),
+  #[error("No server name in ClientHello")]
+  NoServerNameInClientHello,
+  #[error("No TLS serving app: {0}")]
+  NoTlsServingApp(String),
+  #[error("Failed to update server crypto: {0}")]
+  FailedToUpdateServerCrypto(String),
+  #[error("No server crypto: {0}")]
+  NoServerCrypto(String),
 
-  #[error("MessageHandler build error: {0}")]
-  HandlerBuild(#[from] crate::handler::HttpMessageHandlerBuilderError),
+  // hyper errors
+  #[error("hyper body manipulation error: {0}")]
+  HyperBodyManipulationError(String),
+  #[error("New closed in incoming-like")]
+  HyperIncomingLikeNewClosed,
+  #[error("New body write aborted")]
+  HyperNewBodyWriteAborted,
+  #[error("Hyper error in serving request or response body type: {0}")]
+  HyperBodyError(#[from] hyper::Error),
 
-  #[error("Config builder error: {0}")]
-  ConfigBuild(&'static str),
-
-  #[error("Http Message Handler Error: {0}")]
-  Handler(&'static str),
-
-  #[error("Cache Error: {0}")]
-  Cache(&'static str),
-
-  #[error("Http Request Message Error: {0}")]
-  Request(&'static str),
-
-  #[error("TCP/UDP Proxy Layer Error: {0}")]
-  Proxy(String),
-
-  #[allow(unused)]
-  #[error("LoadBalance Layer Error: {0}")]
-  LoadBalance(String),
-
-  #[error("I/O Error: {0}")]
-  Io(#[from] io::Error),
-
-  // #[error("Toml Deserialization Error")]
-  // TomlDe(#[from] toml::de::Error),
-  #[cfg(feature = "http3-quinn")]
-  #[error("Quic Connection Error [quinn]: {0}")]
-  QuicConn(#[from] quinn::ConnectionError),
-
-  #[cfg(feature = "http3-s2n")]
-  #[error("Quic Connection Error [s2n-quic]: {0}")]
-  QUicConn(#[from] s2n_quic::connection::Error),
+  // http/3 errors
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[error("H3 error: {0}")]
+  H3Error(#[from] h3::Error),
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[error("Exceeds max request body size for HTTP/3")]
+  H3TooLargeBody,
 
   #[cfg(feature = "http3-quinn")]
-  #[error("H3 Error [quinn]: {0}")]
-  H3(#[from] h3::Error),
+  #[error("Invalid rustls TLS version: {0}")]
+  QuinnInvalidTlsProtocolVersion(String),
+  #[cfg(feature = "http3-quinn")]
+  #[error("Quinn connection error: {0}")]
+  QuinnConnectionFailed(#[from] quinn::ConnectionError),
 
-  #[cfg(feature = "http3-s2n")]
-  #[error("H3 Error [s2n-quic]: {0}")]
-  H3(#[from] s2n_quic_h3::h3::Error),
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
+  #[error("s2n-quic validation error: {0}")]
+  S2nQuicValidationError(#[from] s2n_quic_core::transport::parameters::ValidationError),
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
+  #[error("s2n-quic connection error: {0}")]
+  S2nQuicConnectionError(#[from] s2n_quic_core::connection::Error),
+  #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
+  #[error("s2n-quic start error: {0}")]
+  S2nQuicStartError(#[from] s2n_quic::provider::StartError),
 
-  #[error("rustls Connection Error: {0}")]
-  Rustls(#[from] rustls::Error),
+  // certificate reloader errors
+  #[error("No certificate reloader when building a proxy for TLS")]
+  NoCertificateReloader,
+  #[error("Certificate reload error: {0}")]
+  CertificateReloadError(#[from] hot_reload::ReloaderError<crate::crypto::ServerCryptoBase>),
 
-  #[error("Hyper Error: {0}")]
-  Hyper(#[from] hyper::Error),
+  // backend errors
+  #[error("Invalid reverse proxy setting")]
+  InvalidReverseProxyConfig,
+  #[error("Invalid upstream option setting")]
+  InvalidUpstreamOptionSetting,
+  #[error("Failed to build backend app: {0}")]
+  FailedToBuildBackendApp(#[from] crate::backend::BackendAppBuilderError),
 
-  #[error("Hyper Http Error: {0}")]
-  HyperHttp(#[from] hyper::http::Error),
+  // Handler errors
+  #[error("Failed to build message handler: {0}")]
+  FailedToBuildMessageHandler(#[from] crate::message_handler::HttpMessageHandlerBuilderError),
+  #[error("Failed to upgrade request: {0}")]
+  FailedToUpgradeRequest(String),
+  #[error("Failed to upgrade response: {0}")]
+  FailedToUpgradeResponse(String),
+  #[error("Failed to copy bidirectional for upgraded connections: {0}")]
+  FailedToCopyBidirectional(String),
 
-  #[error("Hyper Http HeaderValue Error: {0}")]
-  HyperHeaderValue(#[from] hyper::header::InvalidHeaderValue),
+  // Forwarder errors
+  #[error("Failed to build forwarder: {0}")]
+  FailedToBuildForwarder(String),
+  #[error("Failed to fetch from upstream: {0}")]
+  FailedToFetchFromUpstream(String),
 
-  #[error("Hyper Http HeaderName Error: {0}")]
-  HyperHeaderName(#[from] hyper::header::InvalidHeaderName),
+  // Upstream connection setting errors
+  #[error("Unsupported upstream option")]
+  UnsupportedUpstreamOption,
 
-  #[error(transparent)]
-  Other(#[from] anyhow::Error),
-}
+  // Cache error map
+  #[cfg(feature = "cache")]
+  #[error("Cache error: {0}")]
+  CacheError(#[from] crate::forwarder::CacheError),
 
-#[allow(dead_code)]
-#[derive(Debug, Error, Clone)]
-pub enum ClientCertsError {
-  #[error("TLS Client Certificate is Required for Given SNI: {0}")]
-  ClientCertRequired(String),
-
-  #[error("Inconsistent TLS Client Certificate for Given SNI: {0}")]
-  InconsistentClientCert(String),
+  // Others
+  #[error("Infallible")]
+  Infallible(#[from] std::convert::Infallible),
 }

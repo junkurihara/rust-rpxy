@@ -1,5 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+/// Trait to convert an IP address to its canonical form
 pub trait ToCanonical {
   fn to_canonical(&self) -> Self;
 }
