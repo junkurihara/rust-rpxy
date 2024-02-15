@@ -47,7 +47,7 @@ pub struct ProxyConfig {
   pub sni_consistency: bool, // Handler
   /// Connection handling timeout
   /// timeout to handle a connection, total time of receive request, serve, and send response. this might limits the max length of response.
-  pub connection_handling_timeout: Duration,
+  pub connection_handling_timeout: Option<Duration>,
 
   #[cfg(feature = "cache")]
   pub cache_enabled: bool,
@@ -94,7 +94,7 @@ impl Default for ProxyConfig {
       keepalive: true,
 
       sni_consistency: true,
-      connection_handling_timeout: Duration::from_secs(u64::MAX),
+      connection_handling_timeout: None,
 
       #[cfg(feature = "cache")]
       cache_enabled: false,

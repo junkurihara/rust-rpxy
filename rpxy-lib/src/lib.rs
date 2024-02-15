@@ -55,10 +55,10 @@ where
   if proxy_config.https_port.is_some() {
     info!("Listen port: {} (for TLS)", proxy_config.https_port.unwrap());
   }
-  if proxy_config.connection_handling_timeout.as_secs() < u64::MAX {
+  if proxy_config.connection_handling_timeout.is_some() {
     info!(
-      "Force connection handling timeout: {} sec",
-      proxy_config.connection_handling_timeout.as_secs()
+      "Force connection handling timeout: {:?} sec",
+      proxy_config.connection_handling_timeout.unwrap_or_default().as_secs()
     );
   }
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]

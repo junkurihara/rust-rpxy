@@ -176,9 +176,9 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 
       if let Some(timeout) = exp.connection_handling_timeout {
         if timeout == 0u64 {
-          proxy_config.connection_handling_timeout = Duration::from_secs(u64::MAX);
+          proxy_config.connection_handling_timeout = None;
         } else {
-          proxy_config.connection_handling_timeout = Duration::from_secs(timeout);
+          proxy_config.connection_handling_timeout = Some(Duration::from_secs(timeout));
         }
       }
 
