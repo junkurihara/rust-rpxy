@@ -30,20 +30,20 @@ anyhow = "1.0.81"
 rustc-hash = "1.1.0"
 serde = { version = "1.0.197", default-features = false, features = ["derive"] }
 derive_builder = "0.20.0"
-tokio = { version = "1.36.0", default-features = false, features = [
+tokio = { version = "1.37.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
 ] }
-async-trait = "0.1.78"
+async-trait = "0.1.79"
 rustls-pemfile = "1.0.4"
 mimalloc = { version = "*", default-features = false }
 
 # config
-clap = { version = "4.5.3", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.11", default-features = false, features = ["parse"] }
+clap = { version = "4.5.4", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.8.12", default-features = false, features = ["parse"] }
 hot_reload = "0.1.5"
 
 # logging
