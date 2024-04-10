@@ -26,24 +26,24 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
 ] }
 
-anyhow = "1.0.79"
+anyhow = "1.0.81"
 rustc-hash = "1.1.0"
-serde = { version = "1.0.196", default-features = false, features = ["derive"] }
+serde = { version = "1.0.197", default-features = false, features = ["derive"] }
 derive_builder = "0.20.0"
-tokio = { version = "1.36.0", default-features = false, features = [
+tokio = { version = "1.37.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
 ] }
-async-trait = "0.1.77"
+async-trait = "0.1.79"
 rustls-pemfile = "1.0.4"
 mimalloc = { version = "*", default-features = false }
 
 # config
-clap = { version = "4.5.0", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.10", default-features = false, features = ["parse"] }
+clap = { version = "4.5.4", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.8.12", default-features = false, features = ["parse"] }
 hot_reload = "0.1.5"
 
 # logging
