@@ -2,6 +2,10 @@
 
 ## 0.8.0 (Unreleased)
 
+## 0.7.1
+
+- deps and patches
+
 ## 0.7.0
 
 ### Important Changes

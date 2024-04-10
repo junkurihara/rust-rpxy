@@ -99,11 +99,7 @@ impl ServerCryptoBase {
 
       // add server certificate and key
       if let Err(e) = resolver_local.add(server_name.as_str(), certified_key.to_owned()) {
-        error!(
-          "{}: Failed to read some certificates and keys {}",
-          server_name.as_str(),
-          e
-        )
+        error!("{}: Failed to read some certificates and keys {}", server_name.as_str(), e)
       }
 
       // add client certificate if specified
@@ -114,11 +110,7 @@ impl ServerCryptoBase {
             client_ca_roots_local.add_trust_anchors(owned_trust_anchors.into_iter());
           }
           Err(e) => {
-            warn!(
-              "Failed to add client CA certificate for {}: {}",
-              server_name.as_str(),
-              e
-            );
+            warn!("Failed to add client CA certificate for {}: {}", server_name.as_str(), e);
           }
         }
       }
@@ -174,11 +166,7 @@ impl ServerCryptoBase {
       if certs_and_keys.client_ca_certs.is_none() {
         // aggregated server config for no client auth server for http3
         if let Err(e) = resolver_global.add(server_name.as_str(), certified_key) {
-          error!(
-            "{}: Failed to read some certificates and keys {}",
-            server_name.as_str(),
-            e
-          )
+          error!("{}: Failed to read some certificates and keys {}", server_name.as_str(), e)
         }
       }
     }
@@ -216,15 +204,11 @@ impl ServerCryptoBase {
       if certs_and_keys.client_ca_certs.is_none() {
         // aggregated server config for no client auth server for http3
         if let Err(e) = resolver_global.add(server_name.as_str(), certified_key) {
-          error!(
-            "{}: Failed to read some certificates and keys {}",
-            server_name.as_str(),
-            e
-          )
+          error!("{}: Failed to read some certificates and keys {}", server_name.as_str(), e)
         }
       }
     }
-    let alpn = vec![
+    let alpn = [
       b"h3".to_vec(),
       b"hq-29".to_vec(), // TODO: remove later?
       b"h2".to_vec(),
@@ -257,12 +241,7 @@ fn parse_server_certs_and_keys_s2n(
         None
       }
     })
-    .ok_or_else(|| {
-      std::io::Error::new(
-        std::io::ErrorKind::InvalidInput,
-        "Unable to find a valid certificate and key",
-      )
-    })?;
+    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Unable to find a valid certificate and key"))?;
   let certs: Vec<_> = certs_and_keys
     .certs
     .iter()
