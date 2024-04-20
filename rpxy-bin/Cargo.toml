@@ -26,9 +26,9 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
 ] }
 
-anyhow = "1.0.81"
+anyhow = "1.0.82"
 rustc-hash = "1.1.0"
-serde = { version = "1.0.197", default-features = false, features = ["derive"] }
+serde = { version = "1.0.198", default-features = false, features = ["derive"] }
 derive_builder = "0.20.0"
 tokio = { version = "1.37.0", default-features = false, features = [
   "net",
@@ -37,7 +37,7 @@ tokio = { version = "1.37.0", default-features = false, features = [
   "sync",
   "macros",
 ] }
-async-trait = "0.1.79"
+async-trait = "0.1.80"
 rustls-pemfile = "1.0.4"
 mimalloc = { version = "*", default-features = false }
 
