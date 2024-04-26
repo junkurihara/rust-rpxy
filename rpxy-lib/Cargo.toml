@@ -47,7 +47,7 @@ async-trait = "0.1.80"
 
 # Error handling
 anyhow = "1.0.82"
-thiserror = "1.0.58"
+thiserror = "1.0.59"
 
 # http for both server and client
 http = "1.1.0"
