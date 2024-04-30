@@ -71,7 +71,7 @@ hyper-rustls = { version = "0.27.1", default-features = false, features = [
 
 # tls and cert management for server
 hot_reload = "0.1.5"
-rustls = { version = "0.21.11", default-features = false }
+rustls = { version = "0.21.12", default-features = false }
 tokio-rustls = { version = "0.24.1", features = ["early-data"] }
 webpki = "0.22.4"
 x509-parser = "0.16.0"
@@ -90,7 +90,7 @@ s2n-quic-core = { version = "0.37.0", default-features = false, optional = true 
 s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", optional = true }
 s2n-quic-rustls = { version = "0.37.0", optional = true }
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.5.6", features = ["all"], optional = true }
+socket2 = { version = "0.5.7", features = ["all"], optional = true }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics/", optional = true }
