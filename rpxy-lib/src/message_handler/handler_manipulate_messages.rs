@@ -21,11 +21,7 @@ where
 
   #[allow(unused_variables)]
   /// Manipulate a response message sent from a backend application to forward downstream to a client.
-  pub(super) fn generate_response_forwarded<B>(
-    &self,
-    response: &mut Response<B>,
-    backend_app: &BackendApp<U>,
-  ) -> Result<()> {
+  pub(super) fn generate_response_forwarded<B>(&self, response: &mut Response<B>, backend_app: &BackendApp<U>) -> Result<()> {
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
@@ -102,11 +98,8 @@ where
     // by default, add "host" header of original server_name if not exist
     if req.headers().get(header::HOST).is_none() {
       let org_host = req.uri().host().ok_or_else(|| anyhow!("Invalid request"))?.to_owned();
-      req
-        .headers_mut()
-        .insert(header::HOST, HeaderValue::from_str(&org_host)?);
+      req.headers_mut().insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
-    println!("{:?}", req.headers().get(header::HOST));
 
     /////////////////////////////////////////////
     // Fix unique upstream destination since there could be multiple ones.
