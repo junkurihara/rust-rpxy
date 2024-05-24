@@ -44,35 +44,35 @@ jobs:
             platform: linux/arm64
             tags-suffix: "-s2n"
 
-          # - target: "gnu"
-          #   build-feature: "-native-roots"
-          #   platform: linux/amd64
-          #   tags-suffix: "-native-roots"
+          - target: "gnu"
+            build-feature: "-webpki-roots"
+            platform: linux/amd64
+            tags-suffix: "-webpki-roots"
 
-          # - target: "gnu"
-          #   build-feature: "-native-roots"
-          #   platform: linux/arm64
-          #   tags-suffix: "-native-roots"
+          - target: "gnu"
+            build-feature: "-webpki-roots"
+            platform: linux/arm64
+            tags-suffix: "-webpki-roots"
 
-          # - target: "musl"
-          #   build-feature: "-native-roots"
-          #   platform: linux/amd64
-          #   tags-suffix: "-slim-native-roots"
+          - target: "musl"
+            build-feature: "-webpki-roots"
+            platform: linux/amd64
+            tags-suffix: "-slim-webpki-roots"
 
-          # - target: "musl"
-          #   build-feature: "-native-roots"
-          #   platform: linux/arm64
-          #   tags-suffix: "-slim-native-roots"
+          - target: "musl"
+            build-feature: "-webpki-roots"
+            platform: linux/arm64
+            tags-suffix: "-slim-webpki-roots"
 
-          # - target: "gnu"
-          #   build-feature: "-s2n-native-roots"
-          #   platform: linux/amd64
-          #   tags-suffix: "-s2n-native-roots"
+          - target: "gnu"
+            build-feature: "-s2n-webpki-roots"
+            platform: linux/amd64
+            tags-suffix: "-s2n-webpki-roots"
 
-          # - target: "gnu"
-          #   build-feature: "-s2n-native-roots"
-          #   platform: linux/arm64
-          #   tags-suffix: "-s2n-native-roots"
+          - target: "gnu"
+            build-feature: "-s2n-webpki-roots"
+            platform: linux/arm64
+            tags-suffix: "-s2n-webpki-roots"
 
     steps:
       - run: "echo 'The relese triggering workflows passed'"
@@ -81,10 +81,9 @@ jobs:
         id: "set-env"
         run: |
           if [ ${{ matrix.platform }} == 'linux/amd64' ]; then PLATFORM_MAP="x86_64"; else PLATFORM_MAP="aarch64"; fi
-          if [ ${{ github.ref_name == 'develop' && github.event.client_payload.pull_request.head == 'develop' && github.event.client_payload.pull_request.base == 'main' }} || ${{ github.ref_name == 'main' }}]; then BUILD_NAME=""; else BUILD_NAME="-nightly"; fi
           if [ ${{ github.ref_name }} == 'main' ]; then BUILD_IMG="latest"; else BUILD_IMG="nightly"; fi
           echo "build_img=${BUILD_IMG}" >> $GITHUB_OUTPUT
-          echo "target_name=rpxy${BUILD_NAME}-${PLATFORM_MAP}-unknown-linux-${{ matrix.target }}${{ matrix.build-feature }}" >> $GITHUB_OUTPUT
+          echo "target_name=rpxy-${PLATFORM_MAP}-unknown-linux-${{ matrix.target }}${{ matrix.build-feature }}" >> $GITHUB_OUTPUT
 
       - name: "docker pull and extract binary from docker image"
         id: "extract-binary"
@@ -110,7 +109,7 @@ jobs:
     needs: on-success
     steps:
       - name: check pull_request title
-        uses: kaisugi/action-regex-match@v1.0.0
+        uses: kaisugi/action-regex-match@v1.0.1
         id: regex-match
         with:
           text: ${{ github.event.client_payload.pull_request.title }}
@@ -136,7 +135,7 @@ jobs:
 
       - name: release
         if: ${{ steps.regex-match.outputs.match != ''}}
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: /tmp/assets/*.tar.gz
           name: ${{ github.event.client_payload.pull_request.title }}

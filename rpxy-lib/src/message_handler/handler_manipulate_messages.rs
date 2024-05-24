@@ -21,11 +21,7 @@ where
 
   #[allow(unused_variables)]
   /// Manipulate a response message sent from a backend application to forward downstream to a client.
-  pub(super) fn generate_response_forwarded<B>(
-    &self,
-    response: &mut Response<B>,
-    backend_app: &BackendApp<U>,
-  ) -> Result<()> {
+  pub(super) fn generate_response_forwarded<B>(&self, response: &mut Response<B>, backend_app: &BackendApp<U>) -> Result<()> {
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
@@ -85,26 +81,24 @@ where
       }
     };
 
-    let uri = req.uri().to_string();
+    let original_uri = req.uri().to_string();
     let headers = req.headers_mut();
     // delete headers specified in header.connection
     remove_connection_header(headers);
     // delete hop headers including header.connection
     remove_hop_header(headers);
     // X-Forwarded-For
-    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &uri)?;
+    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &original_uri)?;
 
     // Add te: trailer if te_trailer
     if contains_te_trailers {
       headers.insert(header::TE, HeaderValue::from_bytes("trailers".as_bytes()).unwrap());
     }
 
-    // add "host" header of original server_name if not exist (default)
+    // by default, add "host" header of original server_name if not exist
     if req.headers().get(header::HOST).is_none() {
       let org_host = req.uri().host().ok_or_else(|| anyhow!("Invalid request"))?.to_owned();
-      req
-        .headers_mut()
-        .insert(header::HOST, HeaderValue::from_str(&org_host)?);
+      req.headers_mut().insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
 
     /////////////////////////////////////////////
@@ -132,10 +126,8 @@ where
 
     // apply upstream-specific headers given in upstream_option
     let headers = req.headers_mut();
-    // by default, host header is overwritten with upstream hostname
-    override_host_header(headers, &upstream_chosen.uri)?;
     // apply upstream options to header
-    apply_upstream_options_to_header(headers, upstream_candidates)?;
+    apply_upstream_options_to_header(headers, &upstream_chosen.uri, upstream_candidates)?;
 
     // update uri in request
     ensure!(
@@ -176,8 +168,10 @@ where
         .headers_mut()
         .insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
     }
-
-    update_request_line(req, upstream_chosen, upstream_candidates)?;
+    if upgrade.is_none() {
+      // can update request line i.e., http version, only if not upgrade (http 1.1)
+      update_request_line(req, upstream_chosen, upstream_candidates)?;
+    }
 
     Ok(context)
   }

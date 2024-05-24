@@ -70,10 +70,12 @@ where
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
           self.globals.runtime_handle.spawn(async move {
-            if let Err(e) = self_inner
-              .h3_serve_stream(req, stream, client_addr, tls_server_name_inner)
-              .await
-            {
+            let fut = self_inner.h3_serve_stream(req, stream, client_addr, tls_server_name_inner);
+            if let Some(connection_handling_timeout) = self_inner.globals.proxy_config.connection_handling_timeout {
+              if let Err(e) = tokio::time::timeout(connection_handling_timeout, fut).await {
+                warn!("HTTP/3 error on serve stream: {}", e);
+              };
+            } else if let Err(e) = fut.await {
               warn!("HTTP/3 error on serve stream: {}", e);
             }
             request_count.decrement();
@@ -168,11 +170,11 @@ where
 
           if frame.is_data() {
             let data = frame.into_data().unwrap_or_default();
-            debug!("Write data to HTTP/3 stream");
+            // debug!("Write data to HTTP/3 stream");
             send_stream.send_data(data).await?;
           } else if frame.is_trailers() {
             let trailers = frame.into_trailers().unwrap_or_default();
-            debug!("Write trailer to HTTP/3 stream");
+            // debug!("Write trailer to HTTP/3 stream");
             send_stream.send_trailers(trailers).await?;
           }
         }

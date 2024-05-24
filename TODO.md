@@ -1,8 +1,8 @@
 # TODO List
 
-- Support of `rustls-0.22` along with `hyper-1.0`. Maybe `hyper-rustls` is the most difficult part.
-- [Done in 0.6.0] But we need more sophistication on `Forwarder` struct. ~~Fix strategy for `h2c` requests on forwarded requests upstream. This needs to update forwarder definition. Also, maybe forwarder would have a cache corresponding to the following task.~~
-- [Initial implementation in v0.6.0] ~~**Cache option for the response with `Cache-Control: public` header directive ([#55](https://github.com/junkurihara/rust-rpxy/issues/55))**~~ Using `lru` crate might be inefficient in terms of the speed.
+- Support of `rustls-0.22`.
+- We need more sophistication on `Forwarder` struct to handle `h2c`.
+- Cache using `lru` crate might be inefficient in terms of the speed.
   - Consider more sophisticated architecture for cache
   - Persistent cache (if possible).
   - More secure cache file object naming
@@ -19,7 +19,7 @@
 
 - Unit tests
 - Options to serve custom http_error page.
-- Prometheus metrics
+- Traces and metrics using opentelemetry (`tracing-opentelemetry` crate)
 - Documentation
 - Client certificate
   - support intermediate certificate. Currently, only supports client certificates directly signed by root CA.
@@ -29,15 +29,4 @@
 - Make the session-persistance option for load-balancing sophisticated. (mostly done in v0.3.0)
   - add option for sticky cookie name
   - add option for sticky cookie duration
-
-- Done in v0.5.0 ~~Use `gchr.io`~~
-- Done in v0.5.0:
-  ~~Consideration on migrating from `quinn` and `h3-quinn` to other QUIC implementations ([#57](https://github.com/junkurihara/rust-rpxy/issues/57))~~
-- Done in v0.4.0:
-  ~~Benchmark with other reverse proxy implementations like Sozu ([#58](https://github.com/junkurihara/rust-rpxy/issues/58)) Currently, Sozu can work only on `amd64` format due to its HTTP message parser limitation... Since the main developer have only `arm64` (Apple M1) laptops, so we should do that on VPS?~~
-- Done in v0.4.0:
-  ~~Split `rpxy` source codes into `rpxy-lib` and `rpxy-bin` to make the core part (reverse proxy) isolated from the misc part like toml file loader. This is in order to make the configuration-related part more flexible (related to [#33](https://github.com/junkurihara/rust-rpxy/issues/33))~~
-- Done in 0.6.0:
-  ~~Fix dynamic reloading of configuration file~~
-
 - etc.

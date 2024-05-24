@@ -86,8 +86,8 @@ pub(super) fn set_sticky_cookie_lb_context(
   Ok(())
 }
 
-/// default: overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
-pub(super) fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &Uri) -> Result<()> {
+/// overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
+fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &Uri) -> Result<()> {
   let mut upstream_host = upstream_base_uri
     .host()
     .ok_or_else(|| anyhow!("No hostname is given"))?
@@ -105,17 +105,18 @@ pub(super) fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &
 /// Apply options to request header, which are specified in the configuration
 pub(super) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
+  upstream_base_uri: &Uri,
   // _client_addr: &SocketAddr,
   upstream: &UpstreamCandidates,
-  // _upstream_base_uri: &Uri,
 ) -> Result<()> {
   for opt in upstream.options.iter() {
     match opt {
-      UpstreamOption::DisableOverrideHost => {
-        // simply remove HOST header value
-        headers
-          .remove(header::HOST)
-          .ok_or_else(|| anyhow!("Failed to remove host header in disable_override_host option"))?;
+      UpstreamOption::SetUpstreamHost => {
+        // prioritize KeepOriginalHost
+        if !upstream.options.contains(&UpstreamOption::KeepOriginalHost) {
+          // overwrite host header, this removes all the HOST header values
+          override_host_header(headers, upstream_base_uri)?;
+        }
       }
       UpstreamOption::UpgradeInsecureRequests => {
         // add upgrade-insecure-requests in request header if not exist

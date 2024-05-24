@@ -88,23 +88,28 @@ where
     let message_handler_clone = self.message_handler.clone();
     let tls_enabled = self.tls_enabled;
     let listening_on = self.listening_on;
+    let handling_timeout = self.globals.proxy_config.connection_handling_timeout;
+
     self.globals.runtime_handle.clone().spawn(async move {
-      server_clone
-        .serve_connection_with_upgrades(
-          stream,
-          service_fn(move |req: Request<Incoming>| {
-            serve_request(
-              req,
-              message_handler_clone.clone(),
-              peer_addr,
-              listening_on,
-              tls_enabled,
-              tls_server_name.clone(),
-            )
-          }),
-        )
-        .await
-        .ok();
+      let fut = server_clone.serve_connection_with_upgrades(
+        stream,
+        service_fn(move |req: Request<Incoming>| {
+          serve_request(
+            req,
+            message_handler_clone.clone(),
+            peer_addr,
+            listening_on,
+            tls_enabled,
+            tls_server_name.clone(),
+          )
+        }),
+      );
+
+      if let Some(handling_timeout) = handling_timeout {
+        timeout(handling_timeout, fut).await.ok();
+      } else {
+        fut.await.ok();
+      }
 
       request_count.decrement();
       debug!("Request processed: current # {}", request_count.current());

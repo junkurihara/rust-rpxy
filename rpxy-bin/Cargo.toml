@@ -1,50 +1,50 @@
 [package]
 name = "rpxy"
-version = "0.7.0-alpha.0"
-authors = ["Jun Kurihara"]
-homepage = "https://github.com/junkurihara/rust-rpxy"
-repository = "https://github.com/junkurihara/rust-rpxy"
-license = "MIT"
-readme = "../README.md"
-edition = "2021"
-publish = false
+description = "`rpxy`: a simple and ultrafast http reverse proxy"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "cache", "native-tls-backend"]
+default = ["http3-quinn", "cache", "rustls-backend"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
-# Not yet implemented
 rustls-backend = ["rpxy-lib/rustls-backend"]
+webpki-roots = ["rpxy-lib/webpki-roots"]
 cache = ["rpxy-lib/cache"]
-native-roots = ["rpxy-lib/native-roots"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
 ] }
 
-anyhow = "1.0.75"
+anyhow = "1.0.86"
 rustc-hash = "1.1.0"
-serde = { version = "1.0.193", default-features = false, features = ["derive"] }
-derive_builder = "0.12.0"
-tokio = { version = "1.35.0", default-features = false, features = [
+serde = { version = "1.0.202", default-features = false, features = ["derive"] }
+derive_builder = "0.20.0"
+tokio = { version = "1.37.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
 ] }
-async-trait = "0.1.74"
+async-trait = "0.1.80"
 rustls-pemfile = "1.0.4"
 mimalloc = { version = "*", default-features = false }
 
 # config
-clap = { version = "4.4.11", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.8", default-features = false, features = ["parse"] }
-hot_reload = "0.1.4"
+clap = { version = "4.5.4", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.8.13", default-features = false, features = ["parse"] }
+hot_reload = "0.1.5"
 
 # logging
 tracing = { version = "0.1.40" }

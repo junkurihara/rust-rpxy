@@ -143,7 +143,14 @@ where
 
     // Upgrade in request header
     let upgrade_in_request = extract_upgrade(req.headers());
-    let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
+    if upgrade_in_request.is_some() && req.version() != http::Version::HTTP_11 {
+      return Err(HttpError::FailedToUpgrade(format!(
+        "Unsupported HTTP version: {:?}",
+        req.version()
+      )));
+    }
+    // let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
+    let req_on_upgrade = hyper::upgrade::on(&mut req);
 
     // Build request from destination information
     let _context = match self.generate_request_forwarded(
@@ -209,19 +216,21 @@ where
         upgrade_in_response, upgrade_in_request
       )));
     }
-    let Some(request_upgraded) = request_upgraded else {
-      return Err(HttpError::NoUpgradeExtensionInRequest);
-    };
-    let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() else {
-      return Err(HttpError::NoUpgradeExtensionInResponse);
-    };
+    // let Some(request_upgraded) = request_upgraded else {
+    //   return Err(HttpError::NoUpgradeExtensionInRequest);
+    // };
+
+    // let Some(onupgrade) = res_backend.extensions_mut().remove::<hyper::upgrade::OnUpgrade>() else {
+    //   return Err(HttpError::NoUpgradeExtensionInResponse);
+    // };
+    let res_on_upgrade = hyper::upgrade::on(&mut res_backend);
 
     self.globals.runtime_handle.spawn(async move {
-      let mut response_upgraded = TokioIo::new(onupgrade.await.map_err(|e| {
+      let mut response_upgraded = TokioIo::new(res_on_upgrade.await.map_err(|e| {
         error!("Failed to upgrade response: {}", e);
         RpxyError::FailedToUpgradeResponse(e.to_string())
       })?);
-      let mut request_upgraded = TokioIo::new(request_upgraded.await.map_err(|e| {
+      let mut request_upgraded = TokioIo::new(req_on_upgrade.await.map_err(|e| {
         error!("Failed to upgrade request: {}", e);
         RpxyError::FailedToUpgradeRequest(e.to_string())
       })?);

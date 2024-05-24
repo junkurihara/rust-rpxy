@@ -1,4 +1,3 @@
-version: "3"
 services:
   rpxy-rp:
     image: jqtype/rpxy:latest # ghcr.io/junkurihara/rust-rpxy:latest also works
@@ -14,8 +13,8 @@ services:
       # args: # Uncomment when build quic-s2n version
       #   - "CARGO_FEATURES=--no-default-features --features=http3-s2n"
       #   - "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
-      # args: # Uncomment when build with native cert store
-      #   - "CARGO_FEATURES=--no-default-features --features=http3-quinn,native-roots"
+      # args: # Uncomment when build with webpki root store
+      #   - "CARGO_FEATURES=--no-default-features --features=http3-quinn,webpki-roots"
       dockerfile: ./docker/Dockerfile # based on ubuntu 22.04 and build x86_64-unknown-linux-gnu
       platforms: # Choose your platforms
         # - "linux/amd64"

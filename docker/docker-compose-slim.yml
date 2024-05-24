@@ -1,4 +1,3 @@
-version: "3"
 services:
   rpxy-rp:
     image: jqtype/rpxy:slim # ghcr.io/junkurihara/rust-rpxy:slim also works
@@ -14,8 +13,8 @@ services:
       additional_contexts:
         - messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
         - messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
-      # args: # Uncomment when build with native cert store
-      #   - "CARGO_FEATURES=--no-default-features --features=http3-quinn,native-roots"
+      # args: # Uncomment when build with webpki cert store
+      #   - "CARGO_FEATURES=--no-default-features --features=http3-quinn,webpki-roots"
       dockerfile: ./docker/Dockerfile-slim # based on alpine and build x86_64-unknown-linux-musl
       platforms: # Choose your platforms
         # - "linux/amd64"

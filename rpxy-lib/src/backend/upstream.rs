@@ -1,8 +1,7 @@
 #[cfg(feature = "sticky-cookie")]
 use super::load_balance::LoadBalanceStickyBuilder;
 use super::load_balance::{
-  load_balance_options as lb_opts, LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder,
-  LoadBalanceRoundRobinBuilder,
+  load_balance_options as lb_opts, LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder,
 };
 // use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
 use super::upstream_opts::UpstreamOption;
@@ -56,8 +55,7 @@ where
     }
 
     if !(inner.iter().all(|(_, elem)| {
-      !(elem.options.contains(&UpstreamOption::ForceHttp11Upstream)
-        && elem.options.contains(&UpstreamOption::ForceHttp2Upstream))
+      !(elem.options.contains(&UpstreamOption::ForceHttp11Upstream) && elem.options.contains(&UpstreamOption::ForceHttp2Upstream))
     })) {
       error!("Either one of force_http11 or force_http2 can be enabled");
       return Err(RpxyError::InvalidUpstreamOptionSetting);
@@ -175,7 +173,7 @@ impl UpstreamCandidatesBuilder {
     &mut self,
     v: &Option<String>,
     // upstream_num: &usize,
-    upstream_vec: &Vec<Upstream>,
+    upstream_vec: &[Upstream],
     _server_name: &str,
     _path_opt: &Option<String>,
   ) -> &mut Self {
@@ -236,10 +234,7 @@ impl UpstreamCandidates {
     let pointer_to_upstream = self.load_balance.get_context(context_to_lb);
     debug!("Upstream of index {} is chosen.", pointer_to_upstream.ptr);
     debug!("Context to LB (Cookie in Request): {:?}", context_to_lb);
-    debug!(
-      "Context from LB (Set-Cookie in Response): {:?}",
-      pointer_to_upstream.context
-    );
+    debug!("Context from LB (Set-Cookie in Response): {:?}", pointer_to_upstream.context);
     (self.inner.get(pointer_to_upstream.ptr), pointer_to_upstream.context)
   }
 }

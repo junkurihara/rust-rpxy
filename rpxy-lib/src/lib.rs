@@ -55,6 +55,12 @@ where
   if proxy_config.https_port.is_some() {
     info!("Listen port: {} (for TLS)", proxy_config.https_port.unwrap());
   }
+  if proxy_config.connection_handling_timeout.is_some() {
+    info!(
+      "Force connection handling timeout: {:?} sec",
+      proxy_config.connection_handling_timeout.unwrap_or_default().as_secs()
+    );
+  }
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   if proxy_config.http3 {
     info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
@@ -64,10 +70,7 @@ where
   }
   #[cfg(feature = "cache")]
   if proxy_config.cache_enabled {
-    info!(
-      "Cache is enabled: cache dir = {:?}",
-      proxy_config.cache_dir.as_ref().unwrap()
-    );
+    info!("Cache is enabled: cache dir = {:?}", proxy_config.cache_dir.as_ref().unwrap());
   } else {
     info!("Cache is disabled")
   }

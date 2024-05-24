@@ -29,8 +29,14 @@ pub(crate) fn connection_builder(globals: &Arc<Globals>) -> Arc<ConnectionBuilde
     .pipeline_flush(true);
   http_server
     .http2()
-    .keep_alive_interval(Some(globals.proxy_config.proxy_idle_timeout))
-    .timer(TokioTimer)
     .max_concurrent_streams(globals.proxy_config.max_concurrent_streams);
+
+  if globals.proxy_config.keepalive {
+    http_server
+      .http2()
+      .keep_alive_interval(Some(globals.proxy_config.proxy_idle_timeout))
+      .keep_alive_timeout(globals.proxy_config.proxy_idle_timeout + std::time::Duration::from_secs(1))
+      .timer(TokioTimer);
+  }
   Arc::new(http_server)
 }
