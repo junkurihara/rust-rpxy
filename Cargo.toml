@@ -9,7 +9,7 @@ edition = "2021"
 publish = false
 
 [workspace]
-members = ["rpxy-bin", "rpxy-lib"]
+members = ["rpxy-bin", "rpxy-lib", "rpxy-certs"]
 exclude = ["submodules"]
 resolver = "2"
 

@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 bytes = { version = "1", default-features = false }
 futures = { version = "0.3", default-features = false }
-h3 = { path = "../h3/h3/" }
+# h3 = { path = "../h3/h3/" }
+h3 = { version = "0.0.4" }
 s2n-quic = "1.37.0"
 s2n-quic-core = "0.37.0"
