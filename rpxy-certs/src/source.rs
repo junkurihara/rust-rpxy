@@ -1,0 +1,160 @@
+use crate::{certs::SingleServerCrypto, error::*, log::*};
+use async_trait::async_trait;
+use derive_builder::Builder;
+use std::{
+  fs::File,
+  io::{self, BufReader, Cursor, Read},
+  path::{Path, PathBuf},
+  sync::Arc,
+};
+
+/* ------------------------------------------------ */
+#[async_trait]
+// Trait to read certs and keys anywhere from KVS, file, sqlite, etc.
+pub trait CryptoSource {
+  type Error;
+
+  /// read crypto materials from source
+  async fn read(&self) -> Result<SingleServerCrypto, Self::Error>;
+
+  /// Returns true when mutual tls is enabled
+  fn is_mutual_tls(&self) -> bool;
+}
+
+/* ------------------------------------------------ */
+#[derive(Builder, Debug, Clone)]
+/// Crypto-related file reader implementing `CryptoSource`` trait
+pub struct CryptoFileSource {
+  #[builder(setter(custom))]
+  /// Always exist
+  pub tls_cert_path: PathBuf,
+
+  #[builder(setter(custom))]
+  /// Always exist
+  pub tls_cert_key_path: PathBuf,
+
+  #[builder(setter(custom), default)]
+  /// This may not exist
+  pub client_ca_cert_path: Option<PathBuf>,
+}
+
+impl CryptoFileSourceBuilder {
+  pub fn tls_cert_path<T: AsRef<Path>>(&mut self, v: T) -> &mut Self {
+    self.tls_cert_path = Some(v.as_ref().to_path_buf());
+    self
+  }
+  pub fn tls_cert_key_path<T: AsRef<Path>>(&mut self, v: T) -> &mut Self {
+    self.tls_cert_key_path = Some(v.as_ref().to_path_buf());
+    self
+  }
+  pub fn client_ca_cert_path<T: AsRef<Path>>(&mut self, v: Option<T>) -> &mut Self {
+    self.client_ca_cert_path = Some(v.map(|p| p.as_ref().to_path_buf()));
+    self
+  }
+}
+
+/* ------------------------------------------------ */
+#[async_trait]
+impl CryptoSource for CryptoFileSource {
+  type Error = RpxyCertError;
+  /// read crypto materials from source
+  async fn read(&self) -> Result<SingleServerCrypto, Self::Error> {
+    read_certs_and_keys(
+      &self.tls_cert_path,
+      &self.tls_cert_key_path,
+      self.client_ca_cert_path.as_ref(),
+    )
+  }
+  /// Returns true when mutual tls is enabled
+  fn is_mutual_tls(&self) -> bool {
+    self.client_ca_cert_path.is_some()
+  }
+}
+
+/* ------------------------------------------------ */
+/// Read certificates and private keys from file
+fn read_certs_and_keys(
+  cert_path: &PathBuf,
+  cert_key_path: &PathBuf,
+  client_ca_cert_path: Option<&PathBuf>,
+) -> Result<SingleServerCrypto, RpxyCertError> {
+  debug!("Read TLS server certificates and private key");
+
+  // certificates
+  let raw_certs = {
+    let mut reader = BufReader::new(File::open(cert_path).map_err(|e| {
+      io::Error::new(
+        e.kind(),
+        format!("Unable to load the certificates [{}]: {e}", cert_path.display()),
+      )
+    })?);
+    rustls_pemfile::certs(&mut reader)
+      .collect::<Result<Vec<_>, _>>()
+      .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the certificates"))?
+  };
+
+  // private keys
+  let raw_cert_keys = {
+    let encoded_keys = {
+      let mut encoded_keys = vec![];
+      File::open(cert_key_path)
+        .map_err(|e| {
+          io::Error::new(
+            e.kind(),
+            format!("Unable to load the certificate keys [{}]: {e}", cert_key_path.display()),
+          )
+        })?
+        .read_to_end(&mut encoded_keys)?;
+      encoded_keys
+    };
+    let mut reader = Cursor::new(encoded_keys);
+    let pkcs8_keys = rustls_pemfile::pkcs8_private_keys(&mut reader)
+      .map(|v| v.map(rustls::pki_types::PrivateKeyDer::Pkcs8))
+      .collect::<Result<Vec<_>, _>>()
+      .map_err(|_| {
+        io::Error::new(
+          io::ErrorKind::InvalidInput,
+          "Unable to parse the certificates private keys (PKCS8)",
+        )
+      })?;
+    reader.set_position(0);
+    let mut rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader)
+      .map(|v| v.map(rustls::pki_types::PrivateKeyDer::Pkcs1))
+      .collect::<Result<Vec<_>, _>>()?;
+    let mut keys = pkcs8_keys;
+    keys.append(&mut rsa_keys);
+    if keys.is_empty() {
+      return Err(RpxyCertError::IoError(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "No private keys found - Make sure that they are in PKCS#8/PEM format",
+      )));
+    }
+    keys
+  };
+
+  // client ca certificates
+  let client_ca_certs = if let Some(path) = client_ca_cert_path {
+    debug!("Read CA certificates for client authentication");
+    // Reads client certificate and returns client
+    let certs = {
+      let mut reader = BufReader::new(File::open(path).map_err(|e| {
+        io::Error::new(
+          e.kind(),
+          format!("Unable to load the client certificates [{}]: {e}", path.display()),
+        )
+      })?);
+      rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the client certificates"))?
+    };
+    Some(certs)
+  } else {
+    None
+  };
+
+  Ok(SingleServerCrypto::new(
+    &raw_certs,
+    &Arc::new(raw_cert_keys),
+    &client_ca_certs,
+  ))
+}
