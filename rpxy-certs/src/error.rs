@@ -12,4 +12,7 @@ pub enum RpxyCertError {
   /// Error when parsing client CA certificates: No client certificate found
   #[error("No client certificate found")]
   NoClientCert,
+  /// Error for hot reload certificate reloader
+  #[error("Certificate reload error: {0}")]
+  CertificateReloadError(#[from] hot_reload::ReloaderError<crate::server_crypto::ServerCryptoBase>),
 }
