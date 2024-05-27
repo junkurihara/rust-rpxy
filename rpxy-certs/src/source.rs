@@ -1,4 +1,4 @@
-use crate::{certs::SingleServerCrypto, error::*, log::*};
+use crate::{certs::SingleServerCertsKeys, error::*, log::*};
 use async_trait::async_trait;
 use derive_builder::Builder;
 use std::{
@@ -15,7 +15,7 @@ pub trait CryptoSource {
   type Error;
 
   /// read crypto materials from source
-  async fn read(&self) -> Result<SingleServerCrypto, Self::Error>;
+  async fn read(&self) -> Result<SingleServerCertsKeys, Self::Error>;
 
   /// Returns true when mutual tls is enabled
   fn is_mutual_tls(&self) -> bool;
@@ -58,7 +58,7 @@ impl CryptoFileSourceBuilder {
 impl CryptoSource for CryptoFileSource {
   type Error = RpxyCertError;
   /// read crypto materials from source
-  async fn read(&self) -> Result<SingleServerCrypto, Self::Error> {
+  async fn read(&self) -> Result<SingleServerCertsKeys, Self::Error> {
     read_certs_and_keys(
       &self.tls_cert_path,
       &self.tls_cert_key_path,
@@ -77,7 +77,7 @@ fn read_certs_and_keys(
   cert_path: &PathBuf,
   cert_key_path: &PathBuf,
   client_ca_cert_path: Option<&PathBuf>,
-) -> Result<SingleServerCrypto, RpxyCertError> {
+) -> Result<SingleServerCertsKeys, RpxyCertError> {
   debug!("Read TLS server certificates and private key");
 
   // certificates
@@ -152,7 +152,7 @@ fn read_certs_and_keys(
     None
   };
 
-  Ok(SingleServerCrypto::new(
+  Ok(SingleServerCertsKeys::new(
     &raw_certs,
     &Arc::new(raw_cert_keys),
     &client_ca_certs,

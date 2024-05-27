@@ -9,19 +9,21 @@ use x509_parser::prelude::*;
 type Certificate = rustls::pki_types::CertificateDer<'static>;
 /// Raw private key in rustls format
 type PrivateKey = pki_types::PrivateKeyDer<'static>;
+/// Subject Key ID in bytes
+type SubjectKeyIdentifier = Vec<u8>;
 /// Client CA trust anchors subject to the subject key identifier
-type TrustAnchors = HashMap<Vec<u8>, pki_types::TrustAnchor<'static>>;
+type TrustAnchors = HashMap<SubjectKeyIdentifier, pki_types::TrustAnchor<'static>>;
 
 /* ------------------------------------------------ */
 /// Raw certificates and private keys loaded from files for a single server name
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct SingleServerCrypto {
+pub struct SingleServerCertsKeys {
   certs: Vec<Certificate>,
   cert_keys: Arc<Vec<PrivateKey>>,
   client_ca_certs: Option<Vec<Certificate>>,
 }
 
-impl SingleServerCrypto {
+impl SingleServerCertsKeys {
   /// Create a new instance of SingleServerCrypto
   pub fn new(certs: &[Certificate], cert_keys: &Arc<Vec<PrivateKey>>, client_ca_certs: &Option<Vec<Certificate>>) -> Self {
     Self {
@@ -98,5 +100,59 @@ impl SingleServerCrypto {
       .collect::<HashMap<_, _>>();
 
     Ok(trust_anchors)
+  }
+}
+
+/* ------------------------------------------------ */
+#[cfg(test)]
+mod tests {
+  use super::super::*;
+
+  #[tokio::test]
+  async fn read_server_crt_key_files() {
+    let tls_cert_path = "../example-certs/server.crt";
+    let tls_cert_key_path = "../example-certs/server.key";
+    let crypto_file_source = CryptoFileSourceBuilder::default()
+      .tls_cert_key_path(tls_cert_key_path)
+      .tls_cert_path(tls_cert_path)
+      .build();
+    assert!(crypto_file_source.is_ok());
+
+    let crypto_file_source = crypto_file_source.unwrap();
+    let crypto_elem = crypto_file_source.read().await;
+    assert!(crypto_elem.is_ok());
+
+    let crypto_elem = crypto_elem.unwrap();
+    let certificed_key = crypto_elem.rustls_certified_key();
+    assert!(certificed_key.is_ok());
+  }
+
+  #[tokio::test]
+  async fn read_server_crt_key_files_with_client_ca_crt() {
+    let tls_cert_path = "../example-certs/server.crt";
+    let tls_cert_key_path = "../example-certs/server.key";
+    let client_ca_cert_path = Some("../example-certs/client.ca.crt");
+    let crypto_file_source = CryptoFileSourceBuilder::default()
+      .tls_cert_key_path(tls_cert_key_path)
+      .tls_cert_path(tls_cert_path)
+      .client_ca_cert_path(client_ca_cert_path)
+      .build();
+    assert!(crypto_file_source.is_ok());
+
+    let crypto_file_source = crypto_file_source.unwrap();
+    let crypto_elem = crypto_file_source.read().await;
+    assert!(crypto_elem.is_ok());
+
+    let crypto_elem = crypto_elem.unwrap();
+    assert!(crypto_elem.is_mutual_tls());
+
+    let certificed_key = crypto_elem.rustls_certified_key();
+    assert!(certificed_key.is_ok());
+
+    let trust_anchors = crypto_elem.rustls_trust_anchors();
+    assert!(trust_anchors.is_ok());
+
+    let trust_anchors = trust_anchors.unwrap();
+    assert_eq!(trust_anchors.len(), 1);
   }
 }
