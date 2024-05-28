@@ -1,5 +1,4 @@
 use crate::{
-  cert_file_reader::{CryptoFileSource, CryptoFileSourceBuilder},
   constants::*,
   error::{anyhow, ensure},
 };
@@ -214,7 +213,7 @@ impl ConfigToml {
 }
 
 impl Application {
-  pub fn build_app_config(&self, app_name: &str) -> std::result::Result<AppConfig<CryptoFileSource>, anyhow::Error> {
+  pub fn build_app_config(&self, app_name: &str) -> std::result::Result<AppConfig, anyhow::Error> {
     let server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
 
     // reverse proxy settings
@@ -224,11 +223,6 @@ impl Application {
     let tls_config = if self.tls.is_some() {
       let tls = self.tls.as_ref().unwrap();
       ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
-      let inner = CryptoFileSourceBuilder::default()
-        .tls_cert_path(tls.tls_cert_path.as_ref().unwrap())
-        .tls_cert_key_path(tls.tls_cert_key_path.as_ref().unwrap())
-        .client_ca_cert_path(tls.client_ca_cert_path.as_deref())
-        .build()?;
 
       let https_redirection = if tls.https_redirection.is_none() {
         true // Default true
@@ -236,10 +230,7 @@ impl Application {
         tls.https_redirection.unwrap()
       };
 
-      Some(TlsConfig {
-        inner,
-        https_redirection,
-      })
+      Some(TlsConfig { https_redirection })
     } else {
       None
     };

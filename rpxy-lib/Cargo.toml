@@ -13,7 +13,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
+default = ["sticky-cookie", "cache", "rustls-backend"]
+# default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
 http3-quinn = ["socket2", "quinn", "h3", "h3-quinn", "rpxy-certs/http3"]
 http3-s2n = [
   "h3",
@@ -73,8 +74,8 @@ hyper-rustls = { version = "0.27.1", default-features = false, features = [
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.5"
-rustls = { version = "0.21.12", default-features = false }
-tokio-rustls = { version = "0.24.1", features = ["early-data"] }
+rustls = { version = "0.23.8", default-features = false }
+tokio-rustls = { version = "0.26.0", features = ["early-data"] }
 webpki = "0.22.4"
 x509-parser = "0.16.0"
 

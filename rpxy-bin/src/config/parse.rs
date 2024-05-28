@@ -1,8 +1,5 @@
 use super::toml::ConfigToml;
-use crate::{
-  cert_file_reader::CryptoFileSource,
-  error::{anyhow, ensure},
-};
+use crate::error::{anyhow, ensure};
 use clap::{Arg, ArgAction};
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use rpxy_certs::{build_cert_reloader, CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase};
@@ -43,7 +40,7 @@ pub fn parse_opts() -> Result<Opts, anyhow::Error> {
   Ok(Opts { config_file_path, watch })
 }
 
-pub fn build_settings(config: &ConfigToml) -> std::result::Result<(ProxyConfig, AppConfigList<CryptoFileSource>), anyhow::Error> {
+pub fn build_settings(config: &ConfigToml) -> std::result::Result<(ProxyConfig, AppConfigList), anyhow::Error> {
   // build proxy config
   let proxy_config: ProxyConfig = config.try_into()?;
 
@@ -74,7 +71,7 @@ pub fn build_settings(config: &ConfigToml) -> std::result::Result<(ProxyConfig, 
   }
 
   // build applications
-  let mut app_config_list_inner = Vec::<AppConfig<CryptoFileSource>>::new();
+  let mut app_config_list_inner = Vec::<AppConfig>::new();
 
   // let mut backends = Backends::new();
   for (app_name, app) in apps.0.iter() {

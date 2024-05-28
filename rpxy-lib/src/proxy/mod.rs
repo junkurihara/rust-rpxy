@@ -11,9 +11,15 @@ mod proxy_quic_s2n;
 use crate::{
   globals::Globals,
   hyper_ext::rt::{LocalExecutor, TokioTimer},
+  name_exp::ServerName,
 };
 use hyper_util::server::{self, conn::auto::Builder as ConnectionBuilder};
+use rustc_hash::FxHashMap as HashMap;
+use rustls::ServerConfig;
 use std::sync::Arc;
+
+/// SNI to ServerConfig map type
+pub type SniServerCryptoMap = HashMap<ServerName, Arc<ServerConfig>>;
 
 pub(crate) use proxy_main::Proxy;
 

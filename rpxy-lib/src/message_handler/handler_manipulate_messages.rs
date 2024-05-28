@@ -3,17 +3,15 @@ use crate::{
   backend::{BackendApp, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
   log::*,
-  CryptoSource,
 };
 use anyhow::{anyhow, ensure, Result};
 use http::{header, HeaderValue, Request, Response, Uri};
 use hyper_util::client::legacy::connect::Connect;
 use std::net::SocketAddr;
 
-impl<U, C> HttpMessageHandler<U, C>
+impl<C> HttpMessageHandler<C>
 where
   C: Send + Sync + Connect + Clone + 'static,
-  U: CryptoSource + Clone,
 {
   ////////////////////////////////////////////////////
   // Functions to generate messages
@@ -21,7 +19,7 @@ where
 
   #[allow(unused_variables)]
   /// Manipulate a response message sent from a backend application to forward downstream to a client.
-  pub(super) fn generate_response_forwarded<B>(&self, response: &mut Response<B>, backend_app: &BackendApp<U>) -> Result<()> {
+  pub(super) fn generate_response_forwarded<B>(&self, response: &mut Response<B>, backend_app: &BackendApp) -> Result<()> {
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);

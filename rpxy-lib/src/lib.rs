@@ -1,7 +1,6 @@
 mod backend;
 mod constants;
 mod count;
-mod crypto;
 mod error;
 mod forwarder;
 mod globals;
@@ -12,8 +11,13 @@ mod name_exp;
 mod proxy;
 /* ------------------------------------------------ */
 use crate::{
-  crypto::build_cert_reloader, error::*, forwarder::Forwarder, globals::Globals, log::*,
-  message_handler::HttpMessageHandlerBuilder, proxy::Proxy,
+  // crypto::build_cert_reloader,
+  error::*,
+  forwarder::Forwarder,
+  globals::Globals,
+  log::*,
+  message_handler::HttpMessageHandlerBuilder,
+  proxy::Proxy,
 };
 use futures::future::select_all;
 use hot_reload::ReloaderReceiver;
@@ -21,26 +25,19 @@ use rpxy_certs::ServerCryptoBase;
 use std::sync::Arc;
 
 /* ------------------------------------------------ */
-pub use crate::{
-  crypto::{CertsAndKeys, CryptoSource},
-  globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
-};
+pub use crate::globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
 pub mod reexports {
   pub use hyper::Uri;
-  pub use rustls::{Certificate, PrivateKey};
 }
 
 /// Entrypoint that creates and spawns tasks of reverse proxy services
-pub async fn entrypoint<T>(
+pub async fn entrypoint(
   proxy_config: &ProxyConfig,
-  app_config_list: &AppConfigList<T>,
+  app_config_list: &AppConfigList,
   cert_rx: Option<&ReloaderReceiver<ServerCryptoBase>>, // TODO:
   runtime_handle: &tokio::runtime::Handle,
   term_notify: Option<Arc<tokio::sync::Notify>>,
-) -> RpxyResult<()>
-where
-  T: CryptoSource + Clone + Send + Sync + 'static,
-{
+) -> RpxyResult<()> {
   #[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
   warn!("Both \"http3-quinn\" and \"http3-s2n\" features are enabled. \"http3-quinn\" will be used");
 
@@ -82,26 +79,16 @@ where
   // 1. build backends, and make it contained in Arc
   let app_manager = Arc::new(backend::BackendAppManager::try_from(app_config_list)?);
 
-  // 2. build crypto reloader service
-  let (cert_reloader_service, cert_reloader_rx) = match proxy_config.https_port {
-    Some(_) => {
-      let (s, r) = build_cert_reloader(&app_manager).await?;
-      (Some(s), Some(r))
-    }
-    None => (None, None),
-  };
-
-  // 3. build global shared context
+  // 2. build global shared context
   let globals = Arc::new(Globals {
     proxy_config: proxy_config.clone(),
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
     term_notify: term_notify.clone(),
-    cert_reloader_rx: cert_reloader_rx.clone(),
-    cert_reloader_rx_new: cert_rx.cloned(), // TODO: newer one
+    cert_reloader_rx: cert_rx.cloned(),
   });
 
-  // 4. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well
+  // 3. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well
   let forwarder = Arc::new(Forwarder::try_new(&globals).await?);
   let message_handler = Arc::new(
     HttpMessageHandlerBuilder::default()
@@ -111,7 +98,7 @@ where
       .build()?,
   );
 
-  // 5. spawn each proxy for a given socket with copied Arc-ed message_handler.
+  // 4. spawn each proxy for a given socket with copied Arc-ed message_handler.
   // build hyper connection builder shared with proxy instances
   let connection_builder = proxy::connection_builder(&globals);
 
@@ -132,23 +119,9 @@ where
     globals.runtime_handle.spawn(async move { proxy.start().await })
   });
 
-  // wait for all future
-  match cert_reloader_service {
-    Some(cert_service) => {
-      tokio::select! {
-        _ = cert_service.start() => {
-          error!("Certificate reloader service got down");
-        }
-        _ = select_all(futures_iter) => {
-          error!("Some proxy services are down");
-        }
-      }
-    }
-    None => {
-      if let (Ok(Err(e)), _, _) = select_all(futures_iter).await {
-        error!("Some proxy services are down: {}", e);
-      }
-    }
+  if let (Ok(Err(e)), _, _) = select_all(futures_iter).await {
+    error!("Some proxy services are down: {}", e);
+    return Err(e);
   }
 
   Ok(())

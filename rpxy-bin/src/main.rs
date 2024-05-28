@@ -1,7 +1,6 @@
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-mod cert_file_reader;
 mod config;
 mod constants;
 mod error;
@@ -141,7 +140,7 @@ async fn rpxy_service_with_watcher(
 /// Wrapper of entry point for rpxy service with certificate management service
 async fn rpxy_entrypoint(
   proxy_config: &rpxy_lib::ProxyConfig,
-  app_config_list: &rpxy_lib::AppConfigList<cert_file_reader::CryptoFileSource>,
+  app_config_list: &rpxy_lib::AppConfigList,
   cert_service_and_rx: Option<&(
     ReloaderService<rpxy_certs::CryptoReloader, rpxy_certs::ServerCryptoBase>,
     ReloaderReceiver<rpxy_certs::ServerCryptoBase>,

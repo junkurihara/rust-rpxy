@@ -1,7 +1,6 @@
 use super::socket::bind_tcp_socket;
 use crate::{
   constants::TLS_HANDSHAKE_TIMEOUT_SEC,
-  crypto::{CryptoSource, ServerCrypto, SniServerCryptoMap},
   error::*,
   globals::Globals,
   hyper_ext::{
@@ -20,14 +19,15 @@ use hyper::{
   service::service_fn,
 };
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo, server::conn::auto::Builder as ConnectionBuilder};
+use rpxy_certs::ServerCrypto;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::time::timeout;
 
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
-async fn serve_request<U, T>(
+async fn serve_request<T>(
   req: Request<Incoming>,
-  handler: Arc<HttpMessageHandler<U, T>>,
+  handler: Arc<HttpMessageHandler<T>>,
   client_addr: SocketAddr,
   listen_addr: SocketAddr,
   tls_enabled: bool,
@@ -35,7 +35,6 @@ async fn serve_request<U, T>(
 ) -> RpxyResult<Response<ResponseBody>>
 where
   T: Send + Sync + Connect + Clone,
-  U: CryptoSource + Clone,
 {
   handler
     .handle_request(
@@ -50,10 +49,9 @@ where
 
 #[derive(Clone)]
 /// Proxy main object responsible to serve requests received from clients at the given socket address.
-pub(crate) struct Proxy<U, T, E = LocalExecutor>
+pub(crate) struct Proxy<T, E = LocalExecutor>
 where
   T: Send + Sync + Connect + Clone + 'static,
-  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   /// global context shared among async tasks
   pub globals: Arc<Globals>,
@@ -64,13 +62,12 @@ where
   /// hyper connection builder serving http request
   pub connection_builder: Arc<ConnectionBuilder<E>>,
   /// message handler serving incoming http request
-  pub message_handler: Arc<HttpMessageHandler<U, T>>,
+  pub message_handler: Arc<HttpMessageHandler<T>>,
 }
 
-impl<U, T> Proxy<U, T>
+impl<T> Proxy<T>
 where
   T: Send + Sync + Connect + Clone + 'static,
-  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   /// Serves requests from clients
   fn serve_connection<I>(&self, stream: I, peer_addr: SocketAddr, tls_server_name: Option<ServerName>)
@@ -164,15 +161,11 @@ where
     let Some(mut server_crypto_rx) = self.globals.cert_reloader_rx.clone() else {
       return Err(RpxyError::NoCertificateReloader);
     };
-    // TODO: newer one
-    let Some(mut server_crypto_rx_new) = self.globals.cert_reloader_rx_new.clone() else {
-      return Err(RpxyError::NoCertificateReloader);
-    };
     let tcp_socket = bind_tcp_socket(&self.listening_on)?;
     let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
     info!("Start TCP proxy serving with HTTPS request for configured host names");
 
-    let mut server_crypto_map: Option<Arc<SniServerCryptoMap>> = None;
+    let mut server_crypto_map: Option<Arc<super::SniServerCryptoMap>> = None;
     loop {
       select! {
         tcp_cnx = tcp_listener.accept().fuse() => {
@@ -234,28 +227,16 @@ where
             error!("Reloader is broken");
             break;
           }
-          let cert_keys_map = server_crypto_rx.borrow().clone().unwrap();
-          let Some(server_crypto): Option<Arc<ServerCrypto>> = (&cert_keys_map).try_into().ok() else {
+          let server_crypto_base = server_crypto_rx.borrow().clone().unwrap();
+          let Some(server_config): Option<Arc<ServerCrypto>> = (&server_crypto_base).try_into().ok() else {
             error!("Failed to update server crypto");
             break;
           };
-          server_crypto_map = Some(server_crypto.inner_local_map.clone());
-        }
-        // TODO: newer one
-        _ = server_crypto_rx_new.changed().fuse() => {
-          if server_crypto_rx_new.borrow().is_none() {
-            error!("Reloader is broken");
-            break;
-          }
-          let cert_keys_map = server_crypto_rx_new.borrow().clone().unwrap();
-          // let Some(server_crypto) = cert_keys_map.try_into().ok() else {
-          //   break;
-          // };
-          // let Some(server_crypto): Option<Arc<ServerCrypto>> = (&cert_keys_map).try_into().ok() else {
-          //   error!("Failed to update server crypto");
-          //   break;
-          // };
-          // server_crypto_map = Some(server_crypto.inner_local_map.clone());
+          let map = server_config.individual_config_map.clone().iter().map(|(k,v)| {
+            let server_name = ServerName::from(k.as_slice());
+            (server_name, v.clone())
+          }).collect::<rustc_hash::FxHashMap<_,_>>();
+          server_crypto_map = Some(Arc::new(map));
         }
       }
     }

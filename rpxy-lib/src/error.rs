@@ -59,8 +59,8 @@ pub enum RpxyError {
   // certificate reloader errors
   #[error("No certificate reloader when building a proxy for TLS")]
   NoCertificateReloader,
-  #[error("Certificate reload error: {0}")]
-  CertificateReloadError(#[from] hot_reload::ReloaderError<crate::crypto::ServerCryptoBase>),
+  // #[error("Certificate reload error: {0}")]
+  // CertificateReloadError(#[from] hot_reload::ReloaderError<crate::crypto::ServerCryptoBase>),
 
   // backend errors
   #[error("Invalid reverse proxy setting")]
