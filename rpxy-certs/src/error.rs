@@ -15,4 +15,7 @@ pub enum RpxyCertError {
   /// Error for hot reload certificate reloader
   #[error("Certificate reload error: {0}")]
   CertificateReloadError(#[from] hot_reload::ReloaderError<crate::server_crypto::ServerCryptoBase>),
+  /// Error when converting server name bytes to string
+  #[error("Failed to convert server name bytes to string: {0}")]
+  ServerNameBytesToString(#[from] std::string::FromUtf8Error),
 }

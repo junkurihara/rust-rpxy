@@ -74,8 +74,7 @@ impl SingleServerCertsKeys {
 
   /* ------------------------------------------------ */
   /// Parse the client CA certificates and return a hashmap of pairs of a subject key identifier (key) and a trust anchor (value)
-  pub fn rustls_trust_anchors(&self) -> Result<TrustAnchors, RpxyCertError> {
-    //-> Result<(Vec<OwnedTrustAnchor>, HashSet<Vec<u8>>), anyhow::Error> {
+  pub fn rustls_client_certs_trust_anchors(&self) -> Result<TrustAnchors, RpxyCertError> {
     let Some(certs) = self.client_ca_certs.as_ref() else {
       return Err(RpxyCertError::NoClientCert);
     };
@@ -149,7 +148,7 @@ mod tests {
     let certificed_key = crypto_elem.rustls_certified_key();
     assert!(certificed_key.is_ok());
 
-    let trust_anchors = crypto_elem.rustls_trust_anchors();
+    let trust_anchors = crypto_elem.rustls_client_certs_trust_anchors();
     assert!(trust_anchors.is_ok());
 
     let trust_anchors = trust_anchors.unwrap();

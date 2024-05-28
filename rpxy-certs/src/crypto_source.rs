@@ -23,7 +23,7 @@ pub trait CryptoSource {
 
 /* ------------------------------------------------ */
 #[derive(Builder, Debug, Clone)]
-/// Crypto-related file reader implementing `CryptoSource`` trait
+/// Crypto-related file reader implementing `CryptoSource` trait
 pub struct CryptoFileSource {
   #[builder(setter(custom))]
   /// Always exist
