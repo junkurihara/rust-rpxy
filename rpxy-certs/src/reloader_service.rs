@@ -12,7 +12,7 @@ use std::sync::Arc;
 /* ------------------------------------------------ */
 /// Boxed CryptoSource trait object with Send and Sync
 /// TODO: support for not only `CryptoFileSource` but also other type of sources
-type DynCryptoSource = dyn CryptoSource<Error = RpxyCertError> + Send + Sync + 'static;
+pub(super) type DynCryptoSource = dyn CryptoSource<Error = RpxyCertError> + Send + Sync + 'static;
 
 #[derive(Clone)]
 /// Reloader service for certificates and keys for TLS

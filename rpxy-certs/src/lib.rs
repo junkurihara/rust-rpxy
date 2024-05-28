@@ -6,12 +6,18 @@ mod server_crypto;
 
 #[allow(unused_imports)]
 mod log {
-  pub(crate) use tracing::{debug, error, info, warn};
+  pub(super) use tracing::{debug, error, info, warn};
 }
-/* ------------------------------------------------ */
-use crate::{error::*, reloader_service::CryptoReloader};
-use hot_reload::{ReloaderReceiver, ReloaderService};
 
+use crate::{
+  error::*,
+  reloader_service::{CryptoReloader, DynCryptoSource},
+};
+use hot_reload::{ReloaderReceiver, ReloaderService};
+use rustc_hash::FxHashMap as HashMap;
+use std::sync::Arc;
+
+/* ------------------------------------------------ */
 pub use crate::{
   certs::SingleServerCertsKeys,
   crypto_source::{CryptoFileSource, CryptoFileSourceBuilder, CryptoFileSourceBuilderError, CryptoSource},
@@ -19,26 +25,37 @@ pub use crate::{
 };
 
 /* ------------------------------------------------ */
-/// Constants TODO: define from outside
-const CERTS_WATCH_DELAY_SECS: u32 = 60;
+// Constants
+/// Default delay in seconds to watch certificates
+const DEFAULT_CERTS_WATCH_DELAY_SECS: u32 = 60;
+/// Load certificates only when updated
 const LOAD_CERTS_ONLY_WHEN_UPDATED: bool = true;
 
-/* ------------------------------------------------ */
 /// Result type inner of certificate reloader service
 type ReloaderServiceResultInner = (
   ReloaderService<CryptoReloader, ServerCryptoBase>,
   ReloaderReceiver<ServerCryptoBase>,
 );
-/// Build certificate reloader service
-pub async fn build_cert_reloader() -> Result<ReloaderServiceResultInner, RpxyCertError>
-// where
-//   T: CryptoSource + Clone + Send + Sync + 'static,
+/// Build certificate reloader service, which accepts a map of server names to `CryptoSource` instances
+pub async fn build_cert_reloader<T>(
+  crypto_source_map: &HashMap<String, T>,
+  certs_watch_period: Option<u32>,
+) -> Result<ReloaderServiceResultInner, RpxyCertError>
+where
+  T: CryptoSource<Error = RpxyCertError> + Send + Sync + Clone + 'static,
 {
-  // TODO: fix later
-  let source = rustc_hash::FxHashMap::default();
+  let source = crypto_source_map
+    .iter()
+    .map(|(k, v)| {
+      let server_name_bytes = k.as_bytes().to_vec().to_ascii_lowercase();
+      let dyn_crypto_source = Arc::new(Box::new(v.clone()) as Box<DynCryptoSource>);
+      (server_name_bytes, dyn_crypto_source)
+    })
+    .collect::<HashMap<_, _>>();
+
+  let certs_watch_period = certs_watch_period.unwrap_or(DEFAULT_CERTS_WATCH_DELAY_SECS);
 
   let (cert_reloader_service, cert_reloader_rx) =
-    ReloaderService::<CryptoReloader, ServerCryptoBase>::new(&source, CERTS_WATCH_DELAY_SECS, !LOAD_CERTS_ONLY_WHEN_UPDATED)
-      .await?;
+    ReloaderService::<CryptoReloader, ServerCryptoBase>::new(&source, certs_watch_period, !LOAD_CERTS_ONLY_WHEN_UPDATED).await?;
   Ok((cert_reloader_service, cert_reloader_rx))
 }
