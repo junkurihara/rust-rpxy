@@ -20,10 +20,10 @@ pub enum RpxyError {
   NoDefaultCryptoProvider,
   #[error("Failed to build server config: {0}")]
   FailedToBuildServerConfig(String),
-  // #[error("Failed to update server crypto: {0}")]
-  // FailedToUpdateServerCrypto(String),
-  // #[error("No server crypto: {0}")]
-  // NoServerCrypto(String),
+  #[error("Failed to update server crypto: {0}")]
+  FailedToUpdateServerCrypto(String),
+  #[error("No server crypto: {0}")]
+  NoServerCrypto(String),
 
   // hyper errors
   #[error("hyper body manipulation error: {0}")]
@@ -63,8 +63,8 @@ pub enum RpxyError {
   // certificate reloader errors
   #[error("No certificate reloader when building a proxy for TLS")]
   NoCertificateReloader,
-  // #[error("Certificate reload error: {0}")]
-  // CertificateReloadError(#[from] hot_reload::ReloaderError<crate::crypto::ServerCryptoBase>),
+  #[error("Certificate reload error: {0}")]
+  CertificateReloadError(#[from] hot_reload::ReloaderError<rpxy_certs::ServerCryptoBase>),
 
   // backend errors
   #[error("Invalid reverse proxy setting")]

@@ -13,8 +13,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-# default = ["sticky-cookie", "cache", "rustls-backend"]
-default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
+default = ["http3-s2n", "sticky-cookie", "cache", "rustls-backend"]
+# default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
 http3-quinn = ["socket2", "quinn", "h3", "h3-quinn", "rpxy-certs/http3"]
 http3-s2n = [
   "h3",
@@ -76,24 +76,28 @@ rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.5"
 rustls = { version = "0.23.8", default-features = false }
 tokio-rustls = { version = "0.26.0", features = ["early-data"] }
-webpki = "0.22.4"
-x509-parser = "0.16.0"
 
 # logging
 tracing = { version = "0.1.40" }
 
 # http/3
 quinn = { version = "0.11.1", optional = true }
-# h3 = { path = "../submodules/h3/h3/", optional = true }
-# h3-quinn = { path = "../submodules/h3/h3-quinn/", optional = true }
 h3 = { version = "0.0.5", optional = true }
 h3-quinn = { version = "0.0.6", optional = true }
-s2n-quic = { version = "1.37.0", default-features = false, features = [
+### TODO: workaround for s2n-quic, waiting for release of s2n-quic-0.38.0
+s2n-quic = { path = "../submodules/s2n-quic/quic/s2n-quic", optional = true, default-features = false, features = [
   "provider-tls-rustls",
-], optional = true }
-s2n-quic-core = { version = "0.37.0", default-features = false, optional = true }
-s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", optional = true }
-s2n-quic-rustls = { version = "0.37.0", optional = true }
+] }
+s2n-quic-core = { path = "../submodules/s2n-quic/quic/s2n-quic-core", optional = true, default-features = false }
+s2n-quic-rustls = { path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3", optional = true }
+# s2n-quic = { version = "1.37.0", default-features = false, features = [
+#   "provider-tls-rustls",
+# ], optional = true }
+# s2n-quic-core = { version = "0.37.0", default-features = false, optional = true }
+# s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", optional = true }
+# s2n-quic-rustls = { version = "0.37.0", optional = true }
+##########
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
 socket2 = { version = "0.5.7", features = ["all"], optional = true }
 
