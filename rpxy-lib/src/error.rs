@@ -16,10 +16,14 @@ pub enum RpxyError {
   NoServerNameInClientHello,
   #[error("No TLS serving app: {0}")]
   NoTlsServingApp(String),
-  #[error("Failed to update server crypto: {0}")]
-  FailedToUpdateServerCrypto(String),
-  #[error("No server crypto: {0}")]
-  NoServerCrypto(String),
+  #[error("No default crypto provider")]
+  NoDefaultCryptoProvider,
+  #[error("Failed to build server config: {0}")]
+  FailedToBuildServerConfig(String),
+  // #[error("Failed to update server crypto: {0}")]
+  // FailedToUpdateServerCrypto(String),
+  // #[error("No server crypto: {0}")]
+  // NoServerCrypto(String),
 
   // hyper errors
   #[error("hyper body manipulation error: {0}")]

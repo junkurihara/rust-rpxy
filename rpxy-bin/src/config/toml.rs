@@ -230,7 +230,10 @@ impl Application {
         tls.https_redirection.unwrap()
       };
 
-      Some(TlsConfig { https_redirection })
+      Some(TlsConfig {
+        mutual_tls: tls.client_ca_cert_path.is_some(),
+        https_redirection,
+      })
     } else {
       None
     };

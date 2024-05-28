@@ -157,5 +157,6 @@ pub struct UpstreamUri {
 /// Configuration parameters on TLS for a single backend application
 #[derive(PartialEq, Eq, Clone)]
 pub struct TlsConfig {
+  pub mutual_tls: bool,
   pub https_redirection: bool,
 }

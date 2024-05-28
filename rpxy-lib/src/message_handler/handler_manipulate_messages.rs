@@ -29,15 +29,15 @@ where
     {
       // Manipulate ALT_SVC allowing h3 in response message only when mutual TLS is not enabled
       // TODO: This is a workaround for avoiding a client authentication in HTTP/3
-      if self.globals.proxy_config.http3 && backend_app.crypto_source.as_ref().is_some_and(|v| !v.is_mutual_tls()) {
+      if self.globals.proxy_config.http3
+        && backend_app.https_redirection.is_some()
+        && backend_app.mutual_tls.as_ref().is_some_and(|v| !v)
+      {
         if let Some(port) = self.globals.proxy_config.https_port {
           add_header_entry_overwrite_if_exist(
             headers,
             header::ALT_SVC.as_str(),
-            format!(
-              "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
-              port, self.globals.proxy_config.h3_alt_svc_max_age, port, self.globals.proxy_config.h3_alt_svc_max_age
-            ),
+            format!("h3=\":{}\"; ma={}", port, self.globals.proxy_config.h3_alt_svc_max_age),
           )?;
         }
       } else {

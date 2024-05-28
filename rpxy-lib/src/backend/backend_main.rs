@@ -24,6 +24,9 @@ pub struct BackendApp {
   /// tls settings: https redirection with 30x
   #[builder(default)]
   pub https_redirection: Option<bool>,
+  /// tls settings: mutual TLS is enabled
+  #[builder(default)]
+  pub mutual_tls: Option<bool>,
 }
 impl<'a> BackendAppBuilder {
   pub fn server_name(&mut self, server_name: impl Into<Cow<'a, str>>) -> &mut Self {
@@ -56,7 +59,10 @@ impl TryFrom<&AppConfig> for BackendApp {
       backend_builder.build()?
     } else {
       let tls = app_config.tls.as_ref().unwrap();
-      backend_builder.https_redirection(Some(tls.https_redirection)).build()?
+      backend_builder
+        .https_redirection(Some(tls.https_redirection))
+        .mutual_tls(Some(tls.mutual_tls))
+        .build()?
     };
     Ok(backend)
   }
