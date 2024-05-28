@@ -66,20 +66,14 @@ async fn rpxy_service_without_watcher(
   info!("Start rpxy service");
   let config_toml = ConfigToml::new(config_file_path).map_err(|e| anyhow!("Invalid toml file: {e}"))?;
   let (proxy_conf, app_conf) = build_settings(&config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
-  let (cert_service, cert_rx) = build_cert_manager(&config_toml)
+
+  let cert_service_and_rx = build_cert_manager(&config_toml)
     .await
     .map_err(|e| anyhow!("Invalid cert configuration: {e}"))?;
 
-  tokio::select! {
-    rpxy_res = entrypoint(&proxy_conf, &app_conf, &runtime_handle, None) => {
-      error!("rpxy entrypoint exited");
-      rpxy_res.map_err(|e| anyhow!(e))
-    }
-    cert_res = cert_service.start() => {
-      error!("cert reloader service exited");
-      cert_res.map_err(|e| anyhow!(e))
-    }
-  }
+  rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), &runtime_handle, None)
+    .await
+    .map_err(|e| anyhow!(e))
 }
 
 async fn rpxy_service_with_watcher(
@@ -95,7 +89,7 @@ async fn rpxy_service_with_watcher(
     .ok_or(anyhow!("Something wrong in config reloader receiver"))?;
   let (mut proxy_conf, mut app_conf) = build_settings(&config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
 
-  let (mut cert_service, mut cert_rx) = build_cert_manager(&config_toml)
+  let mut cert_service_and_rx = build_cert_manager(&config_toml)
     .await
     .map_err(|e| anyhow!("Invalid cert configuration: {e}"))?;
 
@@ -105,8 +99,8 @@ async fn rpxy_service_with_watcher(
   // Continuous monitoring
   loop {
     tokio::select! {
-      rpxy_res = entrypoint(&proxy_conf, &app_conf, &runtime_handle, Some(term_notify.clone())) => {
-        error!("rpxy entrypoint exited");
+      rpxy_res = rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), &runtime_handle, Some(term_notify.clone())) => {
+        error!("rpxy entrypoint or cert service exited");
         return rpxy_res.map_err(|e| anyhow!(e));
       }
       _ = config_rx.changed() => {
@@ -124,8 +118,8 @@ async fn rpxy_service_with_watcher(
           }
         };
         match build_cert_manager(&config_toml).await {
-          Ok((c, r)) => {
-            (cert_service, cert_rx) = (c, r)
+          Ok(c) => {
+            cert_service_and_rx = c;
           },
           Err(e) => {
             error!("Invalid cert configuration. Configuration does not updated: {e}");
@@ -137,13 +131,38 @@ async fn rpxy_service_with_watcher(
         term_notify.notify_waiters();
         // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
       }
-      cert_res = cert_service.start() => {
-        error!("cert reloader service exited");
-        return cert_res.map_err(|e| anyhow!(e));
-      }
       else => break
     }
   }
 
   Ok(())
+}
+
+/// Wrapper of entry point for rpxy service with certificate management service
+async fn rpxy_entrypoint(
+  proxy_config: &rpxy_lib::ProxyConfig,
+  app_config_list: &rpxy_lib::AppConfigList<cert_file_reader::CryptoFileSource>,
+  cert_service_and_rx: Option<&(
+    ReloaderService<rpxy_certs::CryptoReloader, rpxy_certs::ServerCryptoBase>,
+    ReloaderReceiver<rpxy_certs::ServerCryptoBase>,
+  )>, // TODO:
+  runtime_handle: &tokio::runtime::Handle,
+  term_notify: Option<std::sync::Arc<tokio::sync::Notify>>,
+) -> Result<(), anyhow::Error> {
+  if let Some((cert_service, cert_rx)) = cert_service_and_rx {
+    tokio::select! {
+      rpxy_res = entrypoint(proxy_config, app_config_list, Some(cert_rx), runtime_handle, term_notify) => {
+        error!("rpxy entrypoint exited");
+        rpxy_res.map_err(|e| anyhow!(e))
+      }
+      cert_res = cert_service.start() => {
+        error!("cert reloader service exited");
+        cert_res.map_err(|e| anyhow!(e))
+      }
+    }
+  } else {
+    entrypoint(proxy_config, app_config_list, None, runtime_handle, term_notify)
+      .await
+      .map_err(|e| anyhow!(e))
+  }
 }

@@ -69,12 +69,10 @@ fn read_certs_and_keys(
 
   let certs: Vec<_> = {
     let certs_path_str = cert_path.display().to_string();
-    let mut reader = BufReader::new(File::open(cert_path).map_err(|e| {
-      io::Error::new(
-        e.kind(),
-        format!("Unable to load the certificates [{certs_path_str}]: {e}"),
-      )
-    })?);
+    let mut reader = BufReader::new(
+      File::open(cert_path)
+        .map_err(|e| io::Error::new(e.kind(), format!("Unable to load the certificates [{certs_path_str}]: {e}")))?,
+    );
     rustls_pemfile::certs(&mut reader)
       .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the certificates"))?
   }

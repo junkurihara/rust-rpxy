@@ -164,6 +164,10 @@ where
     let Some(mut server_crypto_rx) = self.globals.cert_reloader_rx.clone() else {
       return Err(RpxyError::NoCertificateReloader);
     };
+    // TODO: newer one
+    let Some(mut server_crypto_rx_new) = self.globals.cert_reloader_rx_new.clone() else {
+      return Err(RpxyError::NoCertificateReloader);
+    };
     let tcp_socket = bind_tcp_socket(&self.listening_on)?;
     let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
     info!("Start TCP proxy serving with HTTPS request for configured host names");
@@ -236,6 +240,22 @@ where
             break;
           };
           server_crypto_map = Some(server_crypto.inner_local_map.clone());
+        }
+        // TODO: newer one
+        _ = server_crypto_rx_new.changed().fuse() => {
+          if server_crypto_rx_new.borrow().is_none() {
+            error!("Reloader is broken");
+            break;
+          }
+          let cert_keys_map = server_crypto_rx_new.borrow().clone().unwrap();
+          // let Some(server_crypto) = cert_keys_map.try_into().ok() else {
+          //   break;
+          // };
+          // let Some(server_crypto): Option<Arc<ServerCrypto>> = (&cert_keys_map).try_into().ok() else {
+          //   error!("Failed to update server crypto");
+          //   break;
+          // };
+          // server_crypto_map = Some(server_crypto.inner_local_map.clone());
         }
       }
     }

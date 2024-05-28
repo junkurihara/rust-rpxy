@@ -19,6 +19,8 @@ pub struct Globals {
   pub term_notify: Option<Arc<tokio::sync::Notify>>,
   /// Shared context - Certificate reloader service receiver
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
+  /// Shared context - Certificate reloader service receiver // TODO: newer one
+  pub cert_reloader_rx_new: Option<ReloaderReceiver<rpxy_certs::ServerCryptoBase>>,
 }
 
 /// Configuration parameters for proxy transport and request handlers

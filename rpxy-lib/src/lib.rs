@@ -10,14 +10,17 @@ mod log;
 mod message_handler;
 mod name_exp;
 mod proxy;
-
+/* ------------------------------------------------ */
 use crate::{
   crypto::build_cert_reloader, error::*, forwarder::Forwarder, globals::Globals, log::*,
   message_handler::HttpMessageHandlerBuilder, proxy::Proxy,
 };
 use futures::future::select_all;
+use hot_reload::ReloaderReceiver;
+use rpxy_certs::ServerCryptoBase;
 use std::sync::Arc;
 
+/* ------------------------------------------------ */
 pub use crate::{
   crypto::{CertsAndKeys, CryptoSource},
   globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
@@ -31,6 +34,7 @@ pub mod reexports {
 pub async fn entrypoint<T>(
   proxy_config: &ProxyConfig,
   app_config_list: &AppConfigList<T>,
+  cert_rx: Option<&ReloaderReceiver<ServerCryptoBase>>, // TODO:
   runtime_handle: &tokio::runtime::Handle,
   term_notify: Option<Arc<tokio::sync::Notify>>,
 ) -> RpxyResult<()>
@@ -94,6 +98,7 @@ where
     runtime_handle: runtime_handle.clone(),
     term_notify: term_notify.clone(),
     cert_reloader_rx: cert_reloader_rx.clone(),
+    cert_reloader_rx_new: cert_rx.cloned(), // TODO: newer one
   });
 
   // 4. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well

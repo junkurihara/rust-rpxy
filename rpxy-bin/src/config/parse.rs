@@ -97,13 +97,16 @@ pub fn build_settings(config: &ConfigToml) -> std::result::Result<(ProxyConfig, 
 pub async fn build_cert_manager(
   config: &ConfigToml,
 ) -> Result<
-  (
+  Option<(
     ReloaderService<CryptoReloader, ServerCryptoBase>,
     ReloaderReceiver<ServerCryptoBase>,
-  ),
+  )>,
   anyhow::Error,
 > {
   let apps = config.apps.as_ref().ok_or(anyhow!("No apps"))?;
+  if config.listen_port_tls.is_none() {
+    return Ok(None);
+  }
   let mut crypto_source_map = HashMap::default();
   for app in apps.0.values() {
     if let Some(tls) = app.tls.as_ref() {
@@ -118,5 +121,5 @@ pub async fn build_cert_manager(
     }
   }
   let res = build_cert_reloader(&crypto_source_map, None).await?;
-  Ok(res)
+  Ok(Some(res))
 }

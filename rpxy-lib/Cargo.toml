@@ -14,13 +14,14 @@ publish.workspace = true
 
 [features]
 default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
-http3-quinn = ["socket2", "quinn", "h3", "h3-quinn"]
+http3-quinn = ["socket2", "quinn", "h3", "h3-quinn", "rpxy-certs/http3"]
 http3-s2n = [
   "h3",
   "s2n-quic",
   "s2n-quic-core",
   "s2n-quic-rustls",
   "s2n-quic-h3",
+  "rpxy-certs/http3",
 ]
 cache = ["http-cache-semantics", "lru", "sha2", "base64"]
 sticky-cookie = ["base64", "sha2", "chrono"]
@@ -70,6 +71,7 @@ hyper-rustls = { version = "0.27.1", default-features = false, features = [
 ], optional = true }
 
 # tls and cert management for server
+rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.5"
 rustls = { version = "0.21.12", default-features = false }
 tokio-rustls = { version = "0.24.1", features = ["early-data"] }
