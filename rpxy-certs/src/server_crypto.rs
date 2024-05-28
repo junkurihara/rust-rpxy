@@ -179,6 +179,8 @@ mod tests {
 
   #[tokio::test]
   async fn test_server_crypto_base_try_into() {
+    let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+
     let mut server_crypto_base = ServerCryptoBase::default();
 
     let single_certs_keys = read_file_source().await;
