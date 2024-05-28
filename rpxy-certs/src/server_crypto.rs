@@ -1,6 +1,7 @@
 use crate::{certs::SingleServerCertsKeys, error::*, log::*};
 use rustc_hash::FxHashMap as HashMap;
 use rustls::{
+  crypto::CryptoProvider,
   server::{ResolvesServerCertUsingSni, WebPkiClientVerifier},
   RootCertStore, ServerConfig,
 };
@@ -40,7 +41,6 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
   fn try_into(self) -> Result<Arc<ServerCrypto>, Self::Error> {
     let aggregated = self.build_aggrated_server_crypto()?;
     let individual = self.build_individual_server_crypto_map()?;
-
     Ok(Arc::new(ServerCrypto {
       aggregated_config_no_client_auth: Arc::new(aggregated),
       individual_config_map: Arc::new(individual),
@@ -52,6 +52,9 @@ impl ServerCryptoBase {
   /// Build individual server crypto inner object
   fn build_individual_server_crypto_map(&self) -> Result<ServerNameCryptoMap, RpxyCertError> {
     let mut server_crypto_map: ServerNameCryptoMap = HashMap::default();
+
+    // AWS LC provider by default
+    let provider = CryptoProvider::get_default().ok_or(RpxyCertError::NoDefaultCryptoProvider)?;
 
     for (server_name_bytes, certs_keys) in self.inner.iter() {
       let server_name = server_name_bytes_to_string(server_name_bytes)?;
@@ -69,9 +72,11 @@ impl ServerCryptoBase {
 
       // With no client authentication case
       if !certs_keys.is_mutual_tls() {
-        let mut server_crypto_local = ServerConfig::builder()
+        let mut server_crypto_local = ServerConfig::builder_with_provider(provider.clone())
+          .with_safe_default_protocol_versions()?
           .with_no_client_auth()
           .with_cert_resolver(Arc::new(resolver_local));
+
         #[cfg(feature = "http3")]
         {
           server_crypto_local.alpn_protocols = vec![b"h3".to_vec(), b"h2".to_vec(), b"http/1.1".to_vec()];
@@ -93,11 +98,14 @@ impl ServerCryptoBase {
       let trust_anchors_without_skid = trust_anchors.values().map(|ta| ta.to_owned());
       client_ca_roots_local.extend(trust_anchors_without_skid);
 
-      let Ok(client_cert_verifier) = WebPkiClientVerifier::builder(Arc::new(client_ca_roots_local)).build() else {
+      let Ok(client_cert_verifier) =
+        WebPkiClientVerifier::builder_with_provider(Arc::new(client_ca_roots_local), provider.clone()).build()
+      else {
         warn!("Failed to build client CA certificate verifier for {server_name}");
         continue;
       };
-      let mut server_crypto_local = ServerConfig::builder()
+      let mut server_crypto_local = ServerConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()?
         .with_client_cert_verifier(client_cert_verifier)
         .with_cert_resolver(Arc::new(resolver_local));
       server_crypto_local.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
@@ -111,6 +119,9 @@ impl ServerCryptoBase {
   /// Build aggregated server crypto inner object for no client auth server especially for http3
   fn build_aggrated_server_crypto(&self) -> Result<ServerConfig, RpxyCertError> {
     let mut resolver_global = ResolvesServerCertUsingSni::new();
+
+    // AWS LC provider by default
+    let provider = CryptoProvider::get_default().ok_or(RpxyCertError::NoDefaultCryptoProvider)?;
 
     for (server_name_bytes, certs_keys) in self.inner.iter() {
       let server_name = server_name_bytes_to_string(server_name_bytes)?;
@@ -129,7 +140,8 @@ impl ServerCryptoBase {
       }
     }
 
-    let mut server_crypto_global = ServerConfig::builder()
+    let mut server_crypto_global = ServerConfig::builder_with_provider(provider.clone())
+      .with_safe_default_protocol_versions()?
       .with_no_client_auth()
       .with_cert_resolver(Arc::new(resolver_global));
 
@@ -143,5 +155,50 @@ impl ServerCryptoBase {
     }
 
     Ok(server_crypto_global)
+  }
+}
+
+/* ------------------------------------------------ */
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::{CryptoFileSourceBuilder, CryptoSource};
+  use std::convert::TryInto;
+
+  async fn read_file_source() -> SingleServerCertsKeys {
+    let tls_cert_path = "../example-certs/server.crt";
+    let tls_cert_key_path = "../example-certs/server.key";
+    let client_ca_cert_path = Some("../example-certs/client.ca.crt");
+    let crypto_file_source = CryptoFileSourceBuilder::default()
+      .tls_cert_key_path(tls_cert_key_path)
+      .tls_cert_path(tls_cert_path)
+      .client_ca_cert_path(client_ca_cert_path)
+      .build();
+    crypto_file_source.unwrap().read().await.unwrap()
+  }
+
+  #[tokio::test]
+  async fn test_server_crypto_base_try_into() {
+    let mut server_crypto_base = ServerCryptoBase::default();
+
+    let single_certs_keys = read_file_source().await;
+    server_crypto_base.inner.insert(b"localhost".to_vec(), single_certs_keys);
+    let server_crypto: Arc<ServerCrypto> = (&server_crypto_base).try_into().unwrap();
+    assert_eq!(server_crypto.individual_config_map.len(), 1);
+
+    #[cfg(feature = "http3")]
+    {
+      assert_eq!(
+        server_crypto.aggregated_config_no_client_auth.alpn_protocols,
+        vec![b"h3".to_vec(), b"h2".to_vec(), b"http/1.1".to_vec()]
+      );
+    }
+    #[cfg(not(feature = "http3"))]
+    {
+      assert_eq!(
+        server_crypto.aggregated_config_no_client_auth.alpn_protocols,
+        vec![b"h2".to_vec(), b"http/1.1".to_vec()]
+      );
+    }
   }
 }

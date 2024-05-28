@@ -4,7 +4,10 @@ use crate::{
   error::{anyhow, ensure},
 };
 use clap::{Arg, ArgAction};
+use hot_reload::{ReloaderReceiver, ReloaderService};
+use rpxy_certs::{build_cert_reloader, CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase};
 use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
+use rustc_hash::FxHashMap as HashMap;
 
 /// Parsed options
 pub struct Opts {
@@ -37,20 +40,13 @@ pub fn parse_opts() -> Result<Opts, anyhow::Error> {
   let config_file_path = matches.get_one::<String>("config_file").unwrap().to_owned();
   let watch = matches.get_one::<bool>("watch").unwrap().to_owned();
 
-  Ok(Opts {
-    config_file_path,
-    watch,
-  })
+  Ok(Opts { config_file_path, watch })
 }
 
-pub fn build_settings(
-  config: &ConfigToml,
-) -> std::result::Result<(ProxyConfig, AppConfigList<CryptoFileSource>), anyhow::Error> {
-  ///////////////////////////////////
+pub fn build_settings(config: &ConfigToml) -> std::result::Result<(ProxyConfig, AppConfigList<CryptoFileSource>), anyhow::Error> {
   // build proxy config
   let proxy_config: ProxyConfig = config.try_into()?;
 
-  ///////////////////////////////////
   // backend_apps
   let apps = config.apps.clone().ok_or(anyhow!("Missing application spec"))?;
 
@@ -94,4 +90,33 @@ pub fn build_settings(
   };
 
   Ok((proxy_config, app_config_list))
+}
+
+/* ----------------------- */
+/// Build cert map
+pub async fn build_cert_manager(
+  config: &ConfigToml,
+) -> Result<
+  (
+    ReloaderService<CryptoReloader, ServerCryptoBase>,
+    ReloaderReceiver<ServerCryptoBase>,
+  ),
+  anyhow::Error,
+> {
+  let apps = config.apps.as_ref().ok_or(anyhow!("No apps"))?;
+  let mut crypto_source_map = HashMap::default();
+  for app in apps.0.values() {
+    if let Some(tls) = app.tls.as_ref() {
+      ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
+      let server_name = app.server_name.as_ref().ok_or(anyhow!("No server name"))?;
+      let crypto_file_source = CryptoFileSourceBuilder::default()
+        .tls_cert_path(tls.tls_cert_path.as_ref().unwrap())
+        .tls_cert_key_path(tls.tls_cert_key_path.as_ref().unwrap())
+        .client_ca_cert_path(tls.client_ca_cert_path.as_deref())
+        .build()?;
+      crypto_source_map.insert(server_name.to_owned(), crypto_file_source);
+    }
+  }
+  let res = build_cert_reloader(&crypto_source_map, None).await?;
+  Ok(res)
 }

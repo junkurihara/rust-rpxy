@@ -26,6 +26,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
 ] }
 
+mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.86"
 rustc-hash = "1.1.0"
 serde = { version = "1.0.202", default-features = false, features = ["derive"] }
@@ -39,7 +40,7 @@ tokio = { version = "1.37.0", default-features = false, features = [
 ] }
 async-trait = "0.1.80"
 rustls-pemfile = "1.0.4"
-mimalloc = { version = "*", default-features = false }
+
 
 # config
 clap = { version = "4.5.4", features = ["std", "cargo", "wrap_help"] }
@@ -50,5 +51,10 @@ hot_reload = "0.1.5"
 tracing = { version = "0.1.40" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
+################################
+# cert management
+rpxy-certs = { path = "../rpxy-certs/", default-features = false, features = [
+  "http3",
+] }
 
 [dev-dependencies]

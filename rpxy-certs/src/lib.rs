@@ -9,18 +9,17 @@ mod log {
   pub(super) use tracing::{debug, error, info, warn};
 }
 
-use crate::{
-  error::*,
-  reloader_service::{CryptoReloader, DynCryptoSource},
-};
+use crate::{error::*, log::*, reloader_service::DynCryptoSource};
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use rustc_hash::FxHashMap as HashMap;
+use rustls::crypto::{aws_lc_rs, CryptoProvider};
 use std::sync::Arc;
 
 /* ------------------------------------------------ */
 pub use crate::{
   certs::SingleServerCertsKeys,
   crypto_source::{CryptoFileSource, CryptoFileSourceBuilder, CryptoFileSourceBuilderError, CryptoSource},
+  reloader_service::CryptoReloader,
   server_crypto::{ServerCrypto, ServerCryptoBase},
 };
 
@@ -44,6 +43,10 @@ pub async fn build_cert_reloader<T>(
 where
   T: CryptoSource<Error = RpxyCertError> + Send + Sync + Clone + 'static,
 {
+  info!("Building certificate reloader service");
+  // Install aws_lc_rs as default crypto provider for rustls
+  let _ = CryptoProvider::install_default(aws_lc_rs::default_provider());
+
   let source = crypto_source_map
     .iter()
     .map(|(k, v)| {

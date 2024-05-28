@@ -18,4 +18,10 @@ pub enum RpxyCertError {
   /// Error when converting server name bytes to string
   #[error("Failed to convert server name bytes to string: {0}")]
   ServerNameBytesToString(#[from] std::string::FromUtf8Error),
+  /// Rustls error
+  #[error("Rustls error: {0}")]
+  RustlsError(#[from] rustls::Error),
+  /// Rustls CryptoProvider error
+  #[error("Rustls No default CryptoProvider error")]
+  NoDefaultCryptoProvider,
 }
