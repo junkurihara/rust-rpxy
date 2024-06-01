@@ -31,7 +31,7 @@ mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.86"
 rustc-hash = "1.1.0"
 serde = { version = "1.0.203", default-features = false, features = ["derive"] }
-tokio = { version = "1.37.0", default-features = false, features = [
+tokio = { version = "1.38.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
