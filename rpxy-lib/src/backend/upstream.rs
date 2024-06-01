@@ -6,7 +6,6 @@ use super::load_balance::{
 // use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
 use super::upstream_opts::UpstreamOption;
 use crate::{
-  crypto::CryptoSource,
   error::RpxyError,
   globals::{AppConfig, UpstreamUri},
   log::*,
@@ -28,12 +27,9 @@ pub struct PathManager {
   inner: HashMap<PathName, UpstreamCandidates>,
 }
 
-impl<T> TryFrom<&AppConfig<T>> for PathManager
-where
-  T: CryptoSource,
-{
+impl TryFrom<&AppConfig> for PathManager {
   type Error = RpxyError;
-  fn try_from(app_config: &AppConfig<T>) -> Result<Self, Self::Error> {
+  fn try_from(app_config: &AppConfig) -> Result<Self, Self::Error> {
     let mut inner: HashMap<PathName, UpstreamCandidates> = HashMap::default();
 
     app_config.reverse_proxy.iter().for_each(|rpc| {

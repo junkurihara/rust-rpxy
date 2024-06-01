@@ -16,6 +16,10 @@ pub enum RpxyError {
   NoServerNameInClientHello,
   #[error("No TLS serving app: {0}")]
   NoTlsServingApp(String),
+  #[error("No default crypto provider")]
+  NoDefaultCryptoProvider,
+  #[error("Failed to build server config: {0}")]
+  FailedToBuildServerConfig(String),
   #[error("Failed to update server crypto: {0}")]
   FailedToUpdateServerCrypto(String),
   #[error("No server crypto: {0}")]
@@ -60,7 +64,7 @@ pub enum RpxyError {
   #[error("No certificate reloader when building a proxy for TLS")]
   NoCertificateReloader,
   #[error("Certificate reload error: {0}")]
-  CertificateReloadError(#[from] hot_reload::ReloaderError<crate::crypto::ServerCryptoBase>),
+  CertificateReloadError(#[from] hot_reload::ReloaderError<rpxy_certs::ServerCryptoBase>),
 
   // backend errors
   #[error("Invalid reverse proxy setting")]

@@ -1,21 +1,15 @@
 use super::proxy_main::Proxy;
-use crate::{
-  crypto::CryptoSource,
-  crypto::{ServerCrypto, ServerCryptoBase},
-  error::*,
-  log::*,
-  name_exp::ByteName,
-};
+use crate::{error::*, log::*, name_exp::ByteName};
 use anyhow::anyhow;
 use hot_reload::ReloaderReceiver;
 use hyper_util::client::legacy::connect::Connect;
+use rpxy_certs::{ServerCrypto, ServerCryptoBase};
 use s2n_quic::provider;
 use std::sync::Arc;
 
-impl<U, T> Proxy<U, T>
+impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
-  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   /// Start UDP proxy serving with HTTP/3 request for configured host names
   pub(super) async fn h3_listener_service(&self) -> RpxyResult<()> {
@@ -25,7 +19,7 @@ where
     info!("Start UDP proxy serving with HTTP/3 request for configured host names [s2n-quic]");
 
     // initially wait for receipt
-    let mut server_crypto: Option<Arc<ServerCrypto>> = {
+    let mut server_crypto: Option<s2n_quic_rustls::Server> = {
       let _ = server_crypto_rx.changed().await;
       let sc = self.receive_server_crypto(server_crypto_rx.clone())?;
       Some(sc)
@@ -57,16 +51,24 @@ where
   }
 
   /// Receive server crypto from reloader
-  fn receive_server_crypto(
-    &self,
-    server_crypto_rx: ReloaderReceiver<ServerCryptoBase>,
-  ) -> RpxyResult<Arc<ServerCrypto>> {
+  fn receive_server_crypto(&self, server_crypto_rx: ReloaderReceiver<ServerCryptoBase>) -> RpxyResult<s2n_quic_rustls::Server> {
     let cert_keys_map = server_crypto_rx.borrow().clone().ok_or_else(|| {
       error!("Reloader is broken");
       RpxyError::CertificateReloadError(anyhow!("Reloader is broken").into())
     })?;
 
-    let server_crypto: Option<Arc<ServerCrypto>> = (&cert_keys_map).try_into().ok();
+    let server_crypto: Option<s2n_quic_rustls::Server> = (&cert_keys_map).try_into().ok().and_then(|v: Arc<ServerCrypto>| {
+      let rustls_server_config = v.aggregated_config_no_client_auth.clone();
+      let resolver = rustls_server_config.cert_resolver.clone();
+      let alpn = rustls_server_config.alpn_protocols.clone();
+      #[allow(deprecated)]
+      let tls = provider::tls::rustls::server::Builder::default()
+        .with_cert_resolver(resolver)
+        .and_then(|t| t.with_application_protocols(alpn.iter()))
+        .and_then(|t| t.build())
+        .ok();
+      tls
+    });
     server_crypto.ok_or_else(|| {
       error!("Failed to update server crypto for h3 [s2n-quic]");
       RpxyError::FailedToUpdateServerCrypto("Failed to update server crypto for h3 [s2n-quic]".to_string())
@@ -74,7 +76,7 @@ where
   }
 
   /// Event loop for UDP proxy serving with HTTP/3 request for configured host names
-  async fn h3_listener_service_inner(&self, server_crypto: &Option<Arc<ServerCrypto>>) -> RpxyResult<()> {
+  async fn h3_listener_service_inner(&self, server_crypto: &Option<s2n_quic_rustls::Server>) -> RpxyResult<()> {
     // setup UDP socket
     let io = provider::io::tokio::Builder::default()
       .with_receive_address(self.listening_on)?
@@ -97,14 +99,11 @@ where
     // setup tls
     let Some(server_crypto) = server_crypto else {
       warn!("No server crypto is given [s2n-quic]");
-      return Err(RpxyError::NoServerCrypto(
-        "No server crypto is given [s2n-quic]".to_string(),
-      ));
+      return Err(RpxyError::NoServerCrypto("No server crypto is given [s2n-quic]".to_string()));
     };
-    let tls = server_crypto.inner_global_no_client_auth.clone();
 
     let mut server = s2n_quic::Server::builder()
-      .with_tls(tls)?
+      .with_tls(server_crypto.to_owned())?
       .with_io(io)?
       .with_limits(limits)?
       .start()?;

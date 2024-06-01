@@ -1,6 +1,5 @@
 use super::proxy_main::Proxy;
 use crate::{
-  crypto::CryptoSource,
   error::*,
   hyper_ext::body::{IncomingLike, RequestBody},
   log::*,
@@ -17,10 +16,9 @@ use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestSt
 #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
 use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
 
-impl<U, T> Proxy<U, T>
+impl<T> Proxy<T>
 where
   T: Connect + Clone + Sync + Send + 'static,
-  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn h3_serve_connection<C>(
     &self,

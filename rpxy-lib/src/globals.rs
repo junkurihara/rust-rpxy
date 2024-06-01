@@ -1,9 +1,6 @@
-use crate::{
-  constants::*,
-  count::RequestCount,
-  crypto::{CryptoSource, ServerCryptoBase},
-};
+use crate::{constants::*, count::RequestCount};
 use hot_reload::ReloaderReceiver;
+use rpxy_certs::ServerCryptoBase;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 /// Global object containing proxy configurations and shared object like counters.
@@ -17,7 +14,7 @@ pub struct Globals {
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Notify object to stop async tasks
   pub term_notify: Option<Arc<tokio::sync::Notify>>,
-  /// Shared context - Certificate reloader service receiver
+  /// Shared context - Certificate reloader service receiver // TODO: newer one
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
 }
 
@@ -127,24 +124,18 @@ impl Default for ProxyConfig {
 
 /// Configuration parameters for backend applications
 #[derive(PartialEq, Eq, Clone)]
-pub struct AppConfigList<T>
-where
-  T: CryptoSource,
-{
-  pub inner: Vec<AppConfig<T>>,
+pub struct AppConfigList {
+  pub inner: Vec<AppConfig>,
   pub default_app: Option<String>,
 }
 
 /// Configuration parameters for single backend application
 #[derive(PartialEq, Eq, Clone)]
-pub struct AppConfig<T>
-where
-  T: CryptoSource,
-{
+pub struct AppConfig {
   pub app_name: String,
   pub server_name: String,
   pub reverse_proxy: Vec<ReverseProxyConfig>,
-  pub tls: Option<TlsConfig<T>>,
+  pub tls: Option<TlsConfig>,
 }
 
 /// Configuration parameters for single reverse proxy corresponding to the path
@@ -165,10 +156,7 @@ pub struct UpstreamUri {
 
 /// Configuration parameters on TLS for a single backend application
 #[derive(PartialEq, Eq, Clone)]
-pub struct TlsConfig<T>
-where
-  T: CryptoSource,
-{
-  pub inner: T,
+pub struct TlsConfig {
+  pub mutual_tls: bool,
   pub https_redirection: bool,
 }

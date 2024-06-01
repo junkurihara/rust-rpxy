@@ -1,20 +1,17 @@
-use super::proxy_main::Proxy;
-use super::socket::bind_udp_socket;
-use crate::{
-  crypto::{CryptoSource, ServerCrypto},
-  error::*,
-  log::*,
-  name_exp::ByteName,
-};
+use super::{proxy_main::Proxy, socket::bind_udp_socket};
+use crate::{error::*, log::*, name_exp::ByteName};
 use hyper_util::client::legacy::connect::Connect;
-use quinn::{crypto::rustls::HandshakeData, Endpoint, ServerConfig as QuicServerConfig, TransportConfig};
+use quinn::{
+  crypto::rustls::{HandshakeData, QuicServerConfig},
+  Endpoint, TransportConfig,
+};
+use rpxy_certs::ServerCrypto;
 use rustls::ServerConfig;
 use std::sync::Arc;
 
-impl<U, T> Proxy<U, T>
+impl<T> Proxy<T>
 where
   T: Send + Sync + Connect + Clone + 'static,
-  U: CryptoSource + Clone + Sync + Send + 'static,
 {
   pub(super) async fn h3_listener_service(&self) -> RpxyResult<()> {
     let Some(mut server_crypto_rx) = self.globals.cert_reloader_rx.clone() else {
@@ -22,13 +19,14 @@ where
     };
     info!("Start UDP proxy serving with HTTP/3 request for configured host names [quinn]");
     // first set as null config server
-    let rustls_server_config = ServerConfig::builder()
-      .with_safe_default_cipher_suites()
-      .with_safe_default_kx_groups()
+    // AWS LC provider by default
+    let provider = rustls::crypto::CryptoProvider::get_default().ok_or(RpxyError::NoDefaultCryptoProvider)?;
+    let rustls_server_config = ServerConfig::builder_with_provider(provider.clone())
       .with_protocol_versions(&[&rustls::version::TLS13])
-      .map_err(|e| RpxyError::QuinnInvalidTlsProtocolVersion(e.to_string()))?
+      .map_err(|e| RpxyError::FailedToBuildServerConfig(format!("TLS 1.3 server config failed: {e}")))?
       .with_no_client_auth()
       .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()));
+    let quinn_server_config_crypto = QuicServerConfig::try_from(Arc::new(rustls_server_config)).unwrap();
 
     let mut transport_config_quic = TransportConfig::default();
     transport_config_quic
@@ -42,20 +40,15 @@ where
           .map(|v| quinn::IdleTimeout::try_from(v).unwrap()),
       );
 
-    let mut server_config_h3 = QuicServerConfig::with_crypto(Arc::new(rustls_server_config));
+    let mut server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(quinn_server_config_crypto));
     server_config_h3.transport = Arc::new(transport_config_quic);
-    server_config_h3.concurrent_connections(self.globals.proxy_config.h3_max_concurrent_connections);
+    server_config_h3.max_incoming(self.globals.proxy_config.h3_max_concurrent_connections as usize);
 
     // To reuse address
     let udp_socket = bind_udp_socket(&self.listening_on)?;
-    let runtime = quinn::default_runtime()
-      .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No async runtime found"))?;
-    let endpoint = Endpoint::new(
-      quinn::EndpointConfig::default(),
-      Some(server_config_h3),
-      udp_socket,
-      runtime,
-    )?;
+    let runtime =
+      quinn::default_runtime().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No async runtime found"))?;
+    let endpoint = Endpoint::new(quinn::EndpointConfig::default(), Some(server_config_h3), udp_socket, runtime)?;
 
     let mut server_crypto: Option<Arc<ServerCrypto>> = None;
     loop {
@@ -64,8 +57,10 @@ where
           if server_crypto.is_none() || new_conn.is_none() {
             continue;
           }
-          let mut conn: quinn::Connecting = new_conn.unwrap();
-          let Ok(hsd) = conn.handshake_data().await else {
+          let Ok(mut incoming) = new_conn.unwrap().accept() else {
+            continue
+          };
+          let Ok(hsd) = incoming.handshake_data().await else {
             continue
           };
 
@@ -84,8 +79,8 @@ where
           // TODO: 通常のTLSと同じenumか何かにまとめたい
           let self_clone = self.clone();
           self.globals.runtime_handle.spawn(async move {
-            let client_addr = conn.remote_address();
-            let quic_connection = match conn.await {
+            let client_addr = incoming.remote_address();
+            let quic_connection = match incoming.await {
               Ok(new_conn) => {
                 info!("New connection established");
                 h3_quinn::Connection::new(new_conn)
@@ -114,8 +109,12 @@ where
             error!("Failed to update server crypto for h3");
             break;
           };
-          endpoint.set_server_config(Some(QuicServerConfig::with_crypto(inner.clone().inner_global_no_client_auth.clone())));
-
+          let rustls_server_config = inner.aggregated_config_no_client_auth.clone();
+          let Ok(quinn_server_config_crypto) = QuicServerConfig::try_from(rustls_server_config) else {
+            error!("Failed to update server crypto for h3");
+            break;
+          };
+          endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(Arc::new(quinn_server_config_crypto))));
         }
         else => break
       }
