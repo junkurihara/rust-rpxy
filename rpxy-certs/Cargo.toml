@@ -21,7 +21,7 @@ derive_builder = { version = "0.20.0" }
 thiserror = { version = "1.0.61" }
 hot_reload = { version = "0.1.5" }
 async-trait = { version = "0.1.80" }
-rustls = { version = "0.23.8", default-features = false, features = [
+rustls = { version = "0.23.9", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }

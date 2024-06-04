@@ -43,7 +43,7 @@ async-trait = "0.1.80"
 
 # config
 clap = { version = "4.5.4", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.13", default-features = false, features = ["parse"] }
+toml = { version = "0.8.14", default-features = false, features = ["parse"] }
 hot_reload = "0.1.5"
 
 # logging
