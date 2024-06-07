@@ -212,21 +212,18 @@ where
     info!("Mozilla WebPKI root certs with rustls is used for the connection to backend applications");
 
     #[cfg(not(feature = "rustls-backend-webpki"))]
-    let builder = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots()?;
+    let builder = hyper_rustls::HttpsConnectorBuilder::new().with_platform_verifier();
     #[cfg(not(feature = "rustls-backend-webpki"))]
-    let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_native_roots()?;
+    let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_platform_verifier();
     #[cfg(not(feature = "rustls-backend-webpki"))]
-    info!("Native cert store with rustls is used for the connection to backend applications");
+    info!("Platform verifier with rustls is used for the connection to backend applications");
 
     let mut http = HttpConnector::new();
     http.enforce_http(false);
     http.set_reuse_address(true);
     http.set_keepalive(Some(_globals.proxy_config.upstream_idle_timeout));
 
-    let connector = builder
-      .https_or_http()
-      .enable_all_versions()
-      .wrap_connector(http.clone());
+    let connector = builder.https_or_http().enable_all_versions().wrap_connector(http.clone());
     let connector_h2 = builder_h2.https_or_http().enable_http2().wrap_connector(http);
     let inner = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone())).build::<_, B1>(connector);
     let inner_h2 = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone())).build::<_, B1>(connector_h2);
@@ -243,10 +240,7 @@ where
 #[cfg(feature = "cache")]
 /// Build synthetic request to cache
 fn build_synth_req_for_cache<T>(req: &Request<T>) -> Request<()> {
-  let mut builder = Request::builder()
-    .method(req.method())
-    .uri(req.uri())
-    .version(req.version());
+  let mut builder = Request::builder().method(req.method()).uri(req.uri()).version(req.version());
   // TODO: omit extensions. is this approach correct?
   for (header_key, header_value) in req.headers() {
     builder = builder.header(header_key, header_value);

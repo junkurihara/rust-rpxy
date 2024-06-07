@@ -13,8 +13,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-s2n", "sticky-cookie", "cache", "rustls-backend"]
-# default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
+# default = ["http3-s2n", "sticky-cookie", "cache", "rustls-backend"]
+default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
 http3-quinn = ["socket2", "quinn", "h3", "h3-quinn", "rpxy-certs/http3"]
 http3-s2n = [
   "h3",
@@ -64,11 +64,13 @@ hyper-tls = { version = "0.6.0", features = [
   "alpn",
   "vendored",
 ], optional = true }
-hyper-rustls = { version = "0.27.2", default-features = false, features = [
-  "ring",
-  "native-tokio",
+# TODO: Work around to enable rustls-platform-verifier feature: https://github.com/rustls/hyper-rustls/pull/276
+# hyper-rustls = { version = "0.27.2", default-features = false, features = [
+hyper-rustls = { git = "https://github.com/junkurihara/hyper-rustls", branch = "fix/builder-feature-platform-verifier", features = [
+  "aws-lc-rs",
   "http1",
   "http2",
+  "rustls-platform-verifier",
 ], optional = true }
 
 # tls and cert management for server
