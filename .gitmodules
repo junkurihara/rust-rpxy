@@ -1,6 +1,3 @@
 [submodule "submodules/rusty-http-cache-semantics"]
 	path = submodules/rusty-http-cache-semantics
 	url = git@github.com:junkurihara/rusty-http-cache-semantics.git
-[submodule "submodules/s2n-quic"]
-	path = submodules/s2n-quic
-	url = git@github.com:junkurihara/s2n-quic.git
