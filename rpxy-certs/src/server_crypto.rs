@@ -39,7 +39,7 @@ impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
   type Error = RpxyCertError;
 
   fn try_into(self) -> Result<Arc<ServerCrypto>, Self::Error> {
-    let aggregated = self.build_aggrated_server_crypto()?;
+    let aggregated = self.build_aggregated_server_crypto()?;
     let individual = self.build_individual_server_crypto_map()?;
     Ok(Arc::new(ServerCrypto {
       aggregated_config_no_client_auth: Arc::new(aggregated),
@@ -117,7 +117,7 @@ impl ServerCryptoBase {
 
   /* ------------------------------------------------ */
   /// Build aggregated server crypto inner object for no client auth server especially for http3
-  fn build_aggrated_server_crypto(&self) -> Result<ServerConfig, RpxyCertError> {
+  fn build_aggregated_server_crypto(&self) -> Result<ServerConfig, RpxyCertError> {
     let mut resolver_global = ResolvesServerCertUsingSni::new();
 
     // AWS LC provider by default
