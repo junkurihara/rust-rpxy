@@ -7,7 +7,6 @@ use super::{
 };
 use crate::{
   backend::{BackendAppManager, LoadBalanceContext},
-  crypto::CryptoSource,
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
@@ -34,20 +33,18 @@ pub(super) struct HandlerContext {
 #[derive(Clone, Builder)]
 /// HTTP message handler for requests from clients and responses from backend applications,
 /// responsible to manipulate and forward messages to upstream backends and downstream clients.
-pub struct HttpMessageHandler<U, C>
+pub struct HttpMessageHandler<C>
 where
   C: Send + Sync + Connect + Clone + 'static,
-  U: CryptoSource + Clone,
 {
   forwarder: Arc<Forwarder<C>>,
   pub(super) globals: Arc<Globals>,
-  app_manager: Arc<BackendAppManager<U>>,
+  app_manager: Arc<BackendAppManager>,
 }
 
-impl<U, C> HttpMessageHandler<U, C>
+impl<C> HttpMessageHandler<C>
 where
   C: Send + Sync + Connect + Clone + 'static,
-  U: CryptoSource + Clone,
 {
   /// Handle incoming request message from a client.
   /// Responsible to passthrough responses from backend applications or generate synthetic error responses.
@@ -64,14 +61,7 @@ where
     log_data.client_addr(&client_addr);
 
     let http_result = self
-      .handle_request_inner(
-        &mut log_data,
-        req,
-        client_addr,
-        listen_addr,
-        tls_enabled,
-        tls_server_name,
-      )
+      .handle_request_inner(&mut log_data, req, client_addr, listen_addr, tls_enabled, tls_server_name)
       .await;
 
     // passthrough or synthetic response

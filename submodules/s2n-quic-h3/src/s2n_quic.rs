@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bytes::{Buf, Bytes};
-use futures::ready;
+use core::task::ready;
 use h3::quic::{self, Error, StreamId, WriteBuf};
 use s2n_quic::stream::{BidirectionalStream, ReceiveStream};
 use s2n_quic_core::varint::VarInt;
@@ -213,7 +213,7 @@ where
     }
 
     fn recv_id(&self) -> StreamId {
-        self.recv.stream.id().try_into().expect("invalid stream id")
+        self.recv.recv_id()
     }
 }
 
@@ -240,7 +240,7 @@ where
     }
 
     fn send_id(&self) -> StreamId {
-        self.send.stream.id().try_into().expect("invalid stream id")
+        self.send.send_id()
     }
 }
 

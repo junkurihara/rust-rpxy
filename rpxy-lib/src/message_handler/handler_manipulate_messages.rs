@@ -3,17 +3,15 @@ use crate::{
   backend::{BackendApp, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
   log::*,
-  CryptoSource,
 };
 use anyhow::{anyhow, ensure, Result};
 use http::{header, HeaderValue, Request, Response, Uri};
 use hyper_util::client::legacy::connect::Connect;
 use std::net::SocketAddr;
 
-impl<U, C> HttpMessageHandler<U, C>
+impl<C> HttpMessageHandler<C>
 where
   C: Send + Sync + Connect + Clone + 'static,
-  U: CryptoSource + Clone,
 {
   ////////////////////////////////////////////////////
   // Functions to generate messages
@@ -21,11 +19,7 @@ where
 
   #[allow(unused_variables)]
   /// Manipulate a response message sent from a backend application to forward downstream to a client.
-  pub(super) fn generate_response_forwarded<B>(
-    &self,
-    response: &mut Response<B>,
-    backend_app: &BackendApp<U>,
-  ) -> Result<()> {
+  pub(super) fn generate_response_forwarded<B>(&self, response: &mut Response<B>, backend_app: &BackendApp) -> Result<()> {
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
@@ -35,15 +29,15 @@ where
     {
       // Manipulate ALT_SVC allowing h3 in response message only when mutual TLS is not enabled
       // TODO: This is a workaround for avoiding a client authentication in HTTP/3
-      if self.globals.proxy_config.http3 && backend_app.crypto_source.as_ref().is_some_and(|v| !v.is_mutual_tls()) {
+      if self.globals.proxy_config.http3
+        && backend_app.https_redirection.is_some()
+        && backend_app.mutual_tls.as_ref().is_some_and(|v| !v)
+      {
         if let Some(port) = self.globals.proxy_config.https_port {
           add_header_entry_overwrite_if_exist(
             headers,
             header::ALT_SVC.as_str(),
-            format!(
-              "h3=\":{}\"; ma={}, h3-29=\":{}\"; ma={}",
-              port, self.globals.proxy_config.h3_alt_svc_max_age, port, self.globals.proxy_config.h3_alt_svc_max_age
-            ),
+            format!("h3=\":{}\"; ma={}", port, self.globals.proxy_config.h3_alt_svc_max_age),
           )?;
         }
       } else {
@@ -102,11 +96,8 @@ where
     // by default, add "host" header of original server_name if not exist
     if req.headers().get(header::HOST).is_none() {
       let org_host = req.uri().host().ok_or_else(|| anyhow!("Invalid request"))?.to_owned();
-      req
-        .headers_mut()
-        .insert(header::HOST, HeaderValue::from_str(&org_host)?);
+      req.headers_mut().insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
-    println!("{:?}", req.headers().get(header::HOST));
 
     /////////////////////////////////////////////
     // Fix unique upstream destination since there could be multiple ones.

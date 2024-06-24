@@ -124,7 +124,7 @@ jobs:
 
       # - name: Nightly build test on amd64 for pull requests
       #   if: ${{ github.event_name == 'pull_request' }}
-      #   uses: docker/build-push-action@v5
+      #   uses: docker/build-push-action@v6
       #   with:
       #     context: .
       #     build-args: ${{ matrix.build-args }}
@@ -138,7 +138,7 @@ jobs:
 
       - name: Unstable build and push from develop branch
         if: ${{ startsWith(github.ref_name, 'feat/') && (github.event_name == 'push') }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           build-args: ${{ matrix.build-args }}
@@ -155,7 +155,7 @@ jobs:
 
       - name: Nightly build and push from develop branch
         if: ${{ (github.ref_name == 'develop') && (github.event_name == 'push') }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           build-args: ${{ matrix.build-args }}
@@ -172,7 +172,7 @@ jobs:
 
       - name: Release build and push from main branch
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           build-args: ${{ matrix.build-args }}

@@ -1,4 +1,3 @@
-version: "3"
 services:
   rpxy-rp:
     image: jqtype/rpxy:slim # ghcr.io/junkurihara/rust-rpxy:slim also works

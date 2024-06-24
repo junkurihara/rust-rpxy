@@ -4,6 +4,6 @@ mod toml;
 
 pub use {
   self::toml::ConfigToml,
-  parse::{build_settings, parse_opts},
+  parse::{build_cert_manager, build_settings, parse_opts},
   service::ConfigTomlReloader,
 };

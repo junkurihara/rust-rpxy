@@ -1,6 +1,18 @@
 # CHANGELOG
 
-## 0.8.0 (Unreleased)
+## 0.9.0 (Unreleased)
+
+## 0.8.0
+
+### Important Changes
+
+- Breaking: Support for `rustls`-0.23.x for http/1.1, 2 and 3. No configuration update is needed at this point.
+- Breaking: Along with `rustls`, the cert manager was split from `rpxy-lib` and moved to a new inner crate `rpxy-cert`. This change is to make the cert manager reusable for other projects and to support not only static file based certificates but also other types, e.g., dynamic fetching and management via ACME, in the future.
+
+### Improvement
+
+- Refactor: lots of minor improvements
+- Change the certificate verifier from `rustls-native-certs` to `rustls-platform-verifier` to use the system's default root cert store for better client (forwarder) performance in `hyper-rustls`.
 
 ## 0.7.1
 

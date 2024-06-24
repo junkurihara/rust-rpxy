@@ -31,12 +31,12 @@ macro_rules! ready {
 type BodySender = mpsc::Sender<Result<Bytes, RpxyError>>;
 type TrailersSender = oneshot::Sender<HeaderMap>;
 
-const MAX_LEN: u64 = std::u64::MAX - 2;
+const MAX_LEN: u64 = u64::MAX - 2;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DecodedLength(u64);
 impl DecodedLength {
-  pub(crate) const CLOSE_DELIMITED: DecodedLength = DecodedLength(::std::u64::MAX);
-  pub(crate) const CHUNKED: DecodedLength = DecodedLength(::std::u64::MAX - 1);
+  pub(crate) const CLOSE_DELIMITED: DecodedLength = DecodedLength(u64::MAX);
+  pub(crate) const CHUNKED: DecodedLength = DecodedLength(u64::MAX - 1);
   pub(crate) const ZERO: DecodedLength = DecodedLength(0);
 
   #[allow(dead_code)]
@@ -110,10 +110,7 @@ impl Body for IncomingLike {
   type Data = Bytes;
   type Error = RpxyError;
 
-  fn poll_frame(
-    mut self: Pin<&mut Self>,
-    cx: &mut Context<'_>,
-  ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+  fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
     self.want_tx.send(WANT_READY);
 
     if !self.data_rx.is_terminated() {
@@ -156,10 +153,7 @@ impl Sender {
   pub(crate) fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<RpxyResult<()>> {
     // Check if the receiver end has tried polling for the body yet
     ready!(self.poll_want(cx)?);
-    self
-      .data_tx
-      .poll_ready(cx)
-      .map_err(|_| RpxyError::HyperIncomingLikeNewClosed)
+    self.data_tx.poll_ready(cx).map_err(|_| RpxyError::HyperIncomingLikeNewClosed)
   }
 
   fn poll_want(&mut self, cx: &mut Context<'_>) -> Poll<RpxyResult<()>> {
@@ -256,11 +250,7 @@ mod tests {
 
     assert_eq!(mem::size_of::<Sender>(), mem::size_of::<usize>() * 5, "Sender");
 
-    assert_eq!(
-      mem::size_of::<Sender>(),
-      mem::size_of::<Option<Sender>>(),
-      "Option<Sender>"
-    );
+    assert_eq!(mem::size_of::<Sender>(), mem::size_of::<Option<Sender>>(), "Option<Sender>");
   }
   #[test]
   fn size_hint() {

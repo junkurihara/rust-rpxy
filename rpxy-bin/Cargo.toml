@@ -14,6 +14,7 @@ publish.workspace = true
 
 [features]
 default = ["http3-quinn", "cache", "rustls-backend"]
+# default = ["http3-s2n", "cache", "rustls-backend"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
@@ -26,29 +27,33 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
 ] }
 
-anyhow = "1.0.81"
-rustc-hash = "1.1.0"
-serde = { version = "1.0.197", default-features = false, features = ["derive"] }
-derive_builder = "0.20.0"
-tokio = { version = "1.37.0", default-features = false, features = [
+mimalloc = { version = "*", default-features = false }
+anyhow = "1.0.86"
+rustc-hash = "2.0.0"
+serde = { version = "1.0.203", default-features = false, features = ["derive"] }
+tokio = { version = "1.38.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
 ] }
-async-trait = "0.1.79"
-rustls-pemfile = "1.0.4"
-mimalloc = { version = "*", default-features = false }
+async-trait = "0.1.80"
+
 
 # config
-clap = { version = "4.5.4", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.12", default-features = false, features = ["parse"] }
+clap = { version = "4.5.7", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.8.14", default-features = false, features = ["parse"] }
 hot_reload = "0.1.5"
 
 # logging
 tracing = { version = "0.1.40" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
+################################
+# cert management
+rpxy-certs = { path = "../rpxy-certs/", default-features = false, features = [
+  "http3",
+] }
 
 [dev-dependencies]
