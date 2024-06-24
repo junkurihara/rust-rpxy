@@ -1,6 +1,8 @@
 # CHANGELOG
 
-## 0.8.0 (Unreleased)
+## 0.9.0 (Unreleased)
+
+## 0.8.0
 
 ### Important Changes
 
@@ -11,7 +13,6 @@
 
 - Refactor: lots of minor improvements
 - Change the certificate verifier from `rustls-native-certs` to `rustls-platform-verifier` to use the system's default root cert store for better client (forwarder) performance in `hyper-rustls`.
-
 
 ## 0.7.1
 
