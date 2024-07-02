@@ -12,9 +12,9 @@ use hyper_util::client::legacy::connect::Connect;
 use std::net::SocketAddr;
 
 #[cfg(feature = "http3-quinn")]
-use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
+use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, quic::OpenStreams, server::RequestStream};
 #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
-use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, server::RequestStream};
+use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, quic::OpenStreams, server::RequestStream};
 
 impl<T> Proxy<T>
 where
@@ -28,9 +28,9 @@ where
   ) -> RpxyResult<()>
   where
     C: ConnectionQuic<Bytes>,
-    <C as ConnectionQuic<Bytes>>::BidiStream: BidiStream<Bytes> + Send + 'static,
-    <<C as ConnectionQuic<Bytes>>::BidiStream as BidiStream<Bytes>>::RecvStream: Send,
-    <<C as ConnectionQuic<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
+    <C as OpenStreams<Bytes>>::BidiStream: BidiStream<Bytes> + Send + 'static,
+    <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::RecvStream: Send,
+    <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
   {
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
     info!(
