@@ -30,7 +30,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.86"
 rustc-hash = "2.0.0"
-serde = { version = "1.0.203", default-features = false, features = ["derive"] }
+serde = { version = "1.0.204", default-features = false, features = ["derive"] }
 tokio = { version = "1.38.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
@@ -38,11 +38,11 @@ tokio = { version = "1.38.0", default-features = false, features = [
   "sync",
   "macros",
 ] }
-async-trait = "0.1.80"
+async-trait = "0.1.81"
 
 
 # config
-clap = { version = "4.5.8", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.5.9", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8.14", default-features = false, features = ["parse"] }
 hot_reload = "0.1.5"
 

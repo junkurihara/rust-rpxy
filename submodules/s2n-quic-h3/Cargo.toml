@@ -15,8 +15,8 @@ futures = { version = "0.3", default-features = false }
 h3 = { version = "0.0.6", features = ["tracing"] }
 # s2n-quic = { path = "../s2n-quic" }
 # s2n-quic-core = { path = "../s2n-quic-core" }
-s2n-quic = { version = "1.41.0" }
-s2n-quic-core = { version = "0.41.0" }
+s2n-quic = { version = "1.42.0" }
+s2n-quic-core = { version = "0.42.0" }
 tracing = { version = "0.1.40", optional = true }
 
 [features]
