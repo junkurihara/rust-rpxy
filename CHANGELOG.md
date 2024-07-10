@@ -2,6 +2,13 @@
 
 ## 0.9.0 (Unreleased)
 
+## 0.8.1
+
+### Improvement
+
+- Refactor: lots of minor improvements
+- Deps
+
 ## 0.8.0
 
 ### Important Changes

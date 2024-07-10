@@ -39,6 +39,9 @@ pub enum RpxyError {
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[error("H3 error: {0}")]
   H3Error(#[from] h3::Error),
+  // #[cfg(feature = "http3-s2n")]
+  // #[error("H3 error: {0}")]
+  // H3Error(#[from] s2n_quic_h3::h3::Error),
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[error("Exceeds max request body size for HTTP/3")]
   H3TooLargeBody,
