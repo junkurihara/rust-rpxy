@@ -1,4 +1,5 @@
 mod constants;
+mod dir_cache;
 mod error;
 mod targets;
 
@@ -7,6 +8,7 @@ mod log {
   pub(super) use tracing::{debug, error, info, warn};
 }
 
-pub use constants::{ACME_CERTIFICATE_FILE_NAME, ACME_DIR_URL, ACME_PRIVATE_KEY_FILE_NAME, ACME_REGISTRY_PATH};
+pub use constants::{ACME_DIR_URL, ACME_REGISTRY_PATH};
+pub use dir_cache::DirCache;
 pub use error::RpxyAcmeError;
-pub use targets::AcmeTargets;
+pub use targets::AcmeContexts;

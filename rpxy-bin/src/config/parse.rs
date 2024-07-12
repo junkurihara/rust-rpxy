@@ -7,7 +7,7 @@ use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
 use rustc_hash::FxHashMap as HashMap;
 
 #[cfg(feature = "acme")]
-use rpxy_acme::{AcmeTargets, ACME_CERTIFICATE_FILE_NAME, ACME_PRIVATE_KEY_FILE_NAME, ACME_REGISTRY_PATH};
+use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH};
 
 /// Parsed options
 pub struct Opts {
@@ -110,7 +110,12 @@ pub async fn build_cert_manager(
   #[cfg(feature = "acme")]
   let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
   #[cfg(feature = "acme")]
-  let registry_path = acme_option
+  let acme_dir_url = acme_option
+    .as_ref()
+    .and_then(|v| v.dir_url.as_deref())
+    .unwrap_or(ACME_DIR_URL);
+  #[cfg(feature = "acme")]
+  let acme_registry_path = acme_option
     .as_ref()
     .and_then(|v| v.registry_path.as_deref())
     .unwrap_or(ACME_REGISTRY_PATH);
@@ -128,8 +133,12 @@ pub async fn build_cert_manager(
         let mut tls = tls.clone();
         if let Some(true) = tls.acme {
           ensure!(acme_option.is_some() && tls.tls_cert_key_path.is_none() && tls.tls_cert_path.is_none());
-          tls.tls_cert_key_path = Some(format!("{registry_path}/{server_name}/{ACME_CERTIFICATE_FILE_NAME}"));
-          tls.tls_cert_path = Some(format!("{registry_path}/{server_name}/{ACME_PRIVATE_KEY_FILE_NAME}"));
+          // Both of tls_cert_key_path and tls_cert_path must be the same for ACME since it's a single file
+          let subdir = format!("{}/{}", acme_registry_path, server_name.to_ascii_lowercase());
+          let file_name =
+            rpxy_acme::DirCache::cached_cert_file_name(&[server_name.to_ascii_lowercase()], acme_dir_url.to_ascii_lowercase());
+          tls.tls_cert_key_path = Some(format!("{}/{}", subdir, file_name));
+          tls.tls_cert_path = Some(format!("{}/{}", subdir, file_name));
         }
         tls
       };
@@ -151,27 +160,27 @@ pub async fn build_cert_manager(
 /// Build acme manager and dummy cert and key as initial states if not exists
 /// TODO: CURRENTLY NOT IMPLEMENTED, UNDER DESIGNING
 pub async fn build_acme_manager(config: &ConfigToml) -> Result<(), anyhow::Error> {
-  let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
-  if acme_option.is_none() {
-    return Ok(());
-  }
-  let acme_option = acme_option.unwrap();
-  let mut acme_targets = AcmeTargets::try_new(
-    acme_option.email.as_ref(),
-    acme_option.dir_url.as_deref(),
-    acme_option.registry_path.as_deref(),
-  )
-  .map_err(|e| anyhow!("Invalid acme configuration: {e}"))?;
+  // let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
+  // if acme_option.is_none() {
+  //   return Ok(());
+  // }
+  // let acme_option = acme_option.unwrap();
+  // let mut acme_targets = AcmeTargets::try_new(
+  //   acme_option.email.as_ref(),
+  //   acme_option.dir_url.as_deref(),
+  //   acme_option.registry_path.as_deref(),
+  // )
+  // .map_err(|e| anyhow!("Invalid acme configuration: {e}"))?;
 
-  let apps = config.apps.as_ref().unwrap();
-  for app in apps.0.values() {
-    if let Some(tls) = app.tls.as_ref() {
-      if tls.acme.unwrap_or(false) {
-        acme_targets.add_target(app.server_name.as_ref().unwrap())?;
-      }
-    }
-  }
+  // let apps = config.apps.as_ref().unwrap();
+  // for app in apps.0.values() {
+  //   if let Some(tls) = app.tls.as_ref() {
+  //     if tls.acme.unwrap_or(false) {
+  //       acme_targets.add_target(app.server_name.as_ref().unwrap())?;
+  //     }
+  //   }
+  // }
   // TODO: remove later
-  println!("ACME targets: {:#?}", acme_targets);
+  // println!("ACME targets: {:#?}", acme_targets);
   Ok(())
 }
