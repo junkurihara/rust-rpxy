@@ -41,12 +41,25 @@ pub struct CacheOption {
   pub max_cache_each_size_on_memory: Option<usize>,
 }
 
+#[cfg(feature = "acme")]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
+pub struct AcmeOption {
+  pub dir_url: Option<String>,
+  pub email: String,
+  pub registry_path: Option<String>,
+}
+
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Experimental {
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3: Option<Http3Option>,
+
   #[cfg(feature = "cache")]
   pub cache: Option<CacheOption>,
+
+  #[cfg(feature = "acme")]
+  pub acme: Option<AcmeOption>,
+
   pub ignore_sni_consistency: Option<bool>,
   pub connection_handling_timeout: Option<u64>,
 }
@@ -67,6 +80,8 @@ pub struct TlsOption {
   pub tls_cert_key_path: Option<String>,
   pub https_redirection: Option<bool>,
   pub client_ca_cert_path: Option<String>,
+  #[cfg(feature = "acme")]
+  pub acme: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
@@ -222,7 +237,18 @@ impl Application {
     // tls settings
     let tls_config = if self.tls.is_some() {
       let tls = self.tls.as_ref().unwrap();
+
+      #[cfg(not(feature = "acme"))]
       ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
+
+      #[cfg(feature = "acme")]
+      {
+        if tls.acme.unwrap_or(false) {
+          ensure!(tls.tls_cert_key_path.is_none() && tls.tls_cert_path.is_none());
+        } else {
+          ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
+        }
+      }
 
       let https_redirection = if tls.https_redirection.is_none() {
         true // Default true
@@ -233,6 +259,8 @@ impl Application {
       Some(TlsConfig {
         mutual_tls: tls.client_ca_cert_path.is_some(),
         https_redirection,
+        #[cfg(feature = "acme")]
+        acme: tls.acme.unwrap_or(false),
       })
     } else {
       None

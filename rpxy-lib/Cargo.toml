@@ -13,8 +13,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-# default = ["http3-s2n", "sticky-cookie", "cache", "rustls-backend"]
-default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
+# default = ["http3-s2n", "sticky-cookie", "cache", "rustls-backend", "acme"]
+# default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend", "acme"]
 http3-quinn = ["socket2", "quinn", "h3", "h3-quinn", "rpxy-certs/http3"]
 http3-s2n = [
   "s2n-quic",
@@ -29,6 +29,7 @@ sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
 rustls-backend = ["hyper-rustls"]
 webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
+acme = []
 
 [dependencies]
 rand = "0.8.5"

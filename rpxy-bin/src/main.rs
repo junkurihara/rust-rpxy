@@ -6,6 +6,8 @@ mod constants;
 mod error;
 mod log;
 
+#[cfg(feature = "acme")]
+use crate::config::build_acme_manager;
 use crate::{
   config::{build_cert_manager, build_settings, parse_opts, ConfigToml, ConfigTomlReloader},
   constants::CONFIG_WATCH_DELAY_SECS,
@@ -66,6 +68,9 @@ async fn rpxy_service_without_watcher(
   let config_toml = ConfigToml::new(config_file_path).map_err(|e| anyhow!("Invalid toml file: {e}"))?;
   let (proxy_conf, app_conf) = build_settings(&config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
 
+  #[cfg(feature = "acme")] // TODO: CURRENTLY NOT IMPLEMENTED, UNDER DESIGNING
+  let acme_manager = build_acme_manager(&config_toml).await;
+
   let cert_service_and_rx = build_cert_manager(&config_toml)
     .await
     .map_err(|e| anyhow!("Invalid cert configuration: {e}"))?;
@@ -87,6 +92,9 @@ async fn rpxy_service_with_watcher(
     .clone()
     .ok_or(anyhow!("Something wrong in config reloader receiver"))?;
   let (mut proxy_conf, mut app_conf) = build_settings(&config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
+
+  #[cfg(feature = "acme")] // TODO: CURRENTLY NOT IMPLEMENTED, UNDER DESIGNING
+  let acme_manager = build_acme_manager(&config_toml).await;
 
   let mut cert_service_and_rx = build_cert_manager(&config_toml)
     .await

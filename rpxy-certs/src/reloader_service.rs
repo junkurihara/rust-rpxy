@@ -46,10 +46,13 @@ impl Reload<ServerCryptoBase> for CryptoReloader {
     let mut server_crypto_base = ServerCryptoBase::default();
 
     for (server_name_bytes, crypto_source) in self.inner.iter() {
-      let certs_keys = crypto_source.read().await.map_err(|e| {
-        error!("Failed to reload cert, key or ca cert: {e}");
-        ReloaderError::<ServerCryptoBase>::Reload("Failed to reload cert, key or ca cert")
-      })?;
+      let certs_keys = match crypto_source.read().await {
+        Ok(certs_keys) => certs_keys,
+        Err(e) => {
+          error!("Failed to read certs and keys, skip at this time: {}", e);
+          continue;
+        }
+      };
       server_crypto_base.inner.insert(server_name_bytes.clone(), certs_keys);
     }
 

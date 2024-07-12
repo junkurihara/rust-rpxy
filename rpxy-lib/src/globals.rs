@@ -159,4 +159,6 @@ pub struct UpstreamUri {
 pub struct TlsConfig {
   pub mutual_tls: bool,
   pub https_redirection: bool,
+  #[cfg(feature = "acme")]
+  pub acme: bool,
 }
