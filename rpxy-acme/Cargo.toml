@@ -26,6 +26,6 @@ rustls = { version = "0.23.11", default-features = false, features = [
   "aws_lc_rs",
 ] }
 rustls-platform-verifier = { version = "0.3.2" }
-rustls-acme = { path = "../../rustls-acme/", default-features = false, features = [
+rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, features = [
   "aws-lc-rs",
 ] }
