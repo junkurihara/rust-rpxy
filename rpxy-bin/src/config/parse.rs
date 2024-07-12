@@ -7,7 +7,7 @@ use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
 use rustc_hash::FxHashMap as HashMap;
 
 #[cfg(feature = "acme")]
-use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH};
+use rpxy_acme::{AcmeContexts, ACME_DIR_URL, ACME_REGISTRY_PATH};
 
 /// Parsed options
 pub struct Opts {
@@ -160,27 +160,37 @@ pub async fn build_cert_manager(
 /// Build acme manager and dummy cert and key as initial states if not exists
 /// TODO: CURRENTLY NOT IMPLEMENTED, UNDER DESIGNING
 pub async fn build_acme_manager(config: &ConfigToml) -> Result<(), anyhow::Error> {
-  // let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
-  // if acme_option.is_none() {
-  //   return Ok(());
-  // }
-  // let acme_option = acme_option.unwrap();
-  // let mut acme_targets = AcmeTargets::try_new(
-  //   acme_option.email.as_ref(),
-  //   acme_option.dir_url.as_deref(),
-  //   acme_option.registry_path.as_deref(),
-  // )
-  // .map_err(|e| anyhow!("Invalid acme configuration: {e}"))?;
+  let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
+  if acme_option.is_none() {
+    return Ok(());
+  }
+  let acme_option = acme_option.unwrap();
 
-  // let apps = config.apps.as_ref().unwrap();
-  // for app in apps.0.values() {
-  //   if let Some(tls) = app.tls.as_ref() {
-  //     if tls.acme.unwrap_or(false) {
-  //       acme_targets.add_target(app.server_name.as_ref().unwrap())?;
-  //     }
-  //   }
-  // }
+  let domains = config
+    .apps
+    .as_ref()
+    .unwrap()
+    .0
+    .values()
+    .filter_map(|app| {
+      //
+      if let Some(tls) = app.tls.as_ref() {
+        if let Some(true) = tls.acme {
+          return Some(app.server_name.as_ref().unwrap().to_owned());
+        }
+      }
+      None
+    })
+    .collect::<Vec<_>>();
+
+  let acme_contexts = AcmeContexts::try_new(
+    acme_option.dir_url.as_deref(),
+    acme_option.registry_path.as_deref(),
+    &[acme_option.email],
+    domains.as_slice(),
+  )?;
+
   // TODO: remove later
-  // println!("ACME targets: {:#?}", acme_targets);
+  println!("ACME contexts: {:#?}", acme_contexts);
   Ok(())
 }

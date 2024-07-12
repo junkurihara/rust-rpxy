@@ -15,14 +15,14 @@ enum FileType {
   Cert,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DirCache {
-  account_dir: PathBuf,
-  cert_dir: PathBuf,
+  pub(super) account_dir: PathBuf,
+  pub(super) cert_dir: PathBuf,
 }
 
 impl DirCache {
-  pub fn new<P>(dir: P, server_name: impl AsRef<Path>) -> Self
+  pub fn new<P>(dir: P, server_name: &str) -> Self
   where
     P: AsRef<Path>,
   {
