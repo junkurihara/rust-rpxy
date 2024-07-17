@@ -40,7 +40,7 @@ tokio = { version = "1.38.1", default-features = false, features = [
   "macros",
 ] }
 async-trait = "0.1.81"
-
+futures-util = { version = "0.3.30", default-features = false }
 
 # config
 clap = { version = "4.5.9", features = ["std", "cargo", "wrap_help"] }

@@ -7,7 +7,7 @@ use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
 use rustc_hash::FxHashMap as HashMap;
 
 #[cfg(feature = "acme")]
-use rpxy_acme::{AcmeContexts, ACME_DIR_URL, ACME_REGISTRY_PATH};
+use rpxy_acme::{AcmeManager, ACME_DIR_URL, ACME_REGISTRY_PATH};
 
 /// Parsed options
 pub struct Opts {
@@ -157,12 +157,14 @@ pub async fn build_cert_manager(
 
 /* ----------------------- */
 #[cfg(feature = "acme")]
-/// Build acme manager and dummy cert and key as initial states if not exists
-/// TODO: CURRENTLY NOT IMPLEMENTED, UNDER DESIGNING
-pub async fn build_acme_manager(config: &ConfigToml) -> Result<(), anyhow::Error> {
+/// Build acme manager
+pub async fn build_acme_manager(
+  config: &ConfigToml,
+  runtime_handle: tokio::runtime::Handle,
+) -> Result<Option<AcmeManager>, anyhow::Error> {
   let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
   if acme_option.is_none() {
-    return Ok(());
+    return Ok(None);
   }
   let acme_option = acme_option.unwrap();
 
@@ -183,14 +185,17 @@ pub async fn build_acme_manager(config: &ConfigToml) -> Result<(), anyhow::Error
     })
     .collect::<Vec<_>>();
 
-  let acme_contexts = AcmeContexts::try_new(
+  if domains.is_empty() {
+    return Ok(None);
+  }
+
+  let acme_manager = AcmeManager::try_new(
     acme_option.dir_url.as_deref(),
     acme_option.registry_path.as_deref(),
     &[acme_option.email],
     domains.as_slice(),
+    runtime_handle,
   )?;
 
-  // TODO: remove later
-  println!("ACME contexts: {:#?}", acme_contexts);
-  Ok(())
+  Ok(Some(acme_manager))
 }

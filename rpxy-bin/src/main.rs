@@ -68,16 +68,33 @@ async fn rpxy_service_without_watcher(
   let config_toml = ConfigToml::new(config_file_path).map_err(|e| anyhow!("Invalid toml file: {e}"))?;
   let (proxy_conf, app_conf) = build_settings(&config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
 
-  #[cfg(feature = "acme")] // TODO: CURRENTLY NOT IMPLEMENTED, UNDER DESIGNING
-  let acme_manager = build_acme_manager(&config_toml).await;
+  #[cfg(feature = "acme")]
+  let acme_manager = build_acme_manager(&config_toml, runtime_handle.clone()).await?;
 
   let cert_service_and_rx = build_cert_manager(&config_toml)
     .await
     .map_err(|e| anyhow!("Invalid cert configuration: {e}"))?;
 
-  rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), &runtime_handle, None)
+  #[cfg(feature = "acme")]
+  {
+    rpxy_entrypoint(
+      &proxy_conf,
+      &app_conf,
+      cert_service_and_rx.as_ref(),
+      acme_manager.as_ref(),
+      &runtime_handle,
+      None,
+    )
     .await
     .map_err(|e| anyhow!(e))
+  }
+
+  #[cfg(not(feature = "acme"))]
+  {
+    rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), &runtime_handle, None)
+      .await
+      .map_err(|e| anyhow!(e))
+  }
 }
 
 async fn rpxy_service_with_watcher(
@@ -93,8 +110,8 @@ async fn rpxy_service_with_watcher(
     .ok_or(anyhow!("Something wrong in config reloader receiver"))?;
   let (mut proxy_conf, mut app_conf) = build_settings(&config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
 
-  #[cfg(feature = "acme")] // TODO: CURRENTLY NOT IMPLEMENTED, UNDER DESIGNING
-  let acme_manager = build_acme_manager(&config_toml).await;
+  #[cfg(feature = "acme")]
+  let acme_manager = build_acme_manager(&config_toml, runtime_handle.clone()).await?;
 
   let mut cert_service_and_rx = build_cert_manager(&config_toml)
     .await
@@ -106,7 +123,16 @@ async fn rpxy_service_with_watcher(
   // Continuous monitoring
   loop {
     tokio::select! {
-      rpxy_res = rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), &runtime_handle, Some(term_notify.clone())) => {
+      rpxy_res = {
+        #[cfg(feature = "acme")]
+        {
+          rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), acme_manager.as_ref(), &runtime_handle, Some(term_notify.clone()))
+        }
+        #[cfg(not(feature = "acme"))]
+        {
+          rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), &runtime_handle, Some(term_notify.clone()))
+        }
+      } => {
         error!("rpxy entrypoint or cert service exited");
         return rpxy_res.map_err(|e| anyhow!(e));
       }
@@ -145,6 +171,7 @@ async fn rpxy_service_with_watcher(
   Ok(())
 }
 
+#[cfg(not(feature = "acme"))]
 /// Wrapper of entry point for rpxy service with certificate management service
 async fn rpxy_entrypoint(
   proxy_config: &rpxy_lib::ProxyConfig,
@@ -152,10 +179,48 @@ async fn rpxy_entrypoint(
   cert_service_and_rx: Option<&(
     ReloaderService<rpxy_certs::CryptoReloader, rpxy_certs::ServerCryptoBase>,
     ReloaderReceiver<rpxy_certs::ServerCryptoBase>,
-  )>, // TODO:
+  )>,
   runtime_handle: &tokio::runtime::Handle,
   term_notify: Option<std::sync::Arc<tokio::sync::Notify>>,
 ) -> Result<(), anyhow::Error> {
+  if let Some((cert_service, cert_rx)) = cert_service_and_rx {
+    tokio::select! {
+      rpxy_res = entrypoint(proxy_config, app_config_list, Some(cert_rx), runtime_handle, term_notify) => {
+        error!("rpxy entrypoint exited");
+        rpxy_res.map_err(|e| anyhow!(e))
+      }
+      cert_res = cert_service.start() => {
+        error!("cert reloader service exited");
+        cert_res.map_err(|e| anyhow!(e))
+      }
+    }
+  } else {
+    entrypoint(proxy_config, app_config_list, None, runtime_handle, term_notify)
+      .await
+      .map_err(|e| anyhow!(e))
+  }
+}
+
+#[cfg(feature = "acme")]
+/// Wrapper of entry point for rpxy service with certificate management service
+async fn rpxy_entrypoint(
+  proxy_config: &rpxy_lib::ProxyConfig,
+  app_config_list: &rpxy_lib::AppConfigList,
+  cert_service_and_rx: Option<&(
+    ReloaderService<rpxy_certs::CryptoReloader, rpxy_certs::ServerCryptoBase>,
+    ReloaderReceiver<rpxy_certs::ServerCryptoBase>,
+  )>,
+  acme_manager: Option<&rpxy_acme::AcmeManager>,
+  runtime_handle: &tokio::runtime::Handle,
+  term_notify: Option<std::sync::Arc<tokio::sync::Notify>>,
+) -> Result<(), anyhow::Error> {
+  // TODO: remove later, reconsider routine
+  println!("ACME manager:\n{:#?}", acme_manager);
+  let x = acme_manager.unwrap().clone();
+  let (handle, confs) = x.spawn_manager_tasks();
+  tokio::spawn(async move { futures_util::future::select_all(handle).await });
+  // TODO:
+
   if let Some((cert_service, cert_rx)) = cert_service_and_rx {
     tokio::select! {
       rpxy_res = entrypoint(proxy_config, app_config_list, Some(cert_rx), runtime_handle, term_notify) => {

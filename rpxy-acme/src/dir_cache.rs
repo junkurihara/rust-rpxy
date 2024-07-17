@@ -15,7 +15,7 @@ enum FileType {
   Cert,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DirCache {
   pub(super) account_dir: PathBuf,
   pub(super) cert_dir: PathBuf,
