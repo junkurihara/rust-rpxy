@@ -167,6 +167,9 @@ where
 
     let mut server_crypto_map: Option<Arc<super::SniServerCryptoMap>> = None;
     loop {
+      #[cfg(feature = "acme")]
+      let server_configs_acme_challenge = self.globals.server_configs_acme_challenge.clone();
+
       select! {
         tcp_cnx = tcp_listener.accept().fuse() => {
           if tcp_cnx.is_err() || server_crypto_map.is_none() {
@@ -190,11 +193,35 @@ where
             if server_name.is_none(){
               return Err(RpxyError::NoServerNameInClientHello);
             }
-            let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
-            if server_crypto.is_none() {
-              return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
-            }
-            let stream = match start.into_stream(server_crypto.unwrap().clone()).await {
+            /* ------------------ */
+            // Check for ACME TLS ALPN challenge
+            #[cfg(feature = "acme")]
+            let server_crypto = {
+              if rpxy_acme::reexports::is_tls_alpn_challenge(&client_hello) {
+                info!("ACME TLS ALPN challenge received");
+                let Some(server_crypto_acme) = server_configs_acme_challenge.get(&sni.unwrap().to_ascii_lowercase()) else {
+                  return Err(RpxyError::NoAcmeServerConfig);
+                };
+                server_crypto_acme
+              } else {
+                let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
+                let Some(server_crypto) = server_crypto else {
+                  return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
+                };
+                server_crypto
+              }
+            };
+            /* ------------------ */
+            #[cfg(not(feature = "acme"))]
+            let server_crypto = {
+              let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
+              let Some(server_crypto) = server_crypto else {
+                return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
+              };
+              server_crypto
+            };
+            /* ------------------ */
+            let stream = match start.into_stream(server_crypto.clone()).await {
               Ok(s) => TokioIo::new(s),
               Err(e) => {
                 return Err(RpxyError::FailedToTlsHandshake(e.to_string()));

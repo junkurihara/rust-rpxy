@@ -72,9 +72,10 @@ impl AcmeManager {
 
   /// Start ACME manager to manage certificates for each domain.
   /// Returns a Vec<JoinHandle<()>> as a tasks handles and a map of domain to ServerConfig for challenge.
-  pub fn spawn_manager_tasks(&self) -> (Vec<tokio::task::JoinHandle<()>>, HashMap<String, Arc<ServerConfig>>) {
-    info!("rpxy ACME manager started");
-
+  pub fn spawn_manager_tasks(
+    &self,
+    term_notify: Option<Arc<tokio::sync::Notify>>,
+  ) -> (Vec<tokio::task::JoinHandle<()>>, HashMap<String, Arc<ServerConfig>>) {
     let rustls_client_config = rustls::ClientConfig::builder()
       .dangerous() // The `Verifier` we're using is actually safe
       .with_custom_certificate_verifier(Arc::new(rustls_platform_verifier::Verifier::new()))
@@ -94,17 +95,30 @@ impl AcmeManager {
           .client_tls_config(rustls_client_config.clone());
         let mut state = config.state();
         server_configs_for_challenge.insert(domain.to_ascii_lowercase(), state.challenge_rustls_config());
-        self.runtime_handle.spawn(async move {
-          info!("rpxy ACME manager task for {domain} started");
-          // infinite loop unless the return value is None
-          loop {
-            let Some(res) = state.next().await else {
-              error!("rpxy ACME manager task for {domain} exited");
-              break;
+        self.runtime_handle.spawn({
+          let term_notify = term_notify.clone();
+          async move {
+            info!("rpxy ACME manager task for {domain} started");
+            // infinite loop unless the return value is None
+            let task = async {
+              loop {
+                let Some(res) = state.next().await else {
+                  error!("rpxy ACME manager task for {domain} exited");
+                  break;
+                };
+                match res {
+                  Ok(ok) => info!("rpxy ACME event: {ok:?}"),
+                  Err(err) => error!("rpxy ACME error: {err:?}"),
+                }
+              }
             };
-            match res {
-              Ok(ok) => info!("rpxy ACME event: {ok:?}"),
-              Err(err) => error!("rpxy ACME error: {err:?}"),
+            if let Some(notify) = term_notify.as_ref() {
+              tokio::select! {
+                _ = task => {},
+                _ = notify.notified() => { info!("rpxy ACME manager task for {domain} terminated") }
+              }
+            } else {
+              task.await;
             }
           }
         })

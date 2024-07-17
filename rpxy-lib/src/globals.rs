@@ -16,6 +16,10 @@ pub struct Globals {
   pub term_notify: Option<Arc<tokio::sync::Notify>>,
   /// Shared context - Certificate reloader service receiver // TODO: newer one
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
+
+  #[cfg(feature = "acme")]
+  /// ServerConfig used for only ACME challenge for ACME domains
+  pub server_configs_acme_challenge: Arc<rustc_hash::FxHashMap<String, Arc<rustls::ServerConfig>>>,
 }
 
 /// Configuration parameters for proxy transport and request handlers

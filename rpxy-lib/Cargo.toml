@@ -29,7 +29,7 @@ sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
 rustls-backend = ["hyper-rustls"]
 webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
-acme = []
+acme = ["dep:rpxy-acme"]
 
 [dependencies]
 rand = "0.8.5"
@@ -79,6 +79,9 @@ rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.6"
 rustls = { version = "0.23.11", default-features = false }
 tokio-rustls = { version = "0.26.0", features = ["early-data"] }
+
+# acme
+rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true }
 
 # logging
 tracing = { version = "0.1.40" }

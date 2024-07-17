@@ -1,4 +1,4 @@
-# rpxy: A simple and ultrafast reverse-proxy serving multiple domain names with TLS termination, written in pure Rust
+# rpxy: A simple and ultrafast reverse-proxy serving multiple domain names with TLS termination, written in Rust
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Unit Test](https://github.com/junkurihara/rust-rpxy/actions/workflows/ci.yml/badge.svg)
@@ -10,9 +10,11 @@
 
 ## Introduction
 
-`rpxy` [ahr-pik-see] is an implementation of simple and lightweight reverse-proxy with some additional features. The implementation is based on [`hyper`](https://github.com/hyperium/hyper), [`rustls`](https://github.com/rustls/rustls) and [`tokio`](https://github.com/tokio-rs/tokio), i.e., written in pure Rust. Our `rpxy` routes multiple host names to appropriate backend application servers while serving TLS connections.
+`rpxy` [ahr-pik-see] is an implementation of simple and lightweight reverse-proxy with some additional features. The implementation is based on [`hyper`](https://github.com/hyperium/hyper), [`rustls`](https://github.com/rustls/rustls) and [`tokio`](https://github.com/tokio-rs/tokio), i.e., written in Rust^[^pure_rust]. Our `rpxy` routes multiple host names to appropriate backend application servers while serving TLS connections.
 
- As default, `rpxy` provides the *TLS connection sanitization* by correctly binding a certificate used to establish a secure channel with the backend application. Specifically, it always keeps the consistency between the given SNI (server name indication) in `ClientHello` of the underlying TLS and the domain name given by the overlaid HTTP HOST header (or URL in Request line) [^1]. Additionally, as a somewhat unstable feature, our `rpxy` can handle the brand-new HTTP/3 connection thanks to [`quinn`](https://github.com/quinn-rs/quinn), [`s2n-quic`](https://github.com/aws/s2n-quic) and [`hyperium/h3`](https://github.com/hyperium/h3).[^h3lib]
+[^pure_rust]: Doubtfully can be claimed to be written in pure Rust since current `rpxy` is based on `aws-lc-rs` for cryptographic operations.
+
+ As default, `rpxy` provides the *TLS connection sanitization* by correctly binding a certificate used to establish a secure channel with the backend application. Specifically, it always keeps the consistency between the given SNI (server name indication) in `ClientHello` of the underlying TLS and the domain name given by the overlaid HTTP HOST header (or URL in Request line) [^1]. Additionally, as a somewhat unstable feature, our `rpxy` can handle the brand-new HTTP/3 connection thanks to [`quinn`](https://github.com/quinn-rs/quinn), [`s2n-quic`](https://github.com/aws/s2n-quic) and [`hyperium/h3`](https://github.com/hyperium/h3).[^h3lib] Furthermore, `rpxy` supports the automatic issuance and renewal of certificates via [TLS-ALPN-01 (RFC8737)](https://www.rfc-editor.org/rfc/rfc8737) of [ACME protocol (RFC8555)](https://www.rfc-editor.org/rfc/rfc8555) thanks to [`rustls-acme`](https://github.com/FlorianUekermann/rustls-acme).
 
  [^h3lib]: HTTP/3 libraries are mutually exclusive. You need to explicitly specify `s2n-quic` with `--no-default-features` flag. Also note that if you build `rpxy` with `s2n-quic`, then it requires `openssl` just for building the package.
 
@@ -297,6 +299,32 @@ max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is alway
 ```
 
 A *storable* (in the context of an HTTP message) response is stored if its size is less than or equal to `max_cache_each_size` in bytes. If it is also less than or equal to `max_cache_each_size_on_memory`, it is stored as an on-memory object. Otherwise, it is stored as a temporary file. Note that `max_cache_each_size` must be larger or equal to `max_cache_each_size_on_memory`. Also note that once `rpxy` restarts or the config is updated, the cache is totally eliminated not only from the on-memory table but also from the file system.
+
+### Automated Certificate Issuance and Renewal via TLS-ALPN-01 ACME protocol
+
+This is a brand-new feature and maybe still unstable. Thanks to the [`rustls-acme`](https://github.com/FlorianUekermann/rustls-acme), the automatic issuance and renewal of certificates are finally available in `rpxy`. To enable this feature, you need to specify the following entries in `config.toml`.
+
+```toml
+# ACME enabled domain name.
+# ACME will be used to get a certificate for the server_name with ACME tls-alpn-01 protocol.
+# Note that acme option must be specified in the experimental section.
+[apps.localhost_with_acme]
+server_name = 'example.org'
+reverse_proxy = [{ upstream = [{ location = 'example.com', tls = true }] }]
+tls = { https_redirection = true, acme = true } # do not specify tls_cert_path and/or tls_cert_key_path
+```
+
+For the ACME enabled domain, the following settings are referred to acquire a certificate.
+
+```toml
+# Global ACME settings. Unless specified, ACME is disabled.
+[experimental.acme]
+dir_url = "https://localhost:14000/dir" # optional. default is "https://acme-v02.api.letsencrypt.org/directory"
+email = "test@example.com"
+registry_path = "./acme_registry"       # optional. default is "./acme_registry" relative to the current working directory
+```
+
+The above configuration is common to all ACME enabled domains. Note that the https port must be open to the public to verify the domain ownership.
 
 ## TIPS
 
