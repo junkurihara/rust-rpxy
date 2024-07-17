@@ -121,8 +121,8 @@ mod tests {
 
   use super::*;
 
-  #[test]
-  fn test_try_new() {
+  #[tokio::test]
+  async fn test_try_new() {
     let acme_dir_url = "https://acme.example.com/directory";
     let acme_registry_dir = "/tmp/acme";
     let contacts = vec!["test@example.com".to_string()];
