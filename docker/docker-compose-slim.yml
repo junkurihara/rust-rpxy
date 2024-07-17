@@ -31,6 +31,7 @@ services:
     volumes:
       - ./log:/rpxy/log:rw
       - ./cache:/rpxy/cache:rw
+      - ./acme_registry:/rpxy/acme_registry:rw
       - ../example-certs/server.crt:/certs/server.crt:ro
       - ../example-certs/server.key:/certs/server.key:ro
       - ../config-example.toml:/etc/rpxy.toml:ro
