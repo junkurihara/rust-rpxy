@@ -193,6 +193,8 @@ where
             if server_name.is_none(){
               return Err(RpxyError::NoServerNameInClientHello);
             }
+            #[cfg(feature = "acme")]
+            let mut is_handshake_acme = false; // for shutdown just after TLS handshake
             /* ------------------ */
             // Check for ACME TLS ALPN challenge
             #[cfg(feature = "acme")]
@@ -202,6 +204,7 @@ where
                 let Some(server_crypto_acme) = server_configs_acme_challenge.get(&sni.unwrap().to_ascii_lowercase()) else {
                   return Err(RpxyError::NoAcmeServerConfig);
                 };
+                is_handshake_acme = true;
                 server_crypto_acme
               } else {
                 let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
@@ -227,7 +230,14 @@ where
                 return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
               }
             };
-            Ok((stream, client_addr, server_name))
+            #[cfg(feature = "acme")]
+            {
+              Ok((stream, client_addr, server_name, is_handshake_acme))
+            }
+            #[cfg(not(feature="acme"))]
+            {
+              Ok((stream, client_addr, server_name))
+            }
           };
 
           self.globals.runtime_handle.spawn( async move {
@@ -239,14 +249,36 @@ where
               error!("Timeout to handshake TLS");
               return;
             };
-            match v {
-              Ok((stream, client_addr, server_name)) => {
-                self_inner.serve_connection(stream, client_addr, server_name);
-              }
-              Err(e) => {
-                error!("{}", e);
+            /* ------------------ */
+            #[cfg(feature = "acme")]
+            {
+              match v {
+                Ok((mut stream, client_addr, server_name, is_handshake_acme)) => {
+                  if is_handshake_acme {
+                    debug!("Shutdown TLS connection after ACME TLS ALPN challenge");
+                    use tokio::io::AsyncWriteExt;
+                    stream.inner_mut().shutdown().await.ok();
+                  }
+                  self_inner.serve_connection(stream, client_addr, server_name);
+                }
+                Err(e) => {
+                  error!("{}", e);
+                }
               }
             }
+            /* ------------------ */
+            #[cfg(not(feature = "acme"))]
+            {
+              match v {
+                Ok((stream, client_addr, server_name)) => {
+                  self_inner.serve_connection(stream, client_addr, server_name);
+                }
+                Err(e) => {
+                  error!("{}", e);
+                }
+              }
+            }
+            /* ------------------ */
           });
         }
         _ = server_crypto_rx.changed().fuse() => {
