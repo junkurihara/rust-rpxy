@@ -21,7 +21,7 @@ aws-lc-rs = { version = "1.8.1", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.1"
-rustls = { version = "0.23.11", default-features = false, features = [
+rustls = { version = "0.23.12", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
@@ -29,5 +29,5 @@ rustls-platform-verifier = { version = "0.3.2" }
 rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, features = [
   "aws-lc-rs",
 ] }
-tokio = { version = "1.38.1", default-features = false }
+tokio = { version = "1.39.0", default-features = false }
 tokio-stream = { version = "0.1.15", default-features = false }

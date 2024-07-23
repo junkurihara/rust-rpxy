@@ -37,7 +37,7 @@ rustc-hash = "2.0.0"
 bytes = "1.6.1"
 derive_builder = "0.20.0"
 futures = { version = "0.3.30", features = ["alloc", "async-await"] }
-tokio = { version = "1.38.1", default-features = false, features = [
+tokio = { version = "1.39.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -77,7 +77,7 @@ hyper-rustls = { git = "https://github.com/junkurihara/hyper-rustls", branch = "
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.6"
-rustls = { version = "0.23.11", default-features = false }
+rustls = { version = "0.23.12", default-features = false }
 tokio-rustls = { version = "0.26.0", features = ["early-data"] }
 
 # acme
