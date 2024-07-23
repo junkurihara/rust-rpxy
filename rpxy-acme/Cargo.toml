@@ -13,11 +13,11 @@ publish.workspace = true
 [dependencies]
 url = { version = "2.5.2" }
 rustc-hash = "2.0.0"
-thiserror = "1.0.62"
+thiserror = "1.0.63"
 tracing = "0.1.40"
 async-trait = "0.1.81"
 base64 = "0.22.1"
-aws-lc-rs = { version = "1.8.0", default-features = false, features = [
+aws-lc-rs = { version = "1.8.1", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.1"

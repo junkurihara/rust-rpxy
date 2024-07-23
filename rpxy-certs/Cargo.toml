@@ -18,7 +18,7 @@ http3 = []
 rustc-hash = { version = "2.0.0" }
 tracing = { version = "0.1.40" }
 derive_builder = { version = "0.20.0" }
-thiserror = { version = "1.0.62" }
+thiserror = { version = "1.0.63" }
 hot_reload = { version = "0.1.6" }
 async-trait = { version = "0.1.81" }
 rustls = { version = "0.23.11", default-features = false, features = [
@@ -26,7 +26,7 @@ rustls = { version = "0.23.11", default-features = false, features = [
   "aws_lc_rs",
 ] }
 rustls-pemfile = { version = "2.1.2" }
-rustls-webpki = { version = "0.102.5", default-features = false, features = [
+rustls-webpki = { version = "0.102.6", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
