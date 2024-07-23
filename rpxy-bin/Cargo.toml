@@ -13,14 +13,15 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "cache", "rustls-backend"]
-# default = ["http3-s2n", "cache", "rustls-backend"]
+default = ["http3-quinn", "cache", "rustls-backend", "acme"]
+# default = ["http3-s2n", "cache", "rustls-backend", "acme"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
 rustls-backend = ["rpxy-lib/rustls-backend"]
 webpki-roots = ["rpxy-lib/webpki-roots"]
 cache = ["rpxy-lib/cache"]
+acme = ["rpxy-lib/acme", "rpxy-acme"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
@@ -31,7 +32,7 @@ mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.86"
 rustc-hash = "2.0.0"
 serde = { version = "1.0.204", default-features = false, features = ["derive"] }
-tokio = { version = "1.38.0", default-features = false, features = [
+tokio = { version = "1.39.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -39,12 +40,12 @@ tokio = { version = "1.38.0", default-features = false, features = [
   "macros",
 ] }
 async-trait = "0.1.81"
-
+futures-util = { version = "0.3.30", default-features = false }
 
 # config
-clap = { version = "4.5.9", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.14", default-features = false, features = ["parse"] }
-hot_reload = "0.1.5"
+clap = { version = "4.5.10", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.8.15", default-features = false, features = ["parse"] }
+hot_reload = "0.1.6"
 
 # logging
 tracing = { version = "0.1.40" }
@@ -55,5 +56,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 rpxy-certs = { path = "../rpxy-certs/", default-features = false, features = [
   "http3",
 ] }
+
+rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true }
 
 [dev-dependencies]

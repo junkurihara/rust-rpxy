@@ -13,8 +13,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-# default = ["http3-s2n", "sticky-cookie", "cache", "rustls-backend"]
-default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend"]
+# default = ["http3-s2n", "sticky-cookie", "cache", "rustls-backend", "acme"]
+# default = ["http3-quinn", "sticky-cookie", "cache", "rustls-backend", "acme"]
 http3-quinn = ["socket2", "quinn", "h3", "h3-quinn", "rpxy-certs/http3"]
 http3-s2n = [
   "s2n-quic",
@@ -29,14 +29,15 @@ sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
 rustls-backend = ["hyper-rustls"]
 webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
+acme = ["dep:rpxy-acme"]
 
 [dependencies]
 rand = "0.8.5"
 rustc-hash = "2.0.0"
-bytes = "1.6.0"
+bytes = "1.6.1"
 derive_builder = "0.20.0"
 futures = { version = "0.3.30", features = ["alloc", "async-await"] }
-tokio = { version = "1.38.0", default-features = false, features = [
+tokio = { version = "1.39.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -49,7 +50,7 @@ async-trait = "0.1.81"
 
 # Error handling
 anyhow = "1.0.86"
-thiserror = "1.0.62"
+thiserror = "1.0.63"
 
 # http for both server and client
 http = "1.1.0"
@@ -75,9 +76,12 @@ hyper-rustls = { git = "https://github.com/junkurihara/hyper-rustls", branch = "
 
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
-hot_reload = "0.1.5"
-rustls = { version = "0.23.11", default-features = false }
+hot_reload = "0.1.6"
+rustls = { version = "0.23.12", default-features = false }
 tokio-rustls = { version = "0.26.0", features = ["early-data"] }
+
+# acme
+rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true }
 
 # logging
 tracing = { version = "0.1.40" }
@@ -89,11 +93,11 @@ h3-quinn = { version = "0.0.7", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
-s2n-quic = { version = "1.42.0", default-features = false, features = [
+s2n-quic = { version = "1.43.0", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.42.0", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.42.0", optional = true }
+s2n-quic-core = { version = "0.43.0", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.43.0", optional = true }
 ##########
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
 socket2 = { version = "0.5.7", features = ["all"], optional = true }

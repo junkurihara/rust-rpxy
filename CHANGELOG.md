@@ -1,6 +1,17 @@
 # CHANGELOG
 
-## 0.9.0 (Unreleased)
+## 0.10.0 (Unreleased)
+
+## 0.9.0
+
+### Important Changes
+
+- Breaking: Experimental ACME support is added. Check the new configuration options and README.md for ACME support. Note that it is still under development and may have some issues.
+
+### Improvement
+
+- Refactor: lots of minor improvements
+- Deps
 
 ## 0.8.1
 

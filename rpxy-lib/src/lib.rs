@@ -30,13 +30,36 @@ pub mod reexports {
   pub use hyper::Uri;
 }
 
+#[derive(derive_builder::Builder)]
+/// rpxy entrypoint args
+pub struct RpxyOptions {
+  /// Configuration parameters for proxy transport and request handlers
+  pub proxy_config: ProxyConfig,
+  /// List of application configurations
+  pub app_config_list: AppConfigList,
+  /// Certificate reloader service receiver
+  pub cert_rx: Option<ReloaderReceiver<ServerCryptoBase>>, // TODO:
+  /// Async task runtime handler
+  pub runtime_handle: tokio::runtime::Handle,
+  /// Notify object to stop async tasks
+  pub term_notify: Option<Arc<tokio::sync::Notify>>,
+
+  #[cfg(feature = "acme")]
+  /// ServerConfig used for only ACME challenge for ACME domains
+  pub server_configs_acme_challenge: Arc<rustc_hash::FxHashMap<String, Arc<rustls::ServerConfig>>>,
+}
+
 /// Entrypoint that creates and spawns tasks of reverse proxy services
 pub async fn entrypoint(
-  proxy_config: &ProxyConfig,
-  app_config_list: &AppConfigList,
-  cert_rx: Option<&ReloaderReceiver<ServerCryptoBase>>, // TODO:
-  runtime_handle: &tokio::runtime::Handle,
-  term_notify: Option<Arc<tokio::sync::Notify>>,
+  RpxyOptions {
+    proxy_config,
+    app_config_list,
+    cert_rx, // TODO:
+    runtime_handle,
+    term_notify,
+    #[cfg(feature = "acme")]
+    server_configs_acme_challenge,
+  }: &RpxyOptions,
 ) -> RpxyResult<()> {
   #[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
   warn!("Both \"http3-quinn\" and \"http3-s2n\" features are enabled. \"http3-quinn\" will be used");
@@ -85,7 +108,10 @@ pub async fn entrypoint(
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
     term_notify: term_notify.clone(),
-    cert_reloader_rx: cert_rx.cloned(),
+    cert_reloader_rx: cert_rx.clone(),
+
+    #[cfg(feature = "acme")]
+    server_configs_acme_challenge: server_configs_acme_challenge.clone(),
   });
 
   // 3. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well

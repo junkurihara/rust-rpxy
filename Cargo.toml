@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.8.1"
+version = "0.9.0-alpha.1"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
@@ -9,7 +9,7 @@ edition = "2021"
 publish = false
 
 [workspace]
-members = ["rpxy-bin", "rpxy-lib", "rpxy-certs"]
+members = ["rpxy-bin", "rpxy-lib", "rpxy-certs", "rpxy-acme"]
 exclude = ["submodules"]
 resolver = "2"
 
