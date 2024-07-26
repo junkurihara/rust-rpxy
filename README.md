@@ -238,20 +238,7 @@ Since it is currently a work-in-progress project, we are frequently adding new o
 
 ## Using Docker Image
 
-You can also use `docker` image hosted on [Docker Hub](https://hub.docker.com/r/jqtype/rpxy) and [GitHub Container Registry](https://github.com/junkurihara/rust-rpxy/pkgs/container/rust-rpxy) instead of directly executing the binary. See [`./docker/README.md`](./docker/README.md) for the differences on image tags.
-
-There are only several docker-specific environment variables.
-
-- `HOST_USER` (default: `user`): User name executing `rpxy` inside the container.
-- `HOST_UID` (default: `900`): `UID` of `HOST_USER`.
-- `HOST_GID` (default: `900`): `GID` of `HOST_USER`
-- `LOG_LEVEL=debug|info|warn|error`: Log level
-- `LOG_TO_FILE=true|false`: Enable logging to the log file `/rpxy/log/rpxy.log` using `logrotate`. You should mount `/rpxy/log` via docker volume option if enabled. The log dir and file will be owned by the `HOST_USER` with `HOST_UID:HOST_GID` on the host machine. Hence, `HOST_USER`, `HOST_UID` and `HOST_GID` should be the same as ones of the user who executes the `rpxy` docker container on the host.
-- `WATCH=true|false` (default: `false`): Activate continuous watching of the config file if true.
-
-Then, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certificates/private keys as you like through the docker volume option. **If `WATCH=true`, You need to mount a directory, e.g., `./rpxy-config/`, including `rpxy.toml` on `/rpxy/config` instead of a file to correctly track file changes**. This is a docker limitation. Even if `WATCH=false`, you can mount the dir onto `/rpxy/config` rather than `/etc/rpxy.toml`. A file mounted on `/etc/rpxy` is prioritized over a dir mounted on `/rpxy/config`.
-
-See [`docker/docker-compose.yml`](./docker/docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
+You can also use `docker` image hosted on [Docker Hub](https://hub.docker.com/r/jqtype/rpxy) and [GitHub Container Registry](https://github.com/junkurihara/rust-rpxy/pkgs/container/rust-rpxy) instead of directly executing the binary. See [`./docker`](./docker/README.md) directory for more details.
 
 ## Example
 
@@ -406,6 +393,10 @@ However, we found that if you want to use the brand-new UDP-based protocol, HTTP
 ```
 
 Your docker container can receive only TCP-based connection, i.e., HTTP/2 or before, unless you manually manage the port. We see that this is weird and expect that it is a kind of bug (of docker? ubuntu? or something else?). But at least for Ubuntu 22.04LTS, you need to handle it as above.
+
+### Managing `rpxy` via web interface
+
+Check a third party project [`Gamerboy59/rpxy-webui`](https://github.com/Gamerboy59/rpxy-webui) to manage `rpxy` via web interface.
 
 ### Other TIPS
 
