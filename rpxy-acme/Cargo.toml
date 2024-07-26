@@ -30,4 +30,5 @@ rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, f
   "aws-lc-rs",
 ] }
 tokio = { version = "1.39.1", default-features = false }
+tokio-util = { version = "0.7.11", default-features = false }
 tokio-stream = { version = "0.1.15", default-features = false }

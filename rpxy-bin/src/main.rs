@@ -127,11 +127,11 @@ async fn rpxy_service_with_watcher(
     .await
     .map_err(|e| anyhow!("Invalid cert configuration: {e}"))?;
 
-  // Notifier for proxy service termination
-  let term_notify = std::sync::Arc::new(tokio::sync::Notify::new());
-
   // Continuous monitoring
   loop {
+    // Notifier for proxy service termination
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+
     let (cert_service, cert_rx) = cert_service_and_rx
       .as_ref()
       .map(|(s, r)| (Some(s), Some(r)))
@@ -140,7 +140,7 @@ async fn rpxy_service_with_watcher(
     #[cfg(feature = "acme")]
     let (acme_join_handles, server_config_acme_challenge) = acme_manager
       .as_ref()
-      .map(|m| m.spawn_manager_tasks(Some(term_notify.clone())))
+      .map(|m| m.spawn_manager_tasks(Some(cancel_token.child_token())))
       .unwrap_or((vec![], Default::default()));
 
     let rpxy_opts = {
@@ -150,7 +150,7 @@ async fn rpxy_service_with_watcher(
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.cloned())
         .runtime_handle(runtime_handle.clone())
-        .term_notify(Some(term_notify.clone()))
+        .cancel_token(Some(cancel_token.child_token()))
         .server_configs_acme_challenge(std::sync::Arc::new(server_config_acme_challenge))
         .build();
 
@@ -216,8 +216,7 @@ async fn rpxy_service_with_watcher(
         }
 
         info!("Configuration updated. Terminate all spawned services and force to re-bind TCP/UDP sockets");
-        term_notify.notify_waiters();
-        // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        cancel_token.cancel();
       }
       else => break
     }

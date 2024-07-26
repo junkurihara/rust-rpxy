@@ -23,6 +23,7 @@ use futures::future::select_all;
 use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 /* ------------------------------------------------ */
 pub use crate::globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
@@ -42,7 +43,7 @@ pub struct RpxyOptions {
   /// Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
   /// Notify object to stop async tasks
-  pub term_notify: Option<Arc<tokio::sync::Notify>>,
+  pub cancel_token: Option<CancellationToken>,
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains
@@ -56,7 +57,7 @@ pub async fn entrypoint(
     app_config_list,
     cert_rx, // TODO:
     runtime_handle,
-    term_notify,
+    cancel_token,
     #[cfg(feature = "acme")]
     server_configs_acme_challenge,
   }: &RpxyOptions,
@@ -107,7 +108,7 @@ pub async fn entrypoint(
     proxy_config: proxy_config.clone(),
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
-    term_notify: term_notify.clone(),
+    cancel_token: cancel_token.clone(),
     cert_reloader_rx: cert_rx.clone(),
 
     #[cfg(feature = "acme")]

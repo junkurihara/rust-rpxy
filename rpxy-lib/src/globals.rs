@@ -2,6 +2,7 @@ use crate::{constants::*, count::RequestCount};
 use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 /// Global object containing proxy configurations and shared object like counters.
 /// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
@@ -13,7 +14,7 @@ pub struct Globals {
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Notify object to stop async tasks
-  pub term_notify: Option<Arc<tokio::sync::Notify>>,
+  pub cancel_token: Option<CancellationToken>,
   /// Shared context - Certificate reloader service receiver // TODO: newer one
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
 
