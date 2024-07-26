@@ -108,7 +108,7 @@ pub async fn entrypoint(
     proxy_config: proxy_config.clone(),
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
-    cancel_token: cancel_token.clone().unwrap_or_default(),
+    cancel_token: cancel_token.clone(),
     cert_reloader_rx: cert_rx.clone(),
 
     #[cfg(feature = "acme")]
@@ -144,21 +144,25 @@ pub async fn entrypoint(
       message_handler: message_handler.clone(),
     };
 
-    let cancel_token = globals.cancel_token.child_token();
+    let cancel_token = globals.cancel_token.as_ref().map(|t| t.child_token());
     let parent_cancel_token_clone = globals.cancel_token.clone();
     globals.runtime_handle.spawn(async move {
       info!("rpxy proxy service for {listening_on} started");
-      tokio::select! {
-        _ = cancel_token.cancelled() => {
-          info!("rpxy proxy service for {listening_on} terminated");
-          Ok(())
-        },
-        proxy_res = proxy.start() => {
-          info!("rpxy proxy service for {listening_on} exited");
-          // cancel other proxy tasks
-          parent_cancel_token_clone.cancel();
-          proxy_res
+      if let Some(cancel_token) = cancel_token {
+        tokio::select! {
+          _ = cancel_token.cancelled() => {
+            debug!("rpxy proxy service for {listening_on} terminated");
+            Ok(())
+          },
+          proxy_res = proxy.start() => {
+            info!("rpxy proxy service for {listening_on} exited");
+            // cancel other proxy tasks
+            parent_cancel_token_clone.unwrap().cancel();
+            proxy_res
+          }
         }
+      } else {
+        proxy.start().await
       }
     })
   });

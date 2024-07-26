@@ -14,7 +14,7 @@ pub struct Globals {
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Notify object to stop async tasks
-  pub cancel_token: CancellationToken,
+  pub cancel_token: Option<CancellationToken>,
   /// Shared context - Certificate reloader service receiver // TODO: newer one
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
 
