@@ -45,7 +45,7 @@ jobs:
           - target: "s2n"
             dockerfile: ./docker/Dockerfile
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,rustls-backend"
+              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,rustls-backend,acme"
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n"
@@ -58,7 +58,7 @@ jobs:
             dockerfile: ./docker/Dockerfile
             platforms: linux/amd64,linux/arm64
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots"
+              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots,acme"
             tags-suffix: "-webpki-roots"
             # Aliases must be used only for release builds
             aliases: |
@@ -68,7 +68,7 @@ jobs:
           - target: "slim-webpki-roots"
             dockerfile: ./docker/Dockerfile-slim
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots"
+              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots,acme"
             build-contexts: |
               messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
               messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
@@ -82,7 +82,7 @@ jobs:
           - target: "s2n-webpki-roots"
             dockerfile: ./docker/Dockerfile
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,webpki-roots"
+              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,webpki-roots,acme"
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n-webpki-roots"
