@@ -19,7 +19,7 @@ use crate::{
   message_handler::HttpMessageHandlerBuilder,
   proxy::Proxy,
 };
-use futures::future::select_all;
+use futures::future::join_all;
 use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
 use std::sync::Arc;
@@ -131,7 +131,7 @@ pub async fn entrypoint(
 
   // spawn each proxy for a given socket with copied Arc-ed backend, message_handler and connection builder.
   let addresses = globals.proxy_config.listen_sockets.clone();
-  let futures_iter = addresses.into_iter().map(|listening_on| {
+  let join_handles = addresses.into_iter().map(|listening_on| {
     let mut tls_enabled = false;
     if let Some(https_port) = globals.proxy_config.https_port {
       tls_enabled = https_port == listening_on.port()
@@ -143,11 +143,41 @@ pub async fn entrypoint(
       connection_builder: connection_builder.clone(),
       message_handler: message_handler.clone(),
     };
-    globals.runtime_handle.spawn(async move { proxy.start().await })
+
+    let cancel_token = globals.cancel_token.as_ref().map(|t| t.child_token());
+    let parent_cancel_token_clone = globals.cancel_token.clone();
+    globals.runtime_handle.spawn(async move {
+      info!("rpxy proxy service for {listening_on} started");
+      if let Some(cancel_token) = cancel_token {
+        tokio::select! {
+          _ = cancel_token.cancelled() => {
+            debug!("rpxy proxy service for {listening_on} terminated");
+            Ok(())
+          },
+          proxy_res = proxy.start() => {
+            info!("rpxy proxy service for {listening_on} exited");
+            // cancel other proxy tasks
+            parent_cancel_token_clone.unwrap().cancel();
+            proxy_res
+          }
+        }
+      } else {
+        proxy.start().await
+      }
+    })
   });
 
-  if let (Ok(Err(e)), _, _) = select_all(futures_iter).await {
-    error!("Some proxy services are down: {}", e);
+  let join_res = join_all(join_handles).await;
+  let mut errs = join_res.into_iter().filter_map(|res| {
+    if let Ok(Err(e)) = res {
+      error!("Some proxy services are down: {}", e);
+      Some(e)
+    } else {
+      None
+    }
+  });
+  // returns the first error as the representative error
+  if let Some(e) = errs.next() {
     return Err(e);
   }
 

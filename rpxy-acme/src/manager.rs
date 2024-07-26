@@ -115,7 +115,7 @@ impl AcmeManager {
             if let Some(cancel_token) = cancel_token.as_ref() {
               tokio::select! {
                 _ = task => {},
-                _ = cancel_token.cancelled() => { info!("rpxy ACME manager task for {domain} terminated") }
+                _ = cancel_token.cancelled() => { debug!("rpxy ACME manager task for {domain} terminated") }
               }
             } else {
               task.await;

@@ -312,23 +312,6 @@ where
       }
     };
 
-    match &self.globals.cancel_token {
-      Some(cancel_token) => {
-        select! {
-          _ = proxy_service.fuse() => {
-            warn!("Proxy service got down");
-          }
-          _ = cancel_token.cancelled().fuse() => {
-            info!("Proxy service listening on {} receives term signal", self.listening_on);
-          }
-        }
-      }
-      None => {
-        proxy_service.await?;
-        warn!("Proxy service got down");
-      }
-    }
-
-    Ok(())
+    proxy_service.await
   }
 }
