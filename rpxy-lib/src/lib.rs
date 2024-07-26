@@ -108,7 +108,7 @@ pub async fn entrypoint(
     proxy_config: proxy_config.clone(),
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
-    cancel_token: cancel_token.clone(),
+    cancel_token: cancel_token.clone().unwrap_or_default(),
     cert_reloader_rx: cert_rx.clone(),
 
     #[cfg(feature = "acme")]
@@ -130,7 +130,6 @@ pub async fn entrypoint(
   let connection_builder = proxy::connection_builder(&globals);
 
   // spawn each proxy for a given socket with copied Arc-ed backend, message_handler and connection builder.
-  let parent_cancel_token = globals.cancel_token.clone().unwrap_or_default();
   let addresses = globals.proxy_config.listen_sockets.clone();
   let join_handles = addresses.into_iter().map(|listening_on| {
     let mut tls_enabled = false;
@@ -145,8 +144,8 @@ pub async fn entrypoint(
       message_handler: message_handler.clone(),
     };
 
-    let cancel_token = parent_cancel_token.child_token();
-    let parent_cancel_token_clone = parent_cancel_token.clone();
+    let cancel_token = globals.cancel_token.child_token();
+    let parent_cancel_token_clone = globals.cancel_token.clone();
     globals.runtime_handle.spawn(async move {
       info!("rpxy proxy service for {listening_on} started");
       tokio::select! {
