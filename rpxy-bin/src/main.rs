@@ -44,18 +44,20 @@ fn main() {
           .unwrap();
 
       tokio::select! {
-        Err(e) = config_service.start() => {
-          error!("config reloader service exited: {e}");
-          std::process::exit(1);
+        config_res = config_service.start() => {
+          if let Err(e) = config_res {
+            error!("config reloader service exited: {e}");
+            std::process::exit(1);
+          }
         }
-        Err(e) = rpxy_service_with_watcher(config_rx, runtime.handle().clone()) => {
-          error!("rpxy service existed: {e}");
-          std::process::exit(1);
-        }
-        else => {
-          std::process::exit(0);
+        rpxy_res = rpxy_service_with_watcher(config_rx, runtime.handle().clone()) => {
+          if let Err(e) = rpxy_res {
+            error!("rpxy service existed: {e}");
+            std::process::exit(1);
+          }
         }
       }
+      std::process::exit(0);
     }
   });
 }
