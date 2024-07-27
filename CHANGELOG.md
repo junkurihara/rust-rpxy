@@ -13,6 +13,10 @@
 - Refactor: lots of minor improvements
 - Deps
 
+### Bugfix
+
+- Fix the bug that the dynamic config reload does not work properly.
+
 ## 0.8.1
 
 ### Improvement
