@@ -204,18 +204,18 @@ where
   /// Build forwarder
   pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
     // build hyper client with rustls and webpki, only https is allowed
-    #[cfg(feature = "rustls-backend-webpki")]
+    #[cfg(feature = "webpki-roots")]
     let builder = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
-    #[cfg(feature = "rustls-backend-webpki")]
+    #[cfg(feature = "webpki-roots")]
     let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
-    #[cfg(feature = "rustls-backend-webpki")]
+    #[cfg(feature = "webpki-roots")]
     info!("Mozilla WebPKI root certs with rustls is used for the connection to backend applications");
 
-    #[cfg(not(feature = "rustls-backend-webpki"))]
+    #[cfg(not(feature = "webpki-roots"))]
     let builder = hyper_rustls::HttpsConnectorBuilder::new().with_platform_verifier();
-    #[cfg(not(feature = "rustls-backend-webpki"))]
+    #[cfg(not(feature = "webpki-roots"))]
     let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_platform_verifier();
-    #[cfg(not(feature = "rustls-backend-webpki"))]
+    #[cfg(not(feature = "webpki-roots"))]
     info!("Platform verifier with rustls is used for the connection to backend applications");
 
     let mut http = HttpConnector::new();

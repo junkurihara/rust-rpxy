@@ -167,6 +167,9 @@ where
 
     let mut server_crypto_map: Option<Arc<super::SniServerCryptoMap>> = None;
     loop {
+      #[cfg(feature = "acme")]
+      let server_configs_acme_challenge = self.globals.server_configs_acme_challenge.clone();
+
       select! {
         tcp_cnx = tcp_listener.accept().fuse() => {
           if tcp_cnx.is_err() || server_crypto_map.is_none() {
@@ -190,17 +193,51 @@ where
             if server_name.is_none(){
               return Err(RpxyError::NoServerNameInClientHello);
             }
-            let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
-            if server_crypto.is_none() {
-              return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
-            }
-            let stream = match start.into_stream(server_crypto.unwrap().clone()).await {
+            #[cfg(feature = "acme")]
+            let mut is_handshake_acme = false; // for shutdown just after TLS handshake
+            /* ------------------ */
+            // Check for ACME TLS ALPN challenge
+            #[cfg(feature = "acme")]
+            let server_crypto = {
+              if rpxy_acme::reexports::is_tls_alpn_challenge(&client_hello) {
+                info!("ACME TLS ALPN challenge received");
+                let Some(server_crypto_acme) = server_configs_acme_challenge.get(&sni.unwrap().to_ascii_lowercase()) else {
+                  return Err(RpxyError::NoAcmeServerConfig);
+                };
+                is_handshake_acme = true;
+                server_crypto_acme
+              } else {
+                let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
+                let Some(server_crypto) = server_crypto else {
+                  return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
+                };
+                server_crypto
+              }
+            };
+            /* ------------------ */
+            #[cfg(not(feature = "acme"))]
+            let server_crypto = {
+              let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
+              let Some(server_crypto) = server_crypto else {
+                return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
+              };
+              server_crypto
+            };
+            /* ------------------ */
+            let stream = match start.into_stream(server_crypto.clone()).await {
               Ok(s) => TokioIo::new(s),
               Err(e) => {
                 return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
               }
             };
-            Ok((stream, client_addr, server_name))
+            #[cfg(feature = "acme")]
+            {
+              Ok((stream, client_addr, server_name, is_handshake_acme))
+            }
+            #[cfg(not(feature="acme"))]
+            {
+              Ok((stream, client_addr, server_name))
+            }
           };
 
           self.globals.runtime_handle.spawn( async move {
@@ -212,14 +249,36 @@ where
               error!("Timeout to handshake TLS");
               return;
             };
-            match v {
-              Ok((stream, client_addr, server_name)) => {
-                self_inner.serve_connection(stream, client_addr, server_name);
-              }
-              Err(e) => {
-                error!("{}", e);
+            /* ------------------ */
+            #[cfg(feature = "acme")]
+            {
+              match v {
+                Ok((mut stream, client_addr, server_name, is_handshake_acme)) => {
+                  if is_handshake_acme {
+                    debug!("Shutdown TLS connection after ACME TLS ALPN challenge");
+                    use tokio::io::AsyncWriteExt;
+                    stream.inner_mut().shutdown().await.ok();
+                  }
+                  self_inner.serve_connection(stream, client_addr, server_name);
+                }
+                Err(e) => {
+                  error!("{}", e);
+                }
               }
             }
+            /* ------------------ */
+            #[cfg(not(feature = "acme"))]
+            {
+              match v {
+                Ok((stream, client_addr, server_name)) => {
+                  self_inner.serve_connection(stream, client_addr, server_name);
+                }
+                Err(e) => {
+                  error!("{}", e);
+                }
+              }
+            }
+            /* ------------------ */
           });
         }
         _ = server_crypto_rx.changed().fuse() => {
@@ -253,23 +312,6 @@ where
       }
     };
 
-    match &self.globals.term_notify {
-      Some(term) => {
-        select! {
-          _ = proxy_service.fuse() => {
-            warn!("Proxy service got down");
-          }
-          _ = term.notified().fuse() => {
-            info!("Proxy service listening on {} receives term signal", self.listening_on);
-          }
-        }
-      }
-      None => {
-        proxy_service.await?;
-        warn!("Proxy service got down");
-      }
-    }
-
-    Ok(())
+    proxy_service.await
   }
 }

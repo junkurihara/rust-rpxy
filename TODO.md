@@ -1,6 +1,5 @@
 # TODO List
 
-- Support of `rustls-0.22`.
 - We need more sophistication on `Forwarder` struct to handle `h2c`.
 - Cache using `lru` crate might be inefficient in terms of the speed.
   - Consider more sophisticated architecture for cache

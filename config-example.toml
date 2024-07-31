@@ -89,6 +89,14 @@ server_name = 'localhost.localdomain'
 reverse_proxy = [{ upstream = [{ location = 'www.google.com', tls = true }] }]
 ######################################################################
 
+######################################################################
+# ACME enabled example. ACME will be used to get a certificate for the server_name with ACME tls-alpn-01 protocol.
+# Note that acme option must be specified in the experimental section.
+[apps.localhost_with_acme]
+server_name = 'kubernetes.docker.internal'
+reverse_proxy = [{ upstream = [{ location = 'example.com', tls = true }] }]
+tls = { https_redirection = true, acme = true }
+
 ###################################
 #      Experimantal settings      #
 ###################################
@@ -119,3 +127,9 @@ cache_dir = './cache'                # optional. default is "./cache" relative t
 max_cache_entry = 1000               # optional. default is 1k
 max_cache_each_size = 65535          # optional. default is 64k
 max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is always file cache.
+
+# ACME settings. Unless specified, ACME is disabled.
+[experimental.acme]
+dir_url = "https://localhost:14000/dir" # optional. default is "https://acme-v02.api.letsencrypt.org/directory"
+email = "test@example.com"
+registry_path = "./acme_registry"       # optional. default is "./acme_registry" relative to the current working directory

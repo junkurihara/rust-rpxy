@@ -6,6 +6,8 @@ mod constants;
 mod error;
 mod log;
 
+#[cfg(feature = "acme")]
+use crate::config::build_acme_manager;
 use crate::{
   config::{build_cert_manager, build_settings, parse_opts, ConfigToml, ConfigTomlReloader},
   constants::CONFIG_WATCH_DELAY_SECS,
@@ -13,7 +15,9 @@ use crate::{
   log::*,
 };
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use rpxy_lib::entrypoint;
+use rpxy_lib::{entrypoint, RpxyOptions, RpxyOptionsBuilder};
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 fn main() {
   init_logger();
@@ -42,20 +46,193 @@ fn main() {
           .unwrap();
 
       tokio::select! {
-        Err(e) = config_service.start() => {
-          error!("config reloader service exited: {e}");
-          std::process::exit(1);
+        config_res = config_service.start() => {
+          if let Err(e) = config_res {
+            error!("config reloader service exited: {e}");
+            std::process::exit(1);
+          }
         }
-        Err(e) = rpxy_service_with_watcher(config_rx, runtime.handle().clone()) => {
-          error!("rpxy service existed: {e}");
-          std::process::exit(1);
-        }
-        else => {
-          std::process::exit(0);
+        rpxy_res = rpxy_service_with_watcher(config_rx, runtime.handle().clone()) => {
+          if let Err(e) = rpxy_res {
+            error!("rpxy service existed: {e}");
+            std::process::exit(1);
+          }
         }
       }
+      std::process::exit(0);
     }
   });
+}
+
+/// rpxy service definition
+struct RpxyService {
+  runtime_handle: tokio::runtime::Handle,
+  proxy_conf: rpxy_lib::ProxyConfig,
+  app_conf: rpxy_lib::AppConfigList,
+  cert_service: Option<Arc<ReloaderService<rpxy_certs::CryptoReloader, rpxy_certs::ServerCryptoBase>>>,
+  cert_rx: Option<ReloaderReceiver<rpxy_certs::ServerCryptoBase>>,
+  #[cfg(feature = "acme")]
+  acme_manager: Option<rpxy_acme::AcmeManager>,
+}
+
+impl RpxyService {
+  async fn new(config_toml: &ConfigToml, runtime_handle: tokio::runtime::Handle) -> Result<Self, anyhow::Error> {
+    let (proxy_conf, app_conf) = build_settings(config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
+
+    let (cert_service, cert_rx) = build_cert_manager(config_toml)
+      .await
+      .map_err(|e| anyhow!("Invalid cert configuration: {e}"))?
+      .map(|(s, r)| (Some(Arc::new(s)), Some(r)))
+      .unwrap_or((None, None));
+
+    Ok(RpxyService {
+      runtime_handle: runtime_handle.clone(),
+      proxy_conf,
+      app_conf,
+      cert_service,
+      cert_rx,
+      #[cfg(feature = "acme")]
+      acme_manager: build_acme_manager(config_toml, runtime_handle.clone()).await?,
+    })
+  }
+
+  async fn start(&self, cancel_token: Option<CancellationToken>) -> Result<(), anyhow::Error> {
+    let RpxyService {
+      runtime_handle,
+      proxy_conf,
+      app_conf,
+      cert_service: _,
+      cert_rx,
+      #[cfg(feature = "acme")]
+      acme_manager,
+    } = self;
+
+    #[cfg(feature = "acme")]
+    {
+      let (acme_join_handles, server_config_acme_challenge) = acme_manager
+        .as_ref()
+        .map(|m| m.spawn_manager_tasks(cancel_token.as_ref().map(|t| t.child_token())))
+        .unwrap_or((vec![], Default::default()));
+      let rpxy_opts = RpxyOptionsBuilder::default()
+        .proxy_config(proxy_conf.clone())
+        .app_config_list(app_conf.clone())
+        .cert_rx(cert_rx.clone())
+        .runtime_handle(runtime_handle.clone())
+        .cancel_token(cancel_token.as_ref().map(|t| t.child_token()))
+        .server_configs_acme_challenge(Arc::new(server_config_acme_challenge))
+        .build()?;
+      self.start_inner(rpxy_opts, acme_join_handles).await.map_err(|e| anyhow!(e))
+    }
+
+    #[cfg(not(feature = "acme"))]
+    {
+      let rpxy_opts = RpxyOptionsBuilder::default()
+        .proxy_config(proxy_conf.clone())
+        .app_config_list(app_conf.clone())
+        .cert_rx(cert_rx.clone())
+        .runtime_handle(runtime_handle.clone())
+        .cancel_token(cancel_token.as_ref().map(|t| t.child_token()))
+        .build()?;
+      self.start_inner(rpxy_opts).await.map_err(|e| anyhow!(e))
+    }
+  }
+
+  /// Wrapper of entry point for rpxy service with certificate management service
+  async fn start_inner(
+    &self,
+    rpxy_opts: RpxyOptions,
+    #[cfg(feature = "acme")] acme_task_handles: Vec<tokio::task::JoinHandle<()>>,
+  ) -> Result<(), anyhow::Error> {
+    let cancel_token = rpxy_opts.cancel_token.clone();
+    let runtime_handle = rpxy_opts.runtime_handle.clone();
+
+    // spawn rpxy entrypoint, where cancellation token is possibly contained inside the service
+    let cancel_token_clone = cancel_token.clone();
+    let rpxy_handle = runtime_handle.spawn(async move {
+      if let Err(e) = entrypoint(&rpxy_opts).await {
+        error!("rpxy entrypoint exited on error: {e}");
+        if let Some(cancel_token) = cancel_token_clone {
+          cancel_token.cancel();
+        }
+        return Err(anyhow!(e));
+      }
+      Ok(())
+    });
+
+    if self.cert_service.is_none() {
+      return rpxy_handle.await?;
+    }
+
+    // spawn certificate reloader service, where cert service does not have cancellation token inside the service
+    let cert_service = self.cert_service.as_ref().unwrap().clone();
+    let cancel_token_clone = cancel_token.clone();
+    let child_cancel_token = cancel_token.as_ref().map(|c| c.child_token());
+    let cert_handle = runtime_handle.spawn(async move {
+      if let Some(child_cancel_token) = child_cancel_token {
+        tokio::select! {
+          cert_res = cert_service.start() => {
+            if let Err(ref e) = cert_res {
+              error!("cert reloader service exited on error: {e}");
+            }
+            cancel_token_clone.unwrap().cancel();
+            cert_res.map_err(|e| anyhow!(e))
+          }
+          _ = child_cancel_token.cancelled() => {
+            debug!("cert reloader service terminated");
+            Ok(())
+          }
+        }
+      } else {
+        cert_service.start().await.map_err(|e| anyhow!(e))
+      }
+    });
+
+    #[cfg(not(feature = "acme"))]
+    {
+      let (rpxy_res, cert_res) = tokio::join!(rpxy_handle, cert_handle);
+      let (rpxy_res, cert_res) = (rpxy_res?, cert_res?);
+      match (rpxy_res, cert_res) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(e), _) => Err(e),
+        (_, Err(e)) => Err(e),
+      }
+    }
+
+    #[cfg(feature = "acme")]
+    {
+      if acme_task_handles.is_empty() {
+        let (rpxy_res, cert_res) = tokio::join!(rpxy_handle, cert_handle);
+        let (rpxy_res, cert_res) = (rpxy_res?, cert_res?);
+        return match (rpxy_res, cert_res) {
+          (Ok(()), Ok(())) => Ok(()),
+          (Err(e), _) => Err(e),
+          (_, Err(e)) => Err(e),
+        };
+      }
+
+      // spawn acme manager tasks, where cancellation token is possibly contained inside the service
+      let select_all = futures_util::future::select_all(acme_task_handles);
+      let cancel_token_clone = cancel_token.clone();
+      let acme_handle = runtime_handle.spawn(async move {
+        let (acme_res, _, _) = select_all.await;
+        if let Err(ref e) = acme_res {
+          error!("acme manager exited on error: {e}");
+        }
+        if let Some(cancel_token) = cancel_token_clone {
+          cancel_token.cancel();
+        }
+        acme_res.map_err(|e| anyhow!(e))
+      });
+      let (rpxy_res, cert_res, acme_res) = tokio::join!(rpxy_handle, cert_handle, acme_handle);
+      let (rpxy_res, cert_res, acme_res) = (rpxy_res?, cert_res?, acme_res?);
+      match (rpxy_res, cert_res, acme_res) {
+        (Ok(()), Ok(()), Ok(())) => Ok(()),
+        (Err(e), _, _) => Err(e),
+        (_, Err(e), _) => Err(e),
+        (_, _, Err(e)) => Err(e),
+      }
+    }
+  }
 }
 
 async fn rpxy_service_without_watcher(
@@ -64,15 +241,8 @@ async fn rpxy_service_without_watcher(
 ) -> Result<(), anyhow::Error> {
   info!("Start rpxy service");
   let config_toml = ConfigToml::new(config_file_path).map_err(|e| anyhow!("Invalid toml file: {e}"))?;
-  let (proxy_conf, app_conf) = build_settings(&config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
-
-  let cert_service_and_rx = build_cert_manager(&config_toml)
-    .await
-    .map_err(|e| anyhow!("Invalid cert configuration: {e}"))?;
-
-  rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), &runtime_handle, None)
-    .await
-    .map_err(|e| anyhow!(e))
+  let service = RpxyService::new(&config_toml, runtime_handle).await?;
+  service.start(None).await
 }
 
 async fn rpxy_service_with_watcher(
@@ -86,82 +256,41 @@ async fn rpxy_service_with_watcher(
     .borrow()
     .clone()
     .ok_or(anyhow!("Something wrong in config reloader receiver"))?;
-  let (mut proxy_conf, mut app_conf) = build_settings(&config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
-
-  let mut cert_service_and_rx = build_cert_manager(&config_toml)
-    .await
-    .map_err(|e| anyhow!("Invalid cert configuration: {e}"))?;
-
-  // Notifier for proxy service termination
-  let term_notify = std::sync::Arc::new(tokio::sync::Notify::new());
+  let mut service = RpxyService::new(&config_toml, runtime_handle.clone()).await?;
 
   // Continuous monitoring
   loop {
+    // Notifier for proxy service termination
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+
     tokio::select! {
-      rpxy_res = rpxy_entrypoint(&proxy_conf, &app_conf, cert_service_and_rx.as_ref(), &runtime_handle, Some(term_notify.clone())) => {
-        error!("rpxy entrypoint or cert service exited");
+      /* ---------- */
+      rpxy_res = service.start(Some(cancel_token.clone())) => {
+        if let Err(ref e) = rpxy_res {
+          error!("rpxy service exited on error: {e}");
+        } else {
+          error!("rpxy service exited");
+        }
         return rpxy_res.map_err(|e| anyhow!(e));
       }
+      /* ---------- */
       _ = config_rx.changed() => {
-        let Some(config_toml) = config_rx.borrow().clone() else {
+        let Some(new_config_toml) = config_rx.borrow().clone() else {
           error!("Something wrong in config reloader receiver");
           return Err(anyhow!("Something wrong in config reloader receiver"));
         };
-        match build_settings(&config_toml) {
-          Ok((p, a)) => {
-            (proxy_conf, app_conf) = (p, a)
+        match RpxyService::new(&new_config_toml, runtime_handle.clone()).await {
+          Ok(new_service) => {
+            info!("Configuration updated.");
+            service = new_service;
           },
           Err(e) => {
-            error!("Invalid configuration. Configuration does not updated: {e}");
-            continue;
+            error!("rpxy failed to be ready. Configuration does not updated: {e}");
           }
         };
-        match build_cert_manager(&config_toml).await {
-          Ok(c) => {
-            cert_service_and_rx = c;
-          },
-          Err(e) => {
-            error!("Invalid cert configuration. Configuration does not updated: {e}");
-            continue;
-          }
-        };
-
-        info!("Configuration updated. Terminate all spawned proxy services and force to re-bind TCP/UDP sockets");
-        term_notify.notify_waiters();
-        // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-      }
-      else => break
-    }
-  }
-
-  Ok(())
-}
-
-/// Wrapper of entry point for rpxy service with certificate management service
-async fn rpxy_entrypoint(
-  proxy_config: &rpxy_lib::ProxyConfig,
-  app_config_list: &rpxy_lib::AppConfigList,
-  cert_service_and_rx: Option<&(
-    ReloaderService<rpxy_certs::CryptoReloader, rpxy_certs::ServerCryptoBase>,
-    ReloaderReceiver<rpxy_certs::ServerCryptoBase>,
-  )>, // TODO:
-  runtime_handle: &tokio::runtime::Handle,
-  term_notify: Option<std::sync::Arc<tokio::sync::Notify>>,
-) -> Result<(), anyhow::Error> {
-  if let Some((cert_service, cert_rx)) = cert_service_and_rx {
-    tokio::select! {
-      rpxy_res = entrypoint(proxy_config, app_config_list, Some(cert_rx), runtime_handle, term_notify) => {
-        error!("rpxy entrypoint exited");
-        rpxy_res.map_err(|e| anyhow!(e))
-      }
-      cert_res = cert_service.start() => {
-        error!("cert reloader service exited");
-        cert_res.map_err(|e| anyhow!(e))
+        info!("Terminate all spawned services and force to re-bind TCP/UDP sockets");
+        cancel_token.cancel();
       }
     }
-  } else {
-    entrypoint(proxy_config, app_config_list, None, runtime_handle, term_notify)
-      .await
-      .map_err(|e| anyhow!(e))
   }
 }

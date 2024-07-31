@@ -105,4 +105,9 @@ pub enum RpxyError {
   // Others
   #[error("Infallible")]
   Infallible(#[from] std::convert::Infallible),
+
+  /// No Acme server config for Acme challenge
+  #[cfg(feature = "acme")]
+  #[error("No Acme server config")]
+  NoAcmeServerConfig,
 }

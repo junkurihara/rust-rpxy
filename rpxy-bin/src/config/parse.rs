@@ -6,6 +6,9 @@ use rpxy_certs::{build_cert_reloader, CryptoFileSourceBuilder, CryptoReloader, S
 use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
 use rustc_hash::FxHashMap as HashMap;
 
+#[cfg(feature = "acme")]
+use rpxy_acme::{AcmeManager, ACME_DIR_URL, ACME_REGISTRY_PATH};
+
 /// Parsed options
 pub struct Opts {
   pub config_file_path: String,
@@ -103,11 +106,43 @@ pub async fn build_cert_manager(
   if config.listen_port_tls.is_none() {
     return Ok(None);
   }
+
+  #[cfg(feature = "acme")]
+  let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
+  #[cfg(feature = "acme")]
+  let acme_dir_url = acme_option
+    .as_ref()
+    .and_then(|v| v.dir_url.as_deref())
+    .unwrap_or(ACME_DIR_URL);
+  #[cfg(feature = "acme")]
+  let acme_registry_path = acme_option
+    .as_ref()
+    .and_then(|v| v.registry_path.as_deref())
+    .unwrap_or(ACME_REGISTRY_PATH);
+
   let mut crypto_source_map = HashMap::default();
   for app in apps.0.values() {
     if let Some(tls) = app.tls.as_ref() {
-      ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
       let server_name = app.server_name.as_ref().ok_or(anyhow!("No server name"))?;
+
+      #[cfg(not(feature = "acme"))]
+      ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
+
+      #[cfg(feature = "acme")]
+      let tls = {
+        let mut tls = tls.clone();
+        if let Some(true) = tls.acme {
+          ensure!(acme_option.is_some() && tls.tls_cert_key_path.is_none() && tls.tls_cert_path.is_none());
+          // Both of tls_cert_key_path and tls_cert_path must be the same for ACME since it's a single file
+          let subdir = format!("{}/{}", acme_registry_path, server_name.to_ascii_lowercase());
+          let file_name =
+            rpxy_acme::DirCache::cached_cert_file_name(&[server_name.to_ascii_lowercase()], acme_dir_url.to_ascii_lowercase());
+          tls.tls_cert_key_path = Some(format!("{}/{}", subdir, file_name));
+          tls.tls_cert_path = Some(format!("{}/{}", subdir, file_name));
+        }
+        tls
+      };
+
       let crypto_file_source = CryptoFileSourceBuilder::default()
         .tls_cert_path(tls.tls_cert_path.as_ref().unwrap())
         .tls_cert_key_path(tls.tls_cert_key_path.as_ref().unwrap())
@@ -118,4 +153,49 @@ pub async fn build_cert_manager(
   }
   let res = build_cert_reloader(&crypto_source_map, None).await?;
   Ok(Some(res))
+}
+
+/* ----------------------- */
+#[cfg(feature = "acme")]
+/// Build acme manager
+pub async fn build_acme_manager(
+  config: &ConfigToml,
+  runtime_handle: tokio::runtime::Handle,
+) -> Result<Option<AcmeManager>, anyhow::Error> {
+  let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
+  if acme_option.is_none() {
+    return Ok(None);
+  }
+  let acme_option = acme_option.unwrap();
+
+  let domains = config
+    .apps
+    .as_ref()
+    .unwrap()
+    .0
+    .values()
+    .filter_map(|app| {
+      //
+      if let Some(tls) = app.tls.as_ref() {
+        if let Some(true) = tls.acme {
+          return Some(app.server_name.as_ref().unwrap().to_owned());
+        }
+      }
+      None
+    })
+    .collect::<Vec<_>>();
+
+  if domains.is_empty() {
+    return Ok(None);
+  }
+
+  let acme_manager = AcmeManager::try_new(
+    acme_option.dir_url.as_deref(),
+    acme_option.registry_path.as_deref(),
+    &[acme_option.email],
+    domains.as_slice(),
+    runtime_handle,
+  )?;
+
+  Ok(Some(acme_manager))
 }
