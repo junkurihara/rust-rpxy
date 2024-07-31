@@ -32,7 +32,7 @@ mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.86"
 rustc-hash = "2.0.0"
 serde = { version = "1.0.204", default-features = false, features = ["derive"] }
-tokio = { version = "1.39.1", default-features = false, features = [
+tokio = { version = "1.39.2", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -45,7 +45,7 @@ futures-util = { version = "0.3.30", default-features = false }
 
 # config
 clap = { version = "4.5.11", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.16", default-features = false, features = ["parse"] }
+toml = { version = "0.8.17", default-features = false, features = ["parse"] }
 hot_reload = "0.1.6"
 
 # logging
