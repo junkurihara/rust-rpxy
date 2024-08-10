@@ -104,7 +104,7 @@ Otherwise, say, a request to `other.example.com` is simply rejected with the sta
 If you want to host multiple and distinct domain names in a single IP address/port, simply create multiple `app."<app_name>"` entries in config file like
 
 ```toml
-default_application = "app1"
+default_app = "app1"
 
 [apps.app1]
 server_name = "app1.example.com"
@@ -115,7 +115,7 @@ server_name = "app2.example.org"
 #...
 ```
 
-Here we note that by specifying `default_application` entry, *HTTP* requests will be served by the specified application if HOST header or URL in Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since the secure connection cannot be established for the unknown server name.
+Here we note that by specifying `default_app` entry, *HTTP* requests will be served by the specified application if HOST header or URL in Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since the secure connection cannot be established for the unknown server name.
 
 #### HTTPS to Backend Application
 
