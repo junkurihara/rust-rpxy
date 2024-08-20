@@ -29,6 +29,6 @@ rustls-platform-verifier = { version = "0.3.3" }
 rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, features = [
   "aws-lc-rs",
 ] }
-tokio = { version = "1.39.2", default-features = false }
+tokio = { version = "1.39.3", default-features = false }
 tokio-util = { version = "0.7.11", default-features = false }
 tokio-stream = { version = "0.1.15", default-features = false }
