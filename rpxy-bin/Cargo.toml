@@ -13,8 +13,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-# default = ["http3-quinn", "cache", "rustls-backend", "acme"]
-default = ["http3-s2n", "cache", "rustls-backend", "acme"]
+default = ["http3-quinn", "cache", "rustls-backend", "acme"]
+# default = ["http3-s2n", "cache", "rustls-backend", "acme"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
