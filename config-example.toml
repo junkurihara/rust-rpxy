@@ -11,7 +11,9 @@ listen_port = 8080
 listen_port_tls = 8443
 
 # Optional. If you listen on a custom port like 8443 but redirect with firewall to 443
-# tls_redirection_port = 443
+# When you specify this, the server sends a redirection response 301 with specified port to the client for plaintext http request.
+# Otherwise, the server sends 301 with the same port as `listen_port_tls`.
+# https_redirection_port = 443
 
 # Optional for h2 and http1.1
 tcp_listen_backlog = 1024

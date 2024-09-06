@@ -59,6 +59,13 @@ pub fn build_settings(config: &ConfigToml) -> std::result::Result<(ProxyConfig, 
       "Some apps serves only plaintext HTTP"
     );
   }
+  // https redirection port must be configured only when both http_port and https_port are configured.
+  if proxy_config.https_redirection_port.is_some() {
+    ensure!(
+      proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
+      "https_redirection_port can be specified only when both http_port and https_port are specified"
+    );
+  }
   // https redirection can be configured if both ports are active
   if !(proxy_config.https_port.is_some() && proxy_config.http_port.is_some()) {
     ensure!(

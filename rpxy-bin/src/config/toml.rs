@@ -13,7 +13,7 @@ pub struct ConfigToml {
   pub listen_port: Option<u16>,
   pub listen_port_tls: Option<u16>,
   pub listen_ipv6: Option<bool>,
-  pub tls_redirection_port: Option<u16>,
+  pub https_redirection_port: Option<u16>,
   pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
@@ -108,8 +108,11 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       // listen port and socket
       http_port: self.listen_port,
       https_port: self.listen_port_tls,
-      https_redirection_port: if self.tls_redirection_port.is_some() {
-        self.tls_redirection_port } else { self.listen_port_tls },
+      https_redirection_port: if self.https_redirection_port.is_some() {
+        self.https_redirection_port
+      } else {
+        self.listen_port_tls
+      },
       ..Default::default()
     };
     ensure!(
