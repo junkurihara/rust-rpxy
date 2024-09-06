@@ -104,7 +104,7 @@ Otherwise, say, a request to `other.example.com` is simply rejected with the sta
 If you want to host multiple and distinct domain names in a single IP address/port, simply create multiple `app."<app_name>"` entries in config file like
 
 ```toml
-default_application = "app1"
+default_app = "app1"
 
 [apps.app1]
 server_name = "app1.example.com"
@@ -115,7 +115,7 @@ server_name = "app2.example.org"
 #...
 ```
 
-Here we note that by specifying `default_application` entry, *HTTP* requests will be served by the specified application if HOST header or URL in Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since the secure connection cannot be established for the unknown server name.
+Here we note that by specifying `default_app` entry, *HTTP* requests will be served by the specified application if HOST header or URL in Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since the secure connection cannot be established for the unknown server name.
 
 #### HTTPS to Backend Application
 
@@ -314,6 +314,16 @@ registry_path = "./acme_registry"       # optional. default is "./acme_registry"
 The above configuration is common to all ACME enabled domains. Note that the https port must be open to the public to verify the domain ownership.
 
 ## TIPS
+
+### Set custom port for HTTPS redirection
+
+Consider a case where `rpxy` is running on a container. Then when the container manager maps port A (e.g., 80/443) of the host to port B (e.g., 8080/8443) of the container for http and https, `rpxy` must be configured with port B for `listen_port` and `listen_port_tls`. However, when you want to set `http_redirection=true` for some backend apps, `rpxy` issues the redirection response 301 with the port B by default, which is not accessible from the outside of the container. To avoid this, you can set a custom port for the redirection response by specifying `https_redirection_port` in `config.toml`. In this case, port A should be set for `https_redirection_port`, then the redirection response 301 will be issued with the port A.
+
+```toml
+listen_port = 8080
+listen_port_tls = 8443
+https_redirection_port = 443
+```
 
 ### Using Private Key Issued by Let's Encrypt
 

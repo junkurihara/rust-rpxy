@@ -121,7 +121,11 @@ where
         "Redirect to secure connection: {}",
         <&ServerName as TryInto<String>>::try_into(&backend_app.server_name).unwrap_or_default()
       );
-      return secure_redirection_response(&backend_app.server_name, self.globals.proxy_config.https_port, &req);
+      return secure_redirection_response(
+        &backend_app.server_name,
+        self.globals.proxy_config.https_redirection_port,
+        &req,
+      );
     }
 
     // Find reverse proxy for given path and choose one of upstream host
