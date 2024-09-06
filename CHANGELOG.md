@@ -2,6 +2,17 @@
 
 ## 0.10.0 (Unreleased)
 
+## 0.9.1
+
+### Important Changes
+
+- Feat: Support `https_redirection_port` option to redirect http requests to https with custom port.
+
+### Improvement
+
+- Refactor: lots of minor improvements
+- Deps
+
 ## 0.9.0
 
 ### Important Changes
