@@ -27,7 +27,7 @@ pipeline {
                         // Install git
                         sh 'apt-get update && apt-get -y install git --no-install-recommends'
                         // Clone git repo
-                        sh 'git clone -b patch-1 --single-branch https://github.com/Gamerboy59/rust-rpxy.git'
+                        sh 'git clone https://github.com/junkurihara/rust-rpxy.git'
                         dir('rust-rpxy') {
                             sh """
                             sed -i 's|git@github.com:junkurihara/rusty-http-cache-semantics.git|https://github.com/junkurihara/rusty-http-cache-semantics.git|g' .gitmodules
