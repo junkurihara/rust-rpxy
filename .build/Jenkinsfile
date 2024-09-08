@@ -61,13 +61,14 @@ pipeline {
                         mv rust-rpxy/.build/DEB/control .
                         mv rust-rpxy/.build/DEB/postinst .
                         mv rust-rpxy/.build/DEB/prerm .
+                        mv rust-rpxy/.build/DEB/postrm .
                         mv rust-rpxy/.build/RPM/rpxy.spec .
                         mv rust-rpxy/.build/rpxy-start.sh .
                         mv rust-rpxy/.build/config.toml .
                         mv rust-rpxy/.build/rpxy.service .
                         '''
-                        stash includes: "control, postinst, prerm, postrm, rpxy-start.sh", name: "deb-control"
-                        stash includes: "rpxy.spec", name: "rpm-spec"
+                        stash includes: "control, postinst, prerm, postrm, rpxy-start.sh", name: "deb-files"
+                        stash includes: "rpxy.spec", name: "rpm-files"
                         stash includes: "rpxy.service, config.toml", name: "service-file"
 
                         // Stash LICENSE and README.md
@@ -103,7 +104,7 @@ pipeline {
                     script {
                         // Unstash the necessary files for this stage
                         unstash 'rpxy'
-                        unstash 'rpm-spec'
+                        unstash 'rpm-files'
                         unstash 'service-file'
                         unstash 'docs'
 
@@ -159,7 +160,7 @@ pipeline {
                     script {
                         // Unstash the necessary files for this stage
                         unstash 'rpxy'
-                        unstash 'deb-control'
+                        unstash 'deb-files'
                         unstash 'service-file'
                         unstash 'docs'
 
