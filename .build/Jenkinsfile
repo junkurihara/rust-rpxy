@@ -63,11 +63,12 @@ pipeline {
                         mv rust-rpxy/.build/DEB/prerm .
                         mv rust-rpxy/.build/RPM/rpxy.spec .
                         mv rust-rpxy/.build/rpxy-start.sh .
+                        mv rust-rpxy/.build/config.toml .
                         mv rust-rpxy/.build/rpxy.service .
                         '''
                         stash includes: "control, postinst, prerm, rpxy-start.sh", name: "deb-control"
                         stash includes: "rpxy.spec", name: "rpm-spec"
-                        stash includes: "rpxy.service", name: "service-file"
+                        stash includes: "rpxy.service, config.toml", name: "service-file"
 
                         // Stash LICENSE and README.md
                         sh 'mv rust-rpxy/LICENSE .'
@@ -113,7 +114,7 @@ pipeline {
                         sh """
                         mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
                         mkdir -p rpxy-${env.BUILD_VERSION}
-                        mv rpxy rpxy.service LICENSE README.md rpxy-${env.BUILD_VERSION}/
+                        mv rpxy rpxy.service LICENSE README.md config.toml rpxy-${env.BUILD_VERSION}/
                         tar -czf rpmbuild/SOURCES/rpxy-${env.BUILD_VERSION}.tar.gz rpxy-${env.BUILD_VERSION}/
                         rm -rf rpxy-${env.BUILD_VERSION}
                         """
@@ -171,6 +172,7 @@ pipeline {
                         mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/usr/local/bin
                         mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/etc/systemd/system
                         mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/usr/share/doc/rpxy
+                        mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/etc/rpxy
                         mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/DEBIAN
                         """
 
@@ -184,11 +186,12 @@ pipeline {
                         chmod 0755 rpxy_${env.BUILD_VERSION}-1_amd64/usr/local/bin/rpxy-start.sh
                         """
 
-                        // Move binary, service file, control file, LICENSE, and README.md
+                        // Move binary, service, control and config file, LICENSE, and README.md
                         sh """
                         mv rpxy rpxy_${env.BUILD_VERSION}-1_amd64/usr/bin/
                         mv rpxy.service rpxy_${env.BUILD_VERSION}-1_amd64/etc/systemd/system/
                         mv LICENSE README.md rpxy_${env.BUILD_VERSION}-1_amd64/usr/share/doc/rpxy/
+                        mv config.toml rpxy_${env.BUILD_VERSION}-1_amd64/etc/rpxy/
                         mv control rpxy_${env.BUILD_VERSION}-1_amd64/DEBIAN/
                         """
 

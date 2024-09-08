@@ -2,6 +2,17 @@
 
 set -e
 
+# Create rpxy user if it doesn't exist
+if ! id rpxy >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin rpxy
+fi
+
+# Set correct user for config directory
+if [ -d /etc/rpxy ]; then
+    chown -R rpxy:rpxy /etc/rpxy
+fi
+
+# Reload systemd, enable and start the service
 systemctl daemon-reload
 systemctl enable rpxy
 systemctl start rpxy

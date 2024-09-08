@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -e
+
+# Remove the rpxy user and configuration directory only if purging the package
+if [ "$1" = "purge" ]; then
+    if id rpxy >/dev/null 2>&1; then
+        userdel rpxy
+    fi
+
+    # Remove config directory
+    if [ -d /etc/rpxy ]; then
+        rm -rf /etc/rpxy
+    fi
+fi
+
+exit 0
