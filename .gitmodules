@@ -1,6 +1,6 @@
 [submodule "submodules/rusty-http-cache-semantics"]
 	path = submodules/rusty-http-cache-semantics
-	url = https://github.com/junkurihara/rusty-http-cache-semantics.git
+	url = git@github.com:junkurihara/rusty-http-cache-semantics.git
 [submodule "submodules/rustls-acme"]
 	path = submodules/rustls-acme
-	url = https://github.com/junkurihara/rustls-acme.git
+	url = git@github.com:junkurihara/rustls-acme.git
