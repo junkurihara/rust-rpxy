@@ -1,0 +1,9 @@
+#!/bin/bash
+
+set -e
+
+systemctl daemon-reload
+systemctl enable rpxy
+systemctl start rpxy
+
+exit 0

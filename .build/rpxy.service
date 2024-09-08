@@ -1,0 +1,11 @@
+[Unit]
+Description=rpxy Service
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/rpxy-start.sh
+Restart=always
+User=nobody
+
+[Install]
+WantedBy=multi-user.target
