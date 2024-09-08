@@ -182,7 +182,9 @@ pipeline {
                         chmod 755 rpxy_${env.BUILD_VERSION}-1_amd64/DEBIAN/postinst
                         mv prerm rpxy_${env.BUILD_VERSION}-1_amd64/DEBIAN/
                         chmod 755 rpxy_${env.BUILD_VERSION}-1_amd64/DEBIAN/prerm
-                        mv rpxy-start.sh rpxy_${env.BUILD_VERSION}-1_amd64/usr/local/bin
+                        mv postrm rpxy_${env.BUILD_VERSION}-1_amd64/DEBIAN/
+                        chmod 755 rpxy_${env.BUILD_VERSION}-1_amd64/DEBIAN/postrm
+                        mv rpxy-start.sh rpxy_${env.BUILD_VERSION}-1_amd64/usr/local/bin/
                         chmod 0755 rpxy_${env.BUILD_VERSION}-1_amd64/usr/local/bin/rpxy-start.sh
                         """
 
