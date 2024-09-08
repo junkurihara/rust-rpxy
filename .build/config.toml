@@ -36,8 +36,10 @@ listen_ipv6 = false
 
 ######################################################################
 ## Registering a backend app served by a domain name "localhost"
-#[apps.localhost]
-#server_name = 'localhost' # Domain name
+[apps.localhost]
+server_name = 'localhost' # Domain name
+
+reverse_proxy = [{ upstream = [{ location = 'localhost:8080' }] }]
 
 # Optional: TLS setting. if https_port is specified and tls is true above, either of this must be given.
 #tls = { https_redirection = true, tls_cert_path = '/certs/server.crt', tls_cert_key_path = '/certs/server.key' }

@@ -11,7 +11,7 @@ fi
 # Check if rpxy-webui is installed
 if dpkg-query -W -f='${Status}' rpxy-webui 2>/dev/null | grep -q "install ok installed"; then
     echo "rpxy-webui is installed. Starting rpxy with rpxy-webui"
-    exec /usr/local/bin/rpxy -w -c /var/www/rpxy-webui/storage/app/config.toml
+    exec /usr/bin/rpxy -w -c /var/www/rpxy-webui/storage/app/config.toml
 else
     echo "rpxy-webui is not installed. Starting with default config"
     
@@ -25,5 +25,5 @@ else
         echo "# Default rpxy config file" > /etc/rpxy/config.toml
     fi
     
-    exec /usr/local/bin/rpxy -c /etc/rpxy/config.toml
+    exec /usr/bin/rpxy -c /etc/rpxy/config.toml
 fi

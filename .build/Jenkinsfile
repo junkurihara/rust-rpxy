@@ -173,7 +173,7 @@ pipeline {
                         mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/usr/local/bin
                         mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/etc/systemd/system
                         mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/usr/share/doc/rpxy
-                        mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/etc/rpxy
+                        mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/etc/rpxy/acme_registry
                         mkdir -p rpxy_${env.BUILD_VERSION}-1_amd64/DEBIAN
                         """
 
