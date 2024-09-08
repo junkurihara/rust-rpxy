@@ -30,16 +30,12 @@ pub(super) fn takeout_sticky_cookie_lb_context(
       let cookies_iter = entry
         .iter()
         .flat_map(|v| v.to_str().unwrap_or("").split(';').map(|v| v.trim()));
-      let (sticky_cookies, without_sticky_cookies): (Vec<_>, Vec<_>) = cookies_iter
-        .into_iter()
-        .partition(|v| v.starts_with(expected_cookie_name));
+      let (sticky_cookies, without_sticky_cookies): (Vec<_>, Vec<_>) =
+        cookies_iter.into_iter().partition(|v| v.starts_with(expected_cookie_name));
       if sticky_cookies.is_empty() {
         return Ok(None);
       }
-      ensure!(
-        sticky_cookies.len() == 1,
-        "Invalid cookie: Multiple sticky cookie values"
-      );
+      ensure!(sticky_cookies.len() == 1, "Invalid cookie: Multiple sticky cookie values");
 
       let cookies_passed_to_upstream = without_sticky_cookies.join("; ");
       let cookie_passed_to_lb = sticky_cookies.first().unwrap();
@@ -59,10 +55,7 @@ pub(super) fn takeout_sticky_cookie_lb_context(
 /// Set-Cookie if LB Sticky is enabled and if cookie is newly created/updated.
 /// Set-Cookie response header could be in multiple lines.
 /// https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Set-Cookie
-pub(super) fn set_sticky_cookie_lb_context(
-  headers: &mut HeaderMap,
-  context_from_lb: &LoadBalanceContext,
-) -> Result<()> {
+pub(super) fn set_sticky_cookie_lb_context(headers: &mut HeaderMap, context_from_lb: &LoadBalanceContext) -> Result<()> {
   let sticky_cookie_string: String = context_from_lb.sticky_cookie.clone().try_into()?;
   let new_header_val: HeaderValue = sticky_cookie_string.parse()?;
   let expected_cookie_name = &context_from_lb.sticky_cookie.value.name;
@@ -122,7 +115,7 @@ pub(super) fn apply_upstream_options_to_header(
         // add upgrade-insecure-requests in request header if not exist
         headers
           .entry(header::UPGRADE_INSECURE_REQUESTS)
-          .or_insert(HeaderValue::from_bytes(&[b'1']).unwrap());
+          .or_insert(HeaderValue::from_bytes(b"1").unwrap());
       }
       _ => (),
     }
@@ -141,7 +134,7 @@ pub(super) fn append_header_entry_with_comma(headers: &mut HeaderMap, key: &str,
       // entry.append(value.parse::<HeaderValue>()?);
       let mut new_value = Vec::<u8>::with_capacity(entry.get().as_bytes().len() + 2 + value.len());
       new_value.put_slice(entry.get().as_bytes());
-      new_value.put_slice(&[b',', b' ']);
+      new_value.put_slice(b", ");
       new_value.put_slice(value.as_bytes());
       entry.insert(HeaderValue::from_bytes(&new_value)?);
     }

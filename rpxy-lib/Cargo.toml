@@ -33,9 +33,9 @@ acme = ["dep:rpxy-acme"]
 rand = "0.8.5"
 rustc-hash = "2.0.0"
 bytes = "1.7.1"
-derive_builder = "0.20.0"
+derive_builder = "0.20.1"
 futures = { version = "0.3.30", features = ["alloc", "async-await"] }
-tokio = { version = "1.39.3", default-features = false, features = [
+tokio = { version = "1.40.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -43,9 +43,9 @@ tokio = { version = "1.39.3", default-features = false, features = [
   "macros",
   "fs",
 ] }
-tokio-util = { version = "0.7.11", default-features = false }
+tokio-util = { version = "0.7.12", default-features = false }
 pin-project-lite = "0.2.14"
-async-trait = "0.1.81"
+async-trait = "0.1.82"
 
 # Error handling
 anyhow = "1.0.86"
@@ -64,9 +64,7 @@ hyper-tls = { version = "0.6.0", features = [
   "alpn",
   "vendored",
 ], optional = true }
-# TODO: Work around to enable rustls-platform-verifier feature: https://github.com/rustls/hyper-rustls/pull/276
-# hyper-rustls = { version = "0.27.2", default-features = false, features = [
-hyper-rustls = { git = "https://github.com/junkurihara/hyper-rustls", branch = "main", features = [
+hyper-rustls = { version = "0.27.3", default-features = false, features = [
   "aws-lc-rs",
   "http1",
   "http2",
@@ -86,7 +84,7 @@ rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true 
 tracing = { version = "0.1.40" }
 
 # http/3
-quinn = { version = "0.11.3", optional = true }
+quinn = { version = "0.11.5", optional = true }
 h3 = { version = "0.0.6", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.7", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", features = [

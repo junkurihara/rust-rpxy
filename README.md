@@ -315,6 +315,16 @@ The above configuration is common to all ACME enabled domains. Note that the htt
 
 ## TIPS
 
+### Set custom port for HTTPS redirection
+
+Consider a case where `rpxy` is running on a container. Then when the container manager maps port A (e.g., 80/443) of the host to port B (e.g., 8080/8443) of the container for http and https, `rpxy` must be configured with port B for `listen_port` and `listen_port_tls`. However, when you want to set `http_redirection=true` for some backend apps, `rpxy` issues the redirection response 301 with the port B by default, which is not accessible from the outside of the container. To avoid this, you can set a custom port for the redirection response by specifying `https_redirection_port` in `config.toml`. In this case, port A should be set for `https_redirection_port`, then the redirection response 301 will be issued with the port A.
+
+```toml
+listen_port = 8080
+listen_port_tls = 8443
+https_redirection_port = 443
+```
+
 ### Using Private Key Issued by Let's Encrypt
 
 If you obtain certificates and private keys from [Let's Encrypt](https://letsencrypt.org/), you have PKCS1-formatted private keys. So you need to convert such retrieved private keys into PKCS8 format to use in `rpxy`.

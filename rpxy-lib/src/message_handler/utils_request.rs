@@ -16,7 +16,7 @@ impl<B> InspectParseHost for Request<B> {
   /// Inspect and extract hostname from either the request HOST header or request line
   fn inspect_parse_host(&self) -> Result<Vec<u8>> {
     let drop_port = |v: &[u8]| {
-      if v.starts_with(&[b'[']) {
+      if v.starts_with(b"[") {
         // v6 address with bracket case. if port is specified, always it is in this case.
         let mut iter = v.split(|ptr| ptr == &b'[' || ptr == &b']');
         iter.next().ok_or(anyhow!("Invalid Host header"))?; // first item is always blank
