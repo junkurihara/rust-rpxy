@@ -1,10 +1,8 @@
-#!/bin/bash
-
+#!/bin/sh
 set -e
 
-# Stop and disable the service before removing
-systemctl stop rpxy || true
-systemctl disable rpxy || true
-systemctl daemon-reload
+if [ -d /run/systemd/system ] && [ "$1" = remove ]; then
+    deb-systemd-invoke stop rpxy.service >/dev/null || true
+fi
 
 exit 0

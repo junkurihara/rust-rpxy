@@ -1,20 +1,35 @@
-#!/bin/bash
-
+#!/bin/sh
 set -e
 
+# Source debconf library
+. /usr/share/debconf/confmodule
+
 # Create rpxy user if it doesn't exist
-if ! id rpxy >/dev/null 2>&1; then
-    useradd --system --no-create-home --shell /usr/sbin/nologin rpxy
+if ! getent passwd rpxy > /dev/null; then
+    adduser --system --group --no-create-home --shell /usr/sbin/nologin rpxy
 fi
 
-# Set correct user for config directory
+# Set correct ownership for config directory
 if [ -d /etc/rpxy ]; then
     chown -R rpxy:rpxy /etc/rpxy
 fi
 
 # Reload systemd, enable and start the service
-systemctl daemon-reload
-systemctl enable rpxy
-systemctl start rpxy
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+    deb-systemd-helper unmask rpxy.service >/dev/null || true
+    if deb-systemd-helper --quiet was-enabled rpxy.service; then
+        deb-systemd-helper enable rpxy.service >/dev/null || true
+    else
+        deb-systemd-helper update-state rpxy.service >/dev/null || true
+    fi
+    if [ -d /run/systemd/system ]; then
+        systemctl --system daemon-reload >/dev/null || true
+        if [ -n "$2" ]; then
+            deb-systemd-invoke try-restart rpxy.service >/dev/null || true
+        else
+            deb-systemd-invoke start rpxy.service >/dev/null || true
+        fi
+    fi
+fi
 
 exit 0

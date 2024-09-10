@@ -1,17 +1,22 @@
-#!/bin/bash
-
+#!/bin/sh
 set -e
 
-# Remove the rpxy user and configuration directory only if purging the package
 if [ "$1" = "purge" ]; then
-    if id rpxy >/dev/null 2>&1; then
-        userdel rpxy
+    # Remove the rpxy user
+    if getent passwd rpxy >/dev/null; then
+        deluser --quiet --system rpxy >/dev/null || true
     fi
 
     # Remove config directory
-    if [ -d /etc/rpxy ]; then
-        rm -rf /etc/rpxy
-    fi
+    rm -rf /etc/rpxy
+
+    # Remove systemd service state
+    deb-systemd-helper purge rpxy.service >/dev/null || true
+    deb-systemd-helper unmask rpxy.service >/dev/null || true
+fi
+
+if [ -d /run/systemd/system ]; then
+    systemctl --system daemon-reload >/dev/null || true
 fi
 
 exit 0
