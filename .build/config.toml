@@ -10,6 +10,12 @@
 listen_port = 80
 listen_port_tls = 443
 
+# Optional: If your https is listening on a custom port like 8443
+# When you specify this, the server sends a redirection response 301 with specified port to the client for plaintext http request.
+# Otherwise, the server sends 301 with the same port as `listen_port_tls`.
+# disabled means http -> https and enabled means http -> https:<port>
+# https_redirection_port = 443
+
 # Optional for h2 and http1.1
 tcp_listen_backlog = 1024
 
