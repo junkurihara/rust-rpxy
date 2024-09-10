@@ -8,12 +8,35 @@ CONFIG_FILE="$CONFIG_DIR/config.toml"
 WEBUI_CONFIG="/var/www/rpxy-webui/storage/app/config.toml"
 COMMENT_MARKER="# IMPORTANT: DEACTIVATED This config is deactivated because rpxy-webui is installed"
 
-# Ensure the cache directory exists as it could get deleted on system restart
-create_cache_dir() {
-    # Create the temporary directory for rpxy
-    mkdir -p "$CACHE_DIR"
-    chown -R rpxy:rpxy /tmp/rpxy
-    chmod 700 "$CACHE_DIR"
+setup_directories() {
+    # Check if systemd is available
+    if [ -d /run/systemd/system ]; then
+        # Use systemd RuntimeDirectory if available
+        if [ -d /run/rpxy ]; then
+            RUNTIME_DIR="/run/rpxy"
+        # If not available use PrivateTmp
+        elif [ -d /tmp/systemd-private-*/tmp ]; then
+            RUNTIME_DIR=$(find /tmp/systemd-private-*/tmp -type d -name "rpxy" 2>/dev/null | head -n 1)
+        fi
+        
+        # Create subdirectory for cache
+        CACHE_DIR="$RUNTIME_DIR/.cache"
+        # Ensure the cache directory exists as it could get deleted on system restart
+        mkdir -p "$CACHE_DIR"
+        chown rpxy:rpxy "$CACHE_DIR" # not recursively because parent folder is managed by systemd
+        chmod 700 "$CACHE_DIR"
+    else
+        # Fallback to linux tmp directory if no systemd is found
+        RUNTIME_DIR="/tmp/rpxy"
+        CACHE_DIR="$RUNTIME_DIR/.cache"
+        # Ensure the cache directory exists as it could get deleted on system restart
+        mkdir -p "$CACHE_DIR"
+        chown -R rpxy:rpxy "$RUNTIME_DIR"
+        chmod 700 "$CACHE_DIR"
+    fi
+
+    echo "Using runtime directory: $RUNTIME_DIR"
+    echo "Using cache directory: $CACHE_DIR"
 }
 
 # Check if rpxy-webui is installed
@@ -45,7 +68,7 @@ remove_comment_from_config() {
 }
 
 main() {
-    [ -d "$CACHE_DIR" ] || create_cache_dir
+    setup_directories
     ensure_config_exists
 
     if is_package_installed rpxy-webui; then
