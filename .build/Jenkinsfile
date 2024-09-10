@@ -29,69 +29,53 @@ pipeline {
             }
             steps {
                 container('rust-cargo') {
-                    // Step to install necessary tools
-                    step('Install Git') {
-                        sh 'apt-get update && apt-get -y install git --no-install-recommends'
-                    }
+                    // Install git
+                    sh 'apt-get update && apt-get -y install git --no-install-recommends'
                     
-                    // Step to clone and prepare the repository
-                    step('Clone and Prepare Repository') {
-                        // Clone the repository
-                        sh "git clone ${REPO_URL}"
+                    // Clone and Prepare Repository
+                    sh "git clone ${REPO_URL}"
 
-                        dir('rust-rpxy') {
-                            sh """
-                            # Update submodule URLs to HTTPS (allows cloning without SSH keys)
-                            sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
-                            
-                            # Initialize and update submodules
-                            git submodule update --init
-                            """
-                        }
-                    }
+                    dir('rust-rpxy') {
+                        sh """
+                        # Update submodule URLs to HTTPS (allows cloning without SSH keys)
+                        sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
+
+                        # Initialize and update submodules
+                        git submodule update --init
+                        """
                     
-                    // Step to extract BUILD_VERSION from Cargo.toml
-                    step('Extract BUILD_VERSION') {
+                        // Extract BUILD_VERSION from Cargo.toml
                         script {
-                            dir('rust-rpxy') {
-                                // Extract version from Cargo.toml and set it as an environment variable
-                                env.BUILD_VERSION = sh(script: "grep '^version' Cargo.toml | sed -E 's/version = \"(.+)\"/\\1/'", returnStdout: true).trim()
-                                echo "Using extracted version: ${env.BUILD_VERSION}"
-                            }
+                            // Extract version from Cargo.toml and set it as an environment variable
+                            env.BUILD_VERSION = sh(script: "grep '^version' Cargo.toml | sed -E 's/version = \"(.+)\"/\\1/'", returnStdout: true).trim()
+                            echo "Using extracted version: ${env.BUILD_VERSION}"
                         }
-                    }
 
-                    // Step to build the binary
-                    step('Compile Binary') {
-                        dir('rust-rpxy') {
-                            // Build the release version of the binary
-                            sh 'cargo build --release'
-                        }
-                    }
+                        // Build the binary
+                        sh 'cargo build --release'
                     
-                    // Step to prepare and stash files
-                    step('Prepare and Stash Files') {
+                        // Prepare and stash files
                         sh """
                             # Move binary to workspace root for easier access
-                            mv rust-rpxy/target/release/${BINARY_NAME} .
-                            
+                            mv target/release/${BINARY_NAME} ..
+
                             # Move necessary files for packaging
-                            mv rust-rpxy/.build/DEB/{control,postinst,prerm,postrm} .
-                            mv rust-rpxy/.build/RPM/${BINARY_NAME}.spec .
-                            mv rust-rpxy/.build/{rpxy-start.sh,config.toml,rpxy.service} .
-                            mv rust-rpxy/{LICENSE,README.md} .
+                            mv .build/DEB/{control,postinst,prerm,postrm} ..
+                            mv .build/RPM/${BINARY_NAME}.spec ..
+                            mv .build/{rpxy-start.sh,config.toml,rpxy.service} ..
+                            mv ./{LICENSE,README.md} ..
                         """
-                        
-                        // Stash files for use in later stages
-                        stash includes: "${BINARY_NAME}", name: "binary"
-                        stash includes: "control, postinst, prerm, postrm, rpxy-start.sh", name: "deb-files"
-                        stash includes: "${BINARY_NAME}.spec", name: "rpm-files"
-                        stash includes: "rpxy.service, config.toml", name: "service-file"
-                        stash includes: "LICENSE, README.md", name: "docs"
-                        
-                        // Archive the binary as an artifact
-                        archiveArtifacts artifacts: "${BINARY_NAME}", allowEmptyArchive: false, fingerprint: true
                     }
+
+                    // Stash files for use in later stages
+                    stash includes: "${BINARY_NAME}", name: "binary"
+                    stash includes: "control, postinst, prerm, postrm, rpxy-start.sh", name: "deb-files"
+                    stash includes: "${BINARY_NAME}.spec", name: "rpm-files"
+                    stash includes: "rpxy.service, config.toml", name: "service-file"
+                    stash includes: "LICENSE, README.md", name: "docs"
+                        
+                    // Archive the binary as an artifact
+                    archiveArtifacts artifacts: "${BINARY_NAME}", allowEmptyArchive: false, fingerprint: true
                 }
             }
         }
@@ -115,42 +99,35 @@ pipeline {
             }
             steps {
                 container('rpm-build') {
-                    // Step to prepare the RPM build environment
-                    step('Prepare RPM Build Environment') {
-                        // Unstash necessary files
-                        unstash 'binary'
-                        unstash 'rpm-files'
-                        unstash 'service-file'
-                        unstash 'docs'
+                    // Prepare the RPM build environment
+                    unstash 'binary'
+                    unstash 'rpm-files'
+                    unstash 'service-file'
+                    unstash 'docs'
                         
-                        // Install necessary tools for RPM building
-                        sh 'dnf update -y && dnf install -y rpmdevtools tar'
-                    }
+                    // Install necessary tools for RPM building
+                    sh 'dnf update -y && dnf install -y rpmdevtools tar'
                     
-                    // Step to create the RPM package
-                    step('Create RPM Package') {
-                        sh """
-                            # Create RPM build directory structure
-                            mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-                            mkdir -p ${BINARY_NAME}-${BUILD_VERSION}
-                            
-                            # Move files to the appropriate locations
-                            mv ${BINARY_NAME} ${BINARY_NAME}.service LICENSE README.md config.toml ${BINARY_NAME}-${BUILD_VERSION}/
-                            tar -czf rpmbuild/SOURCES/${BINARY_NAME}-${BUILD_VERSION}.tar.gz ${BINARY_NAME}-${BUILD_VERSION}/
-                            mv ${BINARY_NAME}.spec rpmbuild/SPECS/
-                            
-                            # Update spec file with correct version and source
-                            sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/g; s/@Source0@/${BINARY_NAME}-${BUILD_VERSION}.tar.gz/g' rpmbuild/SPECS/${BINARY_NAME}.spec
-                            
-                            # Build the RPM package
-                            rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
-                        """
-                    }
+                    // Create the RPM package
+                    sh """
+                        # Create RPM build directory structure
+                        mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+                        mkdir -p ${BINARY_NAME}-${BUILD_VERSION}
+
+                        # Move files to the appropriate locations
+                        mv ${BINARY_NAME} ${BINARY_NAME}.service LICENSE README.md config.toml ${BINARY_NAME}-${BUILD_VERSION}/
+                        tar -czf rpmbuild/SOURCES/${BINARY_NAME}-${BUILD_VERSION}.tar.gz ${BINARY_NAME}-${BUILD_VERSION}/
+                        mv ${BINARY_NAME}.spec rpmbuild/SPECS/
+
+                        # Update spec file with correct version and source
+                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/g; s/@Source0@/${BINARY_NAME}-${BUILD_VERSION}.tar.gz/g' rpmbuild/SPECS/${BINARY_NAME}.spec
+
+                        # Build the RPM package
+                        rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
+                    """
                     
-                    // Step to archive the RPM package
-                    step('Archive RPM Package') {
-                        archiveArtifacts artifacts: "rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
-                    }
+                    // Archive the RPM package
+                    archiveArtifacts artifacts: "rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
                 }
             }
         }
@@ -174,50 +151,43 @@ pipeline {
             }
             steps {
                 container('debian-build') {
-                    // Step to prepare the DEB build environment
-                    step('Prepare DEB Build Environment') {
-                        // Unstash necessary files
-                        unstash 'binary'
-                        unstash 'deb-files'
-                        unstash 'service-file'
-                        unstash 'docs'
-                        
-                        // Install necessary tools for DEB building
-                        sh 'apt-get update && apt-get install -y dpkg-dev --no-install-recommends'
-                    }
+                    // Prepare the DEB build environment
+                    unstash 'binary'
+                    unstash 'deb-files'
+                    unstash 'service-file'
+                    unstash 'docs'
+
+                    // Install necessary tools for DEB building
+                    sh 'apt-get update && apt-get install -y dpkg-dev --no-install-recommends'
                     
-                    // Step to create the DEB package
-                    step('Create DEB Package') {
-                        sh """
-                            # Define DEB package directory
-                            DEB_DIR=${BINARY_NAME}_${BUILD_VERSION}-1_amd64
-                            
-                            # Create directory structure for DEB package
-                            mkdir -p $DEB_DIR/{DEBIAN,usr/{bin,local/bin,share/doc/${BINARY_NAME}},etc/{systemd/system,${BINARY_NAME}/acme_registry}}
-                            
-                            # Move files to appropriate locations
-                            mv {postinst,prerm,postrm} $DEB_DIR/DEBIAN/
-                            chmod 755 $DEB_DIR/DEBIAN/{postinst,prerm,postrm}
-                            mv rpxy-start.sh $DEB_DIR/usr/local/bin/
-                            chmod 0755 $DEB_DIR/usr/local/bin/rpxy-start.sh
-                            mv ${BINARY_NAME} $DEB_DIR/usr/bin/
-                            mv rpxy.service $DEB_DIR/etc/systemd/system/
-                            mv {LICENSE,README.md} $DEB_DIR/usr/share/doc/${BINARY_NAME}/
-                            mv config.toml $DEB_DIR/etc/${BINARY_NAME}/
-                            mv control $DEB_DIR/DEBIAN/
-                            
-                            # Update control file with correct version
-                            sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/' $DEB_DIR/DEBIAN/control
-                            
-                            # Build the DEB package
-                            dpkg-deb --build --root-owner-group $DEB_DIR
-                        """
-                    }
+                    // Create the DEB package
+                    sh """
+                        # Define DEB package directory
+                        DEB_DIR=${BINARY_NAME}_${BUILD_VERSION}-1_amd64
+
+                        # Create directory structure for DEB package
+                        mkdir -p $DEB_DIR/{DEBIAN,usr/{bin,local/bin,share/doc/${BINARY_NAME}},etc/{systemd/system,${BINARY_NAME}/acme_registry}}
+
+                        # Move files to appropriate locations
+                        mv {postinst,prerm,postrm} $DEB_DIR/DEBIAN/
+                        chmod 755 $DEB_DIR/DEBIAN/{postinst,prerm,postrm}
+                        mv rpxy-start.sh $DEB_DIR/usr/local/bin/
+                        chmod 0755 $DEB_DIR/usr/local/bin/rpxy-start.sh
+                        mv ${BINARY_NAME} $DEB_DIR/usr/bin/
+                        mv rpxy.service $DEB_DIR/etc/systemd/system/
+                        mv {LICENSE,README.md} $DEB_DIR/usr/share/doc/${BINARY_NAME}/
+                        mv config.toml $DEB_DIR/etc/${BINARY_NAME}/
+                        mv control $DEB_DIR/DEBIAN/
+
+                        # Update control file with correct version
+                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/' $DEB_DIR/DEBIAN/control
+
+                        # Build the DEB package
+                        dpkg-deb --build --root-owner-group $DEB_DIR
+                    """
                     
-                    // Step to archive the DEB package
-                    step('Archive DEB Package') {
-                        archiveArtifacts artifacts: "${DEB_DIR}.deb", allowEmptyArchive: false, fingerprint: true
-                    }
+                    // Archive the DEB package
+                    archiveArtifacts artifacts: "${DEB_DIR}.deb", allowEmptyArchive: false, fingerprint: true
                 }
             }
         }
