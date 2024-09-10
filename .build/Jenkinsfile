@@ -6,7 +6,7 @@ pipeline {
         REPO_URL = 'https://github.com/junkurihara/rust-rpxy.git'
         BINARY_NAME = 'rpxy'
         // BUILD_VERSION is not set because it will be extracted from Cargo.toml in the first step
-        BUILD_VERSION = ''
+        // BUILD_VERSION = ''
     }
 
     stages {
@@ -47,8 +47,14 @@ pipeline {
                         // Extract BUILD_VERSION from Cargo.toml
                         script {
                             // Extract version from Cargo.toml and set it as an environment variable
-                            env.BUILD_VERSION = sh(script: "grep '^version' Cargo.toml | sed -E 's/version = \"(.+)\"/\\1/'", returnStdout: true).trim()
-                            echo "Using extracted version: ${env.BUILD_VERSION}"
+                            def buildVersion = sh(script: 'grep "^version" Cargo.toml | sed \'s/version = "\\([0-9.]*\\)"/\\1/\'', returnStdout: true).trim()
+
+                            if (buildVersion) {
+                                env.BUILD_VERSION = buildVersion
+                                echo "Using extracted version: ${env.BUILD_VERSION}"
+                            } else {
+                                error "Version not found in Cargo.toml"
+                            }
                         }
 
                         // Build the binary
@@ -60,10 +66,12 @@ pipeline {
                             mv target/release/${BINARY_NAME} ..
 
                             # Move necessary files for packaging
-                            mv .build/DEB/{control,postinst,prerm,postrm} ..
-                            mv .build/RPM/${BINARY_NAME}.spec ..
-                            mv .build/{rpxy-start.sh,config.toml,rpxy.service} ..
-                            mv ./{LICENSE,README.md} ..
+                            mv .build/DEB/* ..
+                            mv .build/RPM/* ..
+                            mv .build/rpxy* ..
+                            mv .build/config.toml ..
+                            mv README.md ..
+                            mv LICENSE ..
                         """
                     }
 
@@ -120,7 +128,7 @@ pipeline {
                         mv ${BINARY_NAME}.spec rpmbuild/SPECS/
 
                         # Update spec file with correct version and source
-                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/g; s/@Source0@/${BINARY_NAME}-${BUILD_VERSION}.tar.gz/g' rpmbuild/SPECS/${BINARY_NAME}.spec
+                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/; s/@Source0@/${BINARY_NAME}-${BUILD_VERSION}.tar.gz/' rpmbuild/SPECS/${BINARY_NAME}.spec
 
                         # Build the RPM package
                         rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
@@ -166,28 +174,30 @@ pipeline {
                         DEB_DIR=${BINARY_NAME}_${BUILD_VERSION}-1_amd64
 
                         # Create directory structure for DEB package
-                        mkdir -p $DEB_DIR/{DEBIAN,usr/{bin,local/bin,share/doc/${BINARY_NAME}},etc/{systemd/system,${BINARY_NAME}/acme_registry}}
+                        bash -c \"mkdir -p \$DEB_DIR/{DEBIAN,usr/{bin,local/bin,share/doc/${BINARY_NAME}},etc/{systemd/system,${BINARY_NAME}/acme_registry}}\"
 
                         # Move files to appropriate locations
-                        mv {postinst,prerm,postrm} $DEB_DIR/DEBIAN/
-                        chmod 755 $DEB_DIR/DEBIAN/{postinst,prerm,postrm}
-                        mv rpxy-start.sh $DEB_DIR/usr/local/bin/
-                        chmod 0755 $DEB_DIR/usr/local/bin/rpxy-start.sh
-                        mv ${BINARY_NAME} $DEB_DIR/usr/bin/
-                        mv rpxy.service $DEB_DIR/etc/systemd/system/
-                        mv {LICENSE,README.md} $DEB_DIR/usr/share/doc/${BINARY_NAME}/
-                        mv config.toml $DEB_DIR/etc/${BINARY_NAME}/
-                        mv control $DEB_DIR/DEBIAN/
+                        mv postinst prerm postrm \$DEB_DIR/DEBIAN/
+                        chmod 755 \$DEB_DIR/DEBIAN/postinst
+                        chmod 755 \$DEB_DIR/DEBIAN/prerm
+                        chmod 755 \$DEB_DIR/DEBIAN/postrm
+                        mv rpxy-start.sh \$DEB_DIR/usr/local/bin/
+                        chmod 0755 \$DEB_DIR/usr/local/bin/rpxy-start.sh
+                        mv ${BINARY_NAME} \$DEB_DIR/usr/bin/
+                        mv rpxy.service \$DEB_DIR/etc/systemd/system/
+                        mv LICENSE README.md \$DEB_DIR/usr/share/doc/${BINARY_NAME}/
+                        mv config.toml \$DEB_DIR/etc/${BINARY_NAME}/
+                        mv control \$DEB_DIR/DEBIAN/
 
                         # Update control file with correct version
-                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/' $DEB_DIR/DEBIAN/control
+                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/' \$DEB_DIR/DEBIAN/control
 
                         # Build the DEB package
-                        dpkg-deb --build --root-owner-group $DEB_DIR
+                        dpkg-deb --build --root-owner-group \$DEB_DIR
                     """
 
                     // Archive the DEB package
-                    archiveArtifacts artifacts: "${DEB_DIR}.deb", allowEmptyArchive: false, fingerprint: true
+                    archiveArtifacts artifacts: "${BINARY_NAME}_${BUILD_VERSION}-1_amd64.deb", allowEmptyArchive: false, fingerprint: true
                 }
             }
         }
