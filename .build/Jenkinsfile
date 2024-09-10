@@ -1,14 +1,14 @@
 pipeline {
     agent none
-    
+
     environment {
         // Define common variables used throughout the pipeline
-        REPO_URL = 'https://github.com/Gamerboy59/rust-rpxy.git'
+        REPO_URL = 'https://github.com/junkurihara/rust-rpxy.git'
         BINARY_NAME = 'rpxy'
         // BUILD_VERSION is not set because it will be extracted from Cargo.toml in the first step
         BUILD_VERSION = ''
     }
-    
+
     stages {
         stage('Prepare Build Environment') {
             agent {
@@ -31,7 +31,7 @@ pipeline {
                 container('rust-cargo') {
                     // Install git
                     sh 'apt-get update && apt-get -y install git --no-install-recommends'
-                    
+
                     // Clone and Prepare Repository
                     sh "git clone ${REPO_URL}"
 
@@ -43,7 +43,7 @@ pipeline {
                         # Initialize and update submodules
                         git submodule update --init
                         """
-                    
+
                         // Extract BUILD_VERSION from Cargo.toml
                         script {
                             // Extract version from Cargo.toml and set it as an environment variable
@@ -79,7 +79,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Build RPM Package') {
             agent {
                 kubernetes {
@@ -104,10 +104,10 @@ pipeline {
                     unstash 'rpm-files'
                     unstash 'service-file'
                     unstash 'docs'
-                        
+
                     // Install necessary tools for RPM building
                     sh 'dnf update -y && dnf install -y rpmdevtools tar'
-                    
+
                     // Create the RPM package
                     sh """
                         # Create RPM build directory structure
@@ -125,13 +125,13 @@ pipeline {
                         # Build the RPM package
                         rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
                     """
-                    
+
                     // Archive the RPM package
                     archiveArtifacts artifacts: "rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
                 }
             }
         }
-        
+
         stage('Build DEB Package') {
             agent {
                 kubernetes {
@@ -159,7 +159,7 @@ pipeline {
 
                     // Install necessary tools for DEB building
                     sh 'apt-get update && apt-get install -y dpkg-dev --no-install-recommends'
-                    
+
                     // Create the DEB package
                     sh """
                         # Define DEB package directory
@@ -185,7 +185,7 @@ pipeline {
                         # Build the DEB package
                         dpkg-deb --build --root-owner-group $DEB_DIR
                     """
-                    
+
                     // Archive the DEB package
                     archiveArtifacts artifacts: "${DEB_DIR}.deb", allowEmptyArchive: false, fingerprint: true
                 }
