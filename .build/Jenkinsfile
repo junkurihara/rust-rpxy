@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         // Define common variables used throughout the pipeline
-        REPO_URL = 'https://github.com/junkurihara/rust-rpxy.git'
+        REPO_URL = 'https://github.com/Gamerboy59/rust-rpxy.git'
         BINARY_NAME = 'rpxy'
         // BUILD_VERSION is not set because it will be extracted from Cargo.toml in the first step
         BUILD_VERSION = ''
