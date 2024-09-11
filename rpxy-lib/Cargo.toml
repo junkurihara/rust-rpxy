@@ -48,14 +48,14 @@ pin-project-lite = "0.2.14"
 async-trait = "0.1.82"
 
 # Error handling
-anyhow = "1.0.86"
+anyhow = "1.0.87"
 thiserror = "1.0.63"
 
 # http for both server and client
 http = "1.1.0"
 http-body-util = "0.1.2"
 hyper = { version = "1.4.1", default-features = false }
-hyper-util = { version = "0.1.7", features = ["full"] }
+hyper-util = { version = "0.1.8", features = ["full"] }
 futures-util = { version = "0.3.30", default-features = false }
 futures-channel = { version = "0.3.30", default-features = false }
 
@@ -74,7 +74,7 @@ hyper-rustls = { version = "0.27.3", default-features = false, features = [
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.6"
-rustls = { version = "0.23.12", default-features = false }
+rustls = { version = "0.23.13", default-features = false }
 tokio-rustls = { version = "0.26.0", features = ["early-data"] }
 
 # acme
