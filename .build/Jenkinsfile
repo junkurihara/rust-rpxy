@@ -132,10 +132,13 @@ pipeline {
 
                         # Build the RPM package
                         rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
+
+                        # Move RPM to root for archiving
+                        mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm .
                     """
 
                     // Archive the RPM package
-                    archiveArtifacts artifacts: "rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
+                    archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
                 }
             }
         }
