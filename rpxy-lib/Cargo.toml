@@ -48,7 +48,7 @@ pin-project-lite = "0.2.14"
 async-trait = "0.1.82"
 
 # Error handling
-anyhow = "1.0.87"
+anyhow = "1.0.88"
 thiserror = "1.0.63"
 
 # http for both server and client
@@ -90,11 +90,11 @@ h3-quinn = { version = "0.0.7", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
-s2n-quic = { version = "1.45.0", default-features = false, features = [
+s2n-quic = { version = "1.46.0", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.45.0", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.45.0", optional = true }
+s2n-quic-core = { version = "0.46.0", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.46.0", optional = true }
 ##########
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
 socket2 = { version = "0.5.7", features = ["all"], optional = true }
