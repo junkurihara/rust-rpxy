@@ -62,6 +62,8 @@ EOF
 
 #######################################
 function setup_ubuntu () {
+  update-ca-certificates
+
   id ${USER} > /dev/null
   # Check the existence of the user, if not exist, create it.
   if [ $? -eq 1 ]; then
