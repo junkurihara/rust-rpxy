@@ -33,7 +33,7 @@ where
         && backend_app.https_redirection.is_some()
         && backend_app.mutual_tls.as_ref().is_some_and(|v| !v)
       {
-        if let Some(port) = self.globals.proxy_config.https_port {
+        if let Some(port) = self.globals.proxy_config.https_redirection_port {
           add_header_entry_overwrite_if_exist(
             headers,
             header::ALT_SVC.as_str(),
