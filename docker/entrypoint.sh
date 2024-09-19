@@ -62,8 +62,6 @@ EOF
 
 #######################################
 function setup_ubuntu () {
-  update-ca-certificates
-
   id ${USER} > /dev/null
   # Check the existence of the user, if not exist, create it.
   if [ $? -eq 1 ]; then
@@ -130,6 +128,9 @@ else
   echo "Unknown distribution!"
   exit 1
 fi
+
+# Add user CAs to OS trusted CA store (does not affect webpki)
+update-ca-certificates
 
 # Check the given user and its uid:gid
 if [ $(id -u ${USER}) -ne ${USER_ID} -a $(id -g ${USER}) -ne ${GROUP_ID} ]; then
