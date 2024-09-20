@@ -19,7 +19,7 @@ See [`docker-compose.yml`](./docker-compose.yml) for the detailed configuration.
 
 ## Custom CAs for upstream TLS connections
 
-To add a custom certificate, you must use a non-`slim` non-`webpki` image. Then mount `/usr/local/share/ca-certificates` in the container with your desired CAs each in a file like `myca.crt`. The certificates are accepted in PEM format but file extension must be `crt`.
+To add a custom certificate, you must use a non-`webpki` image. Then mount `/usr/local/share/ca-certificates` in the container with your desired CAs each in a file like `myca.crt`. The certificates are accepted in PEM format but file extension must be `crt`.
 
 e.g. `-v rpxy/ca-certificates:/usr/local/share/ca-certificates`
 
