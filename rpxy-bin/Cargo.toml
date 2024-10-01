@@ -40,11 +40,11 @@ tokio = { version = "1.40.0", default-features = false, features = [
   "macros",
 ] }
 tokio-util = { version = "0.7.12", default-features = false }
-async-trait = "0.1.82"
+async-trait = "0.1.83"
 futures-util = { version = "0.3.30", default-features = false }
 
 # config
-clap = { version = "4.5.17", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.5.18", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8.19", default-features = false, features = ["parse"] }
 hot_reload = "0.1.6"
 
