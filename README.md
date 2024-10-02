@@ -49,7 +49,7 @@ Note that we do not have an option of installation via [`crates.io`](https://cra
 
 ### Package Installation for Linux (RPM/DEB)
 
-You can find the Jenkins CI/CD build scripts for `rpxy` in the [./build](./build) directory.
+You can find the Jenkins CI/CD build scripts for `rpxy` in the [./build](./.build) directory.
 
 Prebuilt packages for Linux RPM and DEB are available at [https://rpxy.gamerboy59.dev](https://rpxy.gamerboy59.dev), provided by [@Gamerboy59](https://github.com/Gamerboy59).
 
