@@ -17,7 +17,7 @@ http3 = []
 [dependencies]
 rustc-hash = { version = "2.0.0" }
 tracing = { version = "0.1.40" }
-derive_builder = { version = "0.20.1" }
+derive_builder = { version = "0.20.2" }
 thiserror = { version = "1.0.64" }
 hot_reload = { version = "0.1.6" }
 async-trait = { version = "0.1.83" }
