@@ -1,0 +1,10 @@
+Package: rpxy
+Version: @BUILD_VERSION@-1
+Maintainer: Jun Kurihara <kurihara@ieee.org>
+Homepage: https://github.com/junkurihara/rust-rpxy
+Architecture: amd64
+Depends: systemd
+Recommends: rpxy-webui
+Priority: optional
+Section: base
+Description: A simple and ultrafast reverse-proxy serving multiple domain names with TLS termination, written in Rust

@@ -2,6 +2,16 @@
 
 ## 0.10.0 (Unreleased)
 
+## 0.9.2
+
+### Improvement
+
+- Feat: Add Jenkins build pipeline (#182)
+- Refactor: lots of minor improvements
+- BugFix: Fix the bug related to the installation of `CryptoProvider` (#194)
+- BugFix: h3 header to use https_redirection_port (#192)
+- Deps
+
 ## 0.9.1
 
 ### Important Changes

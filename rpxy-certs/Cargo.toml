@@ -17,16 +17,16 @@ http3 = []
 [dependencies]
 rustc-hash = { version = "2.0.0" }
 tracing = { version = "0.1.40" }
-derive_builder = { version = "0.20.1" }
-thiserror = { version = "1.0.63" }
+derive_builder = { version = "0.20.2" }
+thiserror = { version = "1.0.64" }
 hot_reload = { version = "0.1.6" }
-async-trait = { version = "0.1.82" }
-rustls = { version = "0.23.12", default-features = false, features = [
+async-trait = { version = "0.1.83" }
+rustls = { version = "0.23.14", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
-rustls-pemfile = { version = "2.1.3" }
-rustls-webpki = { version = "0.102.7", default-features = false, features = [
+rustls-pemfile = { version = "2.2.0" }
+rustls-webpki = { version = "0.102.8", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }

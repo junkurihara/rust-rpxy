@@ -17,6 +17,12 @@ Then, all you need is to mount your `config.toml` as `/etc/rpxy.toml` and certif
 
 See [`docker-compose.yml`](./docker-compose.yml) for the detailed configuration. Note that the file path of keys and certificates must be ones in your docker container.
 
+## Custom CAs for upstream TLS connections
+
+To add a custom certificate, you must use a non-`webpki` image. Then mount `/usr/local/share/ca-certificates` in the container with your desired CAs each in a file like `myca.crt`. The certificates are accepted in PEM format but file extension must be `crt`.
+
+e.g. `-v rpxy/ca-certificates:/usr/local/share/ca-certificates`
+
 ## Differences among image tags of Docker Hub and GitHub Container Registry
 
 Differences among tags are summarized as follows.

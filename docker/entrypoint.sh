@@ -129,6 +129,9 @@ else
   exit 1
 fi
 
+# Add user CAs to OS trusted CA store (does not affect webpki)
+update-ca-certificates
+
 # Check the given user and its uid:gid
 if [ $(id -u ${USER}) -ne ${USER_ID} -a $(id -g ${USER}) -ne ${GROUP_ID} ]; then
   echo "${USER} exists or was previously created. However, its uid and gid are inconsistent. Please recreate your container."

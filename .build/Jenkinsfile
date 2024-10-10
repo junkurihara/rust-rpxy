@@ -1,0 +1,208 @@
+pipeline {
+    agent none
+
+    environment {
+        // Define common variables used throughout the pipeline
+        REPO_URL = 'https://github.com/junkurihara/rust-rpxy.git'
+        BINARY_NAME = 'rpxy'
+        // BUILD_VERSION is not set because it will be extracted from Cargo.toml in the first step
+        // BUILD_VERSION = ''
+    }
+
+    stages {
+        stage('Prepare Build Environment') {
+            agent {
+                kubernetes {
+                    inheritFrom 'default'
+                    yaml """
+                    apiVersion: v1
+                    kind: Pod
+                    spec:
+                      containers:
+                      - name: rust-cargo
+                        image: rust:slim
+                        command:
+                        - cat
+                        tty: true
+                    """
+                }
+            }
+            steps {
+                container('rust-cargo') {
+                    // Install git
+                    sh 'apt-get update && apt-get -y install git --no-install-recommends'
+
+                    // Clone and Prepare Repository
+                    sh "git clone ${REPO_URL}"
+
+                    dir('rust-rpxy') {
+                        sh """
+                        # Update submodule URLs to HTTPS (allows cloning without SSH keys)
+                        sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
+
+                        # Initialize and update submodules
+                        git submodule update --init
+                        """
+
+                        // Extract BUILD_VERSION from Cargo.toml
+                        script {
+                            // Extract version from Cargo.toml and set it as an environment variable
+                            def buildVersion = sh(script: 'grep "^version" Cargo.toml | sed \'s/version = "\\([0-9.]*\\)"/\\1/\'', returnStdout: true).trim()
+
+                            if (buildVersion) {
+                                env.BUILD_VERSION = buildVersion
+                                echo "Using extracted version: ${env.BUILD_VERSION}"
+                            } else {
+                                error "Version not found in Cargo.toml"
+                            }
+                        }
+
+                        // Build the binary
+                        sh 'cargo build --release'
+                    
+                        // Prepare and stash files
+                        sh """
+                            # Move binary to workspace root for easier access
+                            mv target/release/${BINARY_NAME} ..
+
+                            # Move necessary files for packaging
+                            mv .build/DEB/* ..
+                            mv .build/RPM/* ..
+                            mv .build/rpxy* ..
+                            mv .build/config.toml ..
+                            mv README.md ..
+                            mv LICENSE ..
+                        """
+                    }
+
+                    // Stash files for use in later stages
+                    stash includes: "${BINARY_NAME}", name: "binary"
+                    stash includes: "control, postinst, prerm, postrm, rpxy-start.sh", name: "deb-files"
+                    stash includes: "${BINARY_NAME}.spec", name: "rpm-files"
+                    stash includes: "rpxy.service, config.toml", name: "service-file"
+                    stash includes: "LICENSE, README.md", name: "docs"
+                        
+                    // Archive the binary as an artifact
+                    archiveArtifacts artifacts: "${BINARY_NAME}", allowEmptyArchive: false, fingerprint: true
+                }
+            }
+        }
+
+        stage('Build RPM Package') {
+            agent {
+                kubernetes {
+                    inheritFrom 'default'
+                    yaml """
+                    apiVersion: v1
+                    kind: Pod
+                    spec:
+                      containers:
+                      - name: rpm-build
+                        image: rockylinux:9
+                        command:
+                        - cat
+                        tty: true
+                    """
+                }
+            }
+            steps {
+                container('rpm-build') {
+                    // Prepare the RPM build environment
+                    unstash 'binary'
+                    unstash 'rpm-files'
+                    unstash 'service-file'
+                    unstash 'docs'
+
+                    // Install necessary tools for RPM building
+                    sh 'dnf update -y && dnf install -y rpmdevtools tar'
+
+                    // Create the RPM package
+                    sh """
+                        # Create RPM build directory structure
+                        mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+                        mkdir -p ${BINARY_NAME}-${BUILD_VERSION}
+
+                        # Move files to the appropriate locations
+                        mv ${BINARY_NAME} ${BINARY_NAME}.service LICENSE README.md config.toml ${BINARY_NAME}-${BUILD_VERSION}/
+                        tar -czf rpmbuild/SOURCES/${BINARY_NAME}-${BUILD_VERSION}.tar.gz ${BINARY_NAME}-${BUILD_VERSION}/
+                        mv ${BINARY_NAME}.spec rpmbuild/SPECS/
+
+                        # Update spec file with correct version and source
+                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/; s/@Source0@/${BINARY_NAME}-${BUILD_VERSION}.tar.gz/' rpmbuild/SPECS/${BINARY_NAME}.spec
+
+                        # Build the RPM package
+                        rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
+
+                        # Move RPM to root for archiving
+                        mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm .
+                    """
+
+                    // Archive the RPM package
+                    archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
+                }
+            }
+        }
+
+        stage('Build DEB Package') {
+            agent {
+                kubernetes {
+                    inheritFrom 'default'
+                    yaml """
+                    apiVersion: v1
+                    kind: Pod
+                    spec:
+                      containers:
+                      - name: debian-build
+                        image: debian:stable-slim
+                        command:
+                        - cat
+                        tty: true
+                    """
+                }
+            }
+            steps {
+                container('debian-build') {
+                    // Prepare the DEB build environment
+                    unstash 'binary'
+                    unstash 'deb-files'
+                    unstash 'service-file'
+                    unstash 'docs'
+
+                    // Install necessary tools for DEB building
+                    sh 'apt-get update && apt-get install -y dpkg-dev --no-install-recommends'
+
+                    // Create the DEB package
+                    sh """
+                        # Define DEB package directory
+                        DEB_DIR=${BINARY_NAME}_${BUILD_VERSION}-1_amd64
+
+                        # Create directory structure for DEB package
+                        bash -c \"mkdir -p \$DEB_DIR/{DEBIAN,usr/{bin,local/bin,share/doc/${BINARY_NAME}},etc/{systemd/system,${BINARY_NAME}/acme_registry}}\"
+
+                        # Move files to appropriate locations
+                        mv postinst prerm postrm \$DEB_DIR/DEBIAN/
+                        chmod 755 \$DEB_DIR/DEBIAN/postinst
+                        chmod 755 \$DEB_DIR/DEBIAN/prerm
+                        chmod 755 \$DEB_DIR/DEBIAN/postrm
+                        mv rpxy-start.sh \$DEB_DIR/usr/local/bin/
+                        chmod 0755 \$DEB_DIR/usr/local/bin/rpxy-start.sh
+                        mv ${BINARY_NAME} \$DEB_DIR/usr/bin/
+                        mv rpxy.service \$DEB_DIR/etc/systemd/system/
+                        mv LICENSE README.md \$DEB_DIR/usr/share/doc/${BINARY_NAME}/
+                        mv config.toml \$DEB_DIR/etc/${BINARY_NAME}/
+                        mv control \$DEB_DIR/DEBIAN/
+
+                        # Update control file with correct version
+                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/' \$DEB_DIR/DEBIAN/control
+
+                        # Build the DEB package
+                        dpkg-deb --build --root-owner-group \$DEB_DIR
+                    """
+
+                    // Archive the DEB package
+                    archiveArtifacts artifacts: "${BINARY_NAME}_${BUILD_VERSION}-1_amd64.deb", allowEmptyArchive: false, fingerprint: true
+                }
+            }
+        }
+    }
+}
