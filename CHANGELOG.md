@@ -6,6 +6,7 @@
 
 ### Improvement
 
+- Feat: Add Jenkins build pipeline (#182)
 - Refactor: lots of minor improvements
 - BugFix: Fix the bug related to the installation of `CryptoProvider` (#194)
 - BugFix: h3 header to use https_redirection_port (#192)
