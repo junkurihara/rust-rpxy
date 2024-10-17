@@ -54,7 +54,7 @@ thiserror = "1.0.64"
 # http for both server and client
 http = "1.1.0"
 http-body-util = "0.1.2"
-hyper = { version = "1.4.1", default-features = false }
+hyper = { version = "1.5.0", default-features = false }
 hyper-util = { version = "0.1.9", features = ["full"] }
 futures-util = { version = "0.3.31", default-features = false }
 futures-channel = { version = "0.3.31", default-features = false }
@@ -74,7 +74,7 @@ hyper-rustls = { version = "0.27.3", default-features = false, features = [
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.6"
-rustls = { version = "0.23.14", default-features = false }
+rustls = { version = "0.23.15", default-features = false }
 tokio-rustls = { version = "0.26.0", features = ["early-data"] }
 
 # acme
