@@ -29,10 +29,10 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 ] }
 
 mimalloc = { version = "*", default-features = false }
-anyhow = "1.0.89"
+anyhow = "1.0.91"
 rustc-hash = "2.0.0"
-serde = { version = "1.0.210", default-features = false, features = ["derive"] }
-tokio = { version = "1.40.0", default-features = false, features = [
+serde = { version = "1.0.213", default-features = false, features = ["derive"] }
+tokio = { version = "1.41.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -47,6 +47,7 @@ futures-util = { version = "0.3.31", default-features = false }
 clap = { version = "4.5.20", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8.19", default-features = false, features = ["parse"] }
 hot_reload = "0.1.6"
+serde_ignored = "0.1.10"
 
 # logging
 tracing = { version = "0.1.40" }
