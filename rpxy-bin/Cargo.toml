@@ -47,6 +47,7 @@ futures-util = { version = "0.3.31", default-features = false }
 clap = { version = "4.5.20", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8.19", default-features = false, features = ["parse"] }
 hot_reload = "0.1.6"
+serde_ignored = "0.1.10"
 
 # logging
 tracing = { version = "0.1.40" }
