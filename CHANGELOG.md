@@ -1,6 +1,14 @@
 # CHANGELOG
 
-## 0.10.0 (Unreleased)
+## 0.9.3 or 0.10.0 (Unreleased)
+
+### Improvement
+
+- Feat: emit WARN messages if there exist unused and unsupported options specified in configuration file.
+- Docs: `rpxy.io` is now available for the official website of `rpxy`.
+- Refactor: lots of minor improvements
+- Deps
+
 
 ## 0.9.2
 
