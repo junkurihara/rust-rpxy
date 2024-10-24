@@ -13,7 +13,7 @@ publish.workspace = true
 [dependencies]
 url = { version = "2.5.2" }
 rustc-hash = "2.0.0"
-thiserror = "1.0.64"
+thiserror = "1.0.65"
 tracing = "0.1.40"
 async-trait = "0.1.83"
 base64 = "0.22.1"
@@ -29,6 +29,6 @@ rustls-platform-verifier = { version = "0.3.4" }
 rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, features = [
   "aws-lc-rs",
 ] }
-tokio = { version = "1.40.0", default-features = false }
+tokio = { version = "1.41.0", default-features = false }
 tokio-util = { version = "0.7.12", default-features = false }
 tokio-stream = { version = "0.1.16", default-features = false }
