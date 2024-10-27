@@ -146,6 +146,7 @@ pub struct AppConfig {
   pub server_name: String,
   pub reverse_proxy: Vec<ReverseProxyConfig>,
   pub tls: Option<TlsConfig>,
+  pub htpasswd: Option<rustc_hash::FxHashMap<String, String>>,
 }
 
 /// Configuration parameters for single reverse proxy corresponding to the path

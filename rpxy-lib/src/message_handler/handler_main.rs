@@ -1,7 +1,9 @@
 use super::{
   http_log::HttpMessageLog,
   http_result::{HttpError, HttpResult},
-  synthetic_response::{secure_redirection_response, synthetic_error_response},
+  synthetic_response::{
+    secure_redirection_response, synthetic_error_response, synthetic_error_response_custom,
+  },
   utils_headers::*,
   utils_request::InspectParseHost,
 };
@@ -15,7 +17,7 @@ use crate::{
   name_exp::ServerName,
 };
 use derive_builder::Builder;
-use http::{Request, Response, StatusCode};
+use http::{header::WWW_AUTHENTICATE, Request, Response, StatusCode};
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
@@ -72,9 +74,21 @@ where
       }
       Err(e) => {
         error!("{e}");
-        let code = StatusCode::from(e);
-        log_data.status_code(&code).output();
-        synthetic_error_response(code)
+        match e {
+          HttpError::RequiresBasicAuthentication(realm) => {
+            let realm = (&realm).try_into().unwrap_or(String::new());
+            let code = StatusCode::UNAUTHORIZED;
+            log_data.status_code(&code).output();
+            synthetic_error_response_custom(code, |builder| {
+              builder.header(WWW_AUTHENTICATE, format!("Basic realm=\"{realm}\""))
+            })
+          }
+          _ => {
+            let code = StatusCode::from(e);
+            log_data.status_code(&code).output();
+            synthetic_error_response(code)
+          }
+        }
       }
     }
   }
@@ -126,6 +140,15 @@ where
         self.globals.proxy_config.https_redirection_port,
         &req,
       );
+    }
+
+    // Require basic authentication if configured
+    if let Some(htpasswd) = &backend_app.htpasswd {
+      if !validate_basic_authentication(&req, htpasswd) {
+        return Err(HttpError::RequiresBasicAuthentication(
+          backend_app.server_name.clone(),
+        ));
+      }
     }
 
     // Find reverse proxy for given path and choose one of upstream host

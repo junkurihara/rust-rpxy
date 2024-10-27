@@ -1,11 +1,15 @@
 use super::canonical_address::ToCanonical;
 use crate::{
   backend::{UpstreamCandidates, UpstreamOption},
+  hyper_ext::body::RequestBody,
   log::*,
 };
 use anyhow::{anyhow, ensure, Result};
+use base64::prelude::*;
 use bytes::BufMut;
-use http::{header, HeaderMap, HeaderName, HeaderValue, Uri};
+use core::str;
+use http::{header, HeaderMap, HeaderName, HeaderValue, Request, Uri};
+use rustc_hash::FxHashMap as HashMap;
 use std::{borrow::Cow, net::SocketAddr};
 
 #[cfg(feature = "sticky-cookie")]
@@ -283,4 +287,33 @@ pub(super) fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
     }
   }
   None
+}
+
+pub(super) fn validate_basic_authentication(
+  req: &Request<RequestBody>,
+  htpasswd: &HashMap<String, String>,
+) -> bool {
+  req
+    .headers()
+    .get(header::AUTHORIZATION)
+    .into_iter()
+    .filter_map(|auth| str::from_utf8(auth.as_bytes()).ok())
+    .filter_map(|auth| auth.strip_prefix("Basic "))
+    .filter_map(|auth| BASE64_STANDARD.decode(auth).ok())
+    .filter_map(|user_pass| String::from_utf8(user_pass).ok())
+    .filter_map(|mut user_pass| {
+      user_pass
+        .find(':')
+        .map(|pos| user_pass.split_off(pos + 1))
+        .map(|pass| {
+          user_pass.pop();
+          (user_pass, pass)
+        })
+    })
+    .any(|(user, pass)| {
+      htpasswd
+        .get(&user)
+        .map(|actual_pass| *actual_pass == pass)
+        .unwrap_or(false)
+    })
 }

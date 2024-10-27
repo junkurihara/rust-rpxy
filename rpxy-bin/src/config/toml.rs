@@ -73,6 +73,7 @@ pub struct Apps(pub HashMap<String, Application>);
 pub struct Application {
   pub server_name: Option<String>,
   pub reverse_proxy: Option<Vec<ReverseProxyOption>>,
+  pub htpasswd: Option<HashMap<String, String>>,
   pub tls: Option<TlsOption>,
 }
 
@@ -290,6 +291,7 @@ impl Application {
     Ok(AppConfig {
       app_name: app_name.to_owned(),
       server_name: server_name_string.to_owned(),
+      htpasswd: self.htpasswd.clone(),
       reverse_proxy: reverse_proxy_config,
       tls: tls_config,
     })

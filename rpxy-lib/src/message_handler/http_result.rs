@@ -1,6 +1,8 @@
 use http::StatusCode;
 use thiserror::Error;
 
+use crate::name_exp::ServerName;
+
 /// HTTP result type, T is typically a hyper::Response
 /// HttpError is used to generate a synthetic error response
 pub(crate) type HttpResult<T> = std::result::Result<T, HttpError>;
@@ -32,6 +34,8 @@ pub enum HttpError {
 
   #[error("Failed to upgrade connection: {0}")]
   FailedToUpgrade(String),
+  #[error("Requires basic authentication: {}", .0.try_into().unwrap_or_else(|_| format!("{:?}", .0)))]
+  RequiresBasicAuthentication(ServerName),
   // #[error("Request does not have an upgrade extension")]
   // NoUpgradeExtensionInRequest,
   // #[error("Response does not have an upgrade extension")]

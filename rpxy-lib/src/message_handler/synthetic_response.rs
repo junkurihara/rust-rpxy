@@ -4,12 +4,23 @@ use crate::{
   hyper_ext::body::{empty, ResponseBody},
   name_exp::ServerName,
 };
-use http::{Request, Response, StatusCode, Uri};
+use http::{response::Builder, Request, Response, StatusCode, Uri};
 
 /// build http response with status code of 4xx and 5xx
 pub(crate) fn synthetic_error_response(status_code: StatusCode) -> RpxyResult<Response<ResponseBody>> {
   let res = Response::builder()
     .status(status_code)
+    .body(ResponseBody::Boxed(empty()))
+    .unwrap();
+  Ok(res)
+}
+
+/// build http response with status code of 4xx and 5xx, with custom adjustments
+pub(crate) fn synthetic_error_response_custom(
+  status_code: StatusCode,
+  custom: impl FnOnce(Builder) -> Builder,
+) -> RpxyResult<Response<ResponseBody>> {
+  let res = custom(Response::builder().status(status_code))
     .body(ResponseBody::Boxed(empty()))
     .unwrap();
   Ok(res)

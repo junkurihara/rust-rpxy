@@ -21,6 +21,9 @@ pub struct BackendApp {
   pub server_name: ServerName,
   /// struct of reverse proxy serving incoming request
   pub path_manager: PathManager,
+  /// WWW-Authenticate user before forwarding request
+  #[builder(default)]
+  pub htpasswd: Option<HashMap<String, String>>,
   /// tls settings: https redirection with 30x
   #[builder(default)]
   pub https_redirection: Option<bool>,
@@ -53,6 +56,7 @@ impl TryFrom<&AppConfig> for BackendApp {
     backend_builder
       .app_name(app_config.app_name.clone())
       .server_name(app_config.server_name.clone())
+      .htpasswd(app_config.htpasswd.clone())
       .path_manager(path_manager);
     // TLS settings and build backend instance
     let backend = if app_config.tls.is_none() {
