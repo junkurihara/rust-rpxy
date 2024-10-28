@@ -13,10 +13,10 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-# default = ["http3-quinn", "cache", "rustls-backend", "acme", "post-quantum"]
-# default = ["http3-s2n", "cache", "rustls-backend", "acme", "post-quantum"]
-default = ["http3-quinn", "cache", "rustls-backend", "acme"]
-# default = ["http3-s2n", "cache", "rustls-backend", "acme"]
+# default = ["http3-quinn", "cache", "rustls-backend", "acme", "sticky-cookie", "post-quantum"]
+# default = ["http3-s2n", "cache", "rustls-backend", "acme", "sticky-cookie", "post-quantum"]
+default = ["http3-quinn", "cache", "rustls-backend", "acme", "sticky-cookie"]
+# default = ["http3-s2n", "cache", "rustls-backend", "acme", "sticky-cookie"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
@@ -25,11 +25,10 @@ webpki-roots = ["rpxy-lib/webpki-roots"]
 cache = ["rpxy-lib/cache"]
 acme = ["rpxy-lib/acme", "rpxy-acme"]
 post-quantum = ["rpxy-lib/post-quantum"]
+sticky-cookie = ["rpxy-lib/sticky-cookie"]
 
 [dependencies]
-rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
-  "sticky-cookie",
-] }
+rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 
 mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.91"

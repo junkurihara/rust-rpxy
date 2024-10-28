@@ -3,7 +3,7 @@ use crate::{
   backend::{UpstreamCandidates, UpstreamOption},
   log::*,
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, Result};
 use bytes::BufMut;
 use http::{header, HeaderMap, HeaderName, HeaderValue, Uri};
 use std::{borrow::Cow, net::SocketAddr};
@@ -22,6 +22,8 @@ pub(super) fn takeout_sticky_cookie_lb_context(
   headers: &mut HeaderMap,
   expected_cookie_name: &str,
 ) -> Result<Option<LoadBalanceContext>> {
+  use anyhow::ensure;
+
   let mut headers_clone = headers.clone();
 
   match headers_clone.entry(header::COOKIE) {
