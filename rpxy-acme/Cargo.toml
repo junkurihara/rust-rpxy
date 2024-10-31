@@ -10,6 +10,9 @@ readme.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+post-quantum = ["rustls-post-quantum"]
+
 [dependencies]
 url = { version = "2.5.2" }
 rustc-hash = "2.0.0"
@@ -21,7 +24,7 @@ aws-lc-rs = { version = "1.10.0", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.1"
-rustls = { version = "0.23.15", default-features = false, features = [
+rustls = { version = "0.23.16", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
@@ -29,6 +32,7 @@ rustls-platform-verifier = { version = "0.3.4" }
 rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, features = [
   "aws-lc-rs",
 ] }
+rustls-post-quantum = { version = "0.1.0", optional = true }
 tokio = { version = "1.41.0", default-features = false }
 tokio-util = { version = "0.7.12", default-features = false }
 tokio-stream = { version = "0.1.16", default-features = false }
