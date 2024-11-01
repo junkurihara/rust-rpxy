@@ -32,12 +32,14 @@ Differences among tags are summarized as follows.
 - `latest`: Built from the `main` branch with default features, running on Ubuntu.
 - `latest-slim`, `slim`: Built by `musl` from the `main` branch with default features, running on Alpine.
 - `latest-s2n`, `s2n`: Built from the `main` branch with the `http3-s2n` feature, running on Ubuntu.
+- `*-pq`: Built with the `post-quantum` feature. This feature supports the post-quantum key exchange using `rustls-post-quantum` crate.
 
 ### Nightly Builds
 
 - `nightly`: Built from the `develop` branch with default features, running on Ubuntu.
 - `nightly-slim`: Built by `musl` from the `develop` branch with default features, running on Alpine.
 - `nightly-s2n`: Built from the `develop` branch with the `http3-s2n` feature, running on Ubuntu.
+- - `*-pq`: Built with the `post-quantum` feature. This feature supports the post-quantum key exchange using `rustls-post-quantum` crate.
 
 ## Caveats
 
