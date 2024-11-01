@@ -35,10 +35,12 @@ jobs:
             tags-suffix: "-slim"
 
           - target: "musl"
+            build-feature: "-slim-pq"
             platform: linux/amd64
             tags-suffix: "-slim-pq"
 
           - target: "musl"
+            build-feature: "-slim-pq"
             platform: linux/arm64
             tags-suffix: "-slim-pq"
 
@@ -68,7 +70,7 @@ jobs:
             tags-suffix: "-s2n-pq"
 
           - target: "gnu"
-            build-feature: "-s2n"
+            build-feature: "-s2n-pq"
             platform: linux/arm64
             tags-suffix: "-s2n-pq"
 
