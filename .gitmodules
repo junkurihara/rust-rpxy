@@ -4,3 +4,7 @@
 [submodule "submodules/rustls-acme"]
 	path = submodules/rustls-acme
 	url = git@github.com:junkurihara/rustls-acme.git
+[submodule "submodules/s2n-quic"]
+	path = submodules/s2n-quic
+	url = git@github.com:junkurihara/s2n-quic.git
+	branch = rustls-pq
