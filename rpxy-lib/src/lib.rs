@@ -22,7 +22,7 @@ use crate::{
 use futures::future::join_all;
 use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
-use rustls::crypto::{aws_lc_rs, CryptoProvider};
+use rustls::crypto::CryptoProvider;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -101,8 +101,11 @@ pub async fn entrypoint(
     info!("Cache is disabled")
   }
 
+  #[cfg(not(feature = "post-quantum"))]
   // Install aws_lc_rs as default crypto provider for rustls
-  let _ = CryptoProvider::install_default(aws_lc_rs::default_provider());
+  let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+  #[cfg(feature = "post-quantum")]
+  let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
   // 1. build backends, and make it contained in Arc
   let app_manager = Arc::new(backend::BackendAppManager::try_from(app_config_list)?);

@@ -37,8 +37,11 @@ impl AcmeManager {
     domains: &[String],
     runtime_handle: Handle,
   ) -> Result<Self, RpxyAcmeError> {
+    #[cfg(not(feature = "post-quantum"))]
     // Install aws_lc_rs as default crypto provider for rustls
     let _ = rustls::crypto::CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+    #[cfg(feature = "post-quantum")]
+    let _ = rustls::crypto::CryptoProvider::install_default(rustls_post_quantum::provider());
 
     let acme_registry_dir = acme_registry_dir
       .map(|v| v.to_ascii_lowercase())

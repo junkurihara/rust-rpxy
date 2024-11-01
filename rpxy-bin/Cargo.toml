@@ -13,6 +13,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+# default = ["http3-quinn", "cache", "rustls-backend", "acme", "post-quantum"]
+# default = ["http3-s2n", "cache", "rustls-backend", "acme", "post-quantum"]
 default = ["http3-quinn", "cache", "rustls-backend", "acme"]
 # default = ["http3-s2n", "cache", "rustls-backend", "acme"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
@@ -22,6 +24,7 @@ rustls-backend = ["rpxy-lib/rustls-backend"]
 webpki-roots = ["rpxy-lib/webpki-roots"]
 cache = ["rpxy-lib/cache"]
 acme = ["rpxy-lib/acme", "rpxy-acme"]
+post-quantum = ["rpxy-lib/post-quantum"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
@@ -31,7 +34,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.91"
 rustc-hash = "2.0.0"
-serde = { version = "1.0.213", default-features = false, features = ["derive"] }
+serde = { version = "1.0.214", default-features = false, features = ["derive"] }
 tokio = { version = "1.41.0", default-features = false, features = [
   "net",
   "rt-multi-thread",

@@ -12,16 +12,17 @@ publish.workspace = true
 
 [features]
 default = ["http3"]
+post-quantum = ["rustls-post-quantum"]
 http3 = []
 
 [dependencies]
 rustc-hash = { version = "2.0.0" }
 tracing = { version = "0.1.40" }
 derive_builder = { version = "0.20.2" }
-thiserror = { version = "1.0.65" }
+thiserror = { version = "1.0.66" }
 hot_reload = { version = "0.1.6" }
 async-trait = { version = "0.1.83" }
-rustls = { version = "0.23.15", default-features = false, features = [
+rustls = { version = "0.23.16", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
@@ -30,6 +31,7 @@ rustls-webpki = { version = "0.102.8", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
+rustls-post-quantum = { version = "0.1.0", optional = true }
 x509-parser = { version = "0.16.0" }
 
 [dev-dependencies]
