@@ -6,7 +6,7 @@
 
 ### Improvement
 
-- Feat: Support post-quantum `X25519Kyber768Draft00` for incoming TLS initiation. This is non-default feature [feature: `post-quantum`]. Upstream connection to backend applications does not yet support PQC.
+- Feat: Support post-quantum `X25519Kyber768Draft00` for incoming and outgoing TLS initiation. This is non-default feature [feature: `post-quantum`].
 - Feat: emit WARN messages if there exist unused and unsupported options specified in configuration file.
 - Docs: `rpxy.io` is now available for the official website of `rpxy`.
 - Refactor: lots of minor improvements
