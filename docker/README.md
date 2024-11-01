@@ -39,7 +39,7 @@ Differences among tags are summarized as follows.
 - `nightly`: Built from the `develop` branch with default features, running on Ubuntu.
 - `nightly-slim`: Built by `musl` from the `develop` branch with default features, running on Alpine.
 - `nightly-s2n`: Built from the `develop` branch with the `http3-s2n` feature, running on Ubuntu.
-- - `*-pq`: Built with the `post-quantum` feature. This feature supports the post-quantum key exchange using `rustls-post-quantum` crate.
+- `*-pq`: Built with the `post-quantum` feature. This feature supports the hybridized post-quantum key exchange using `rustls-post-quantum` crate.
 
 ## Caveats
 
