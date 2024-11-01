@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## 0.10.0 (Unreleased)
+## 0.9.4 or 0.10.0 (Unreleased)
 
 ## 0.9.3
 
