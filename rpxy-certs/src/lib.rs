@@ -12,7 +12,7 @@ mod log {
 use crate::{error::*, log::*, reloader_service::DynCryptoSource};
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use rustc_hash::FxHashMap as HashMap;
-use rustls::crypto::{aws_lc_rs, CryptoProvider};
+use rustls::crypto::CryptoProvider;
 use std::sync::Arc;
 
 /* ------------------------------------------------ */
@@ -44,8 +44,11 @@ where
   T: CryptoSource<Error = RpxyCertError> + Send + Sync + Clone + 'static,
 {
   info!("Building certificate reloader service");
+  #[cfg(not(feature = "post-quantum"))]
   // Install aws_lc_rs as default crypto provider for rustls
-  let _ = CryptoProvider::install_default(aws_lc_rs::default_provider());
+  let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+  #[cfg(feature = "post-quantum")]
+  let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
   let source = crypto_source_map
     .iter()

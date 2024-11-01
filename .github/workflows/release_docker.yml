@@ -30,6 +30,17 @@ jobs:
               jqtype/rpxy:latest
               ghcr.io/junkurihara/rust-rpxy:latest
 
+          - target: "default-pq"
+            dockerfile: ./docker/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            build-args: |
+              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,rustls-backend,acme,post-quantum"
+            tags-suffix: "-pq"
+            # Aliases must be used only for release builds
+            aliases: |
+              jqtype/rpxy:pq
+              ghcr.io/junkurihara/rust-rpxy:pq
+
           - target: "default-slim"
             dockerfile: ./docker/Dockerfile-slim
             build-contexts: |
@@ -42,6 +53,20 @@ jobs:
               jqtype/rpxy:slim
               ghcr.io/junkurihara/rust-rpxy:slim
 
+          - target: "default-slim-pq"
+            dockerfile: ./docker/Dockerfile-slim
+            build-args: |
+              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,rustls-backend,acme,post-quantum"
+            build-contexts: |
+              messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
+              messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
+            platforms: linux/amd64,linux/arm64
+            tags-suffix: "-slim-pq"
+            # Aliases must be used only for release builds
+            aliases: |
+              jqtype/rpxy:slim-pq
+              ghcr.io/junkurihara/rust-rpxy:slim-pq
+
           - target: "s2n"
             dockerfile: ./docker/Dockerfile
             build-args: |
@@ -53,6 +78,18 @@ jobs:
             aliases: |
               jqtype/rpxy:s2n
               ghcr.io/junkurihara/rust-rpxy:s2n
+
+          - target: "s2n-pq"
+            dockerfile: ./docker/Dockerfile
+            build-args: |
+              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,rustls-backend,acme,post-quantum"
+              "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
+            platforms: linux/amd64,linux/arm64
+            tags-suffix: "-s2n-pq"
+            # Aliases must be used only for release builds
+            aliases: |
+              jqtype/rpxy:s2n-pq
+              ghcr.io/junkurihara/rust-rpxy:s2n-pq
 
           - target: "webpki-roots"
             dockerfile: ./docker/Dockerfile

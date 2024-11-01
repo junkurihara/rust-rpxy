@@ -1,6 +1,7 @@
 use crate::{
   constants::*,
   error::{anyhow, ensure},
+  log::warn,
 };
 use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
 use rustc_hash::FxHashMap as HashMap;
@@ -229,7 +230,21 @@ impl ConfigToml {
   pub fn new(config_file: &str) -> std::result::Result<Self, anyhow::Error> {
     let config_str = fs::read_to_string(config_file)?;
 
-    toml::from_str(&config_str).map_err(|e| anyhow!(e))
+    // Check unused fields during deserialization
+    let t = toml::de::Deserializer::new(&config_str);
+    let mut unused = rustc_hash::FxHashSet::default();
+
+    let res = serde_ignored::deserialize(t, |path| {
+      unused.insert(path.to_string());
+    })
+    .map_err(|e| anyhow!(e));
+
+    if !unused.is_empty() {
+      let str = unused.iter().fold(String::new(), |acc, x| acc + x + "\n");
+      warn!("Configuration file contains unsupported fields. Check typos:\n{}", str);
+    }
+
+    res
   }
 }
 

@@ -34,6 +34,16 @@ jobs:
             platform: linux/arm64
             tags-suffix: "-slim"
 
+          - target: "musl"
+            build-feature: "-slim-pq"
+            platform: linux/amd64
+            tags-suffix: "-slim-pq"
+
+          - target: "musl"
+            build-feature: "-slim-pq"
+            platform: linux/arm64
+            tags-suffix: "-slim-pq"
+
           - target: "gnu"
             build-feature: "-s2n"
             platform: linux/amd64
@@ -43,6 +53,26 @@ jobs:
             build-feature: "-s2n"
             platform: linux/arm64
             tags-suffix: "-s2n"
+
+          - target: "gnu"
+            build-feature: "-pq"
+            platform: linux/amd64
+            tags-suffix: "-pq"
+
+          - target: "gnu"
+            build-feature: "-pq"
+            platform: linux/arm64
+            tags-suffix: "-pq"
+
+          - target: "gnu"
+            build-feature: "-s2n-pq"
+            platform: linux/amd64
+            tags-suffix: "-s2n-pq"
+
+          - target: "gnu"
+            build-feature: "-s2n-pq"
+            platform: linux/arm64
+            tags-suffix: "-s2n-pq"
 
           - target: "gnu"
             build-feature: "-webpki-roots"
