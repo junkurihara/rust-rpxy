@@ -6,7 +6,7 @@ use super::{
   utils_request::InspectParseHost,
 };
 use crate::{
-  backend::{BackendAppManager, LoadBalanceContext},
+  backend::BackendAppManager,
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
@@ -25,7 +25,7 @@ use tokio::io::copy_bidirectional;
 /// Context object to handle sticky cookies at HTTP message handler
 pub(super) struct HandlerContext {
   #[cfg(feature = "sticky-cookie")]
-  pub(super) context_lb: Option<LoadBalanceContext>,
+  pub(super) context_lb: Option<crate::backend::LoadBalanceContext>,
   #[cfg(not(feature = "sticky-cookie"))]
   pub(super) context_lb: Option<()>,
 }
