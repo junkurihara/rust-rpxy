@@ -1,6 +1,7 @@
 use super::toml::ConfigToml;
 use async_trait::async_trait;
 use hot_reload::{Reload, ReloaderError};
+use tracing::warn;
 
 #[derive(Clone)]
 pub struct ConfigTomlReloader {
@@ -17,8 +18,10 @@ impl Reload<ConfigToml> for ConfigTomlReloader {
   }
 
   async fn reload(&self) -> Result<Option<ConfigToml>, ReloaderError<ConfigToml>> {
-    let conf = ConfigToml::new(&self.config_path)
-      .map_err(|_e| ReloaderError::<ConfigToml>::Reload("Failed to reload config toml"))?;
+    let conf = ConfigToml::new(&self.config_path).map_err(|e| {
+      warn!("Invalid toml file: {e:?}");
+      ReloaderError::<ConfigToml>::Reload("Failed to reload config toml")
+    })?;
     Ok(Some(conf))
   }
 }
