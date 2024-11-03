@@ -9,7 +9,7 @@ use crate::{
   backend::{BackendAppManager, LoadBalanceContext},
   error::*,
   forwarder::{ForwardRequest, Forwarder},
-  globals::Globals,
+  globals::{Globals, SniConsistency},
   hyper_ext::body::{RequestBody, ResponseBody},
   log::*,
   name_exp::ServerName,
@@ -17,7 +17,7 @@ use crate::{
 use derive_builder::Builder;
 use http::{Request, Response, StatusCode};
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
-use std::{net::SocketAddr, sync::Arc};
+use std::{cell::LazyCell, net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
 
 #[allow(dead_code)]
@@ -96,15 +96,33 @@ where
       .map(|v| ServerName::from(v.as_slice()))
       .map_err(|_e| HttpError::InvalidHostInRequestHeader)?;
 
+    let backend_app = LazyCell::new(|| self.app_manager.apps.get(&server_name));
+
     // check consistency of between TLS SNI and HOST/Request URI Line.
     #[allow(clippy::collapsible_if)]
-    if tls_enabled && self.globals.proxy_config.sni_consistency {
-      if server_name != tls_server_name.unwrap_or_default() {
-        return Err(HttpError::SniHostInconsistency);
+    if tls_enabled && self.globals.proxy_config.sni_consistency != SniConsistency::Ignore {
+      if Some(&server_name) != tls_server_name.as_ref() {
+        let is_consistent = tls_server_name.is_some()
+          && match self.globals.proxy_config.sni_consistency {
+            SniConsistency::Full => false,
+            SniConsistency::Ignore => unreachable!(),
+            SniConsistency::SameCertificate => self
+              .app_manager
+              .apps
+              .get(&tls_server_name.unwrap())
+              .into_iter()
+              .filter_map(|tls_backend_app| tls_backend_app.cert.as_ref())
+              .filter_map(|tls_cert| (*backend_app).map(|backend_app| Some(tls_cert) == backend_app.cert.as_ref()))
+              .next()
+              .unwrap_or_default(),
+          };
+        if !is_consistent {
+          return Err(HttpError::SniHostInconsistency);
+        }
       }
     }
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
-    let backend_app = match self.app_manager.apps.get(&server_name) {
+    let backend_app = match *backend_app {
       Some(backend_app) => backend_app,
       None => {
         let Some(default_server_name) = &self.app_manager.default_server_name else {
