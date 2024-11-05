@@ -14,9 +14,9 @@ publish.workspace = true
 post-quantum = ["rustls-post-quantum"]
 
 [dependencies]
-url = { version = "2.5.2" }
+url = { version = "2.5.3" }
 rustc-hash = "2.0.0"
-thiserror = "1.0.66"
+thiserror = "1.0.68"
 tracing = "0.1.40"
 async-trait = "0.1.83"
 base64 = "0.22.1"
