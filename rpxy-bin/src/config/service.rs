@@ -8,17 +8,16 @@ pub struct ConfigTomlReloader {
 }
 
 #[async_trait]
-impl Reload<ConfigToml> for ConfigTomlReloader {
+impl Reload<ConfigToml, String> for ConfigTomlReloader {
   type Source = String;
-  async fn new(source: &Self::Source) -> Result<Self, ReloaderError<ConfigToml>> {
+  async fn new(source: &Self::Source) -> Result<Self, ReloaderError<ConfigToml, String>> {
     Ok(Self {
       config_path: source.clone(),
     })
   }
 
-  async fn reload(&self) -> Result<Option<ConfigToml>, ReloaderError<ConfigToml>> {
-    let conf = ConfigToml::new(&self.config_path)
-      .map_err(|_e| ReloaderError::<ConfigToml>::Reload("Failed to reload config toml"))?;
+  async fn reload(&self) -> Result<Option<ConfigToml>, ReloaderError<ConfigToml, String>> {
+    let conf = ConfigToml::new(&self.config_path).map_err(|e| ReloaderError::<ConfigToml, String>::Reload(e.to_string()))?;
     Ok(Some(conf))
   }
 }
