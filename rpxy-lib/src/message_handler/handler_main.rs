@@ -15,7 +15,7 @@ use crate::{
   name_exp::ServerName,
 };
 use derive_builder::Builder;
-use http::{Request, Response, StatusCode};
+use http::{Method, Request, Response, StatusCode};
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
@@ -90,6 +90,11 @@ where
     tls_enabled: bool,
     tls_server_name: Option<ServerName>,
   ) -> HttpResult<Response<ResponseBody>> {
+    // Block CONNECT requests because a) makes no sense to run a forward proxy behind a reverse proxy = fringe use case b) might have serious security implications for badly configured upstreams c) it doesn't work with current implementation (bodies are not forwarded)
+    if matches!(*req.method(), Method::CONNECT) {
+      return Err(HttpError::UnsupportedMethod);
+    }
+
     // Here we start to inspect and parse with server_name
     let server_name = req
       .inspect_parse_host()
