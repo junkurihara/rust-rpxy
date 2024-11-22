@@ -60,7 +60,7 @@ thiserror = "2.0.3"
 # http for both server and client
 http = "1.1.0"
 http-body-util = "0.1.2"
-hyper = { version = "1.5.0", default-features = false }
+hyper = { version = "1.5.1", default-features = false }
 hyper-util = { version = "0.1.10", features = ["full"] }
 futures-util = { version = "0.3.31", default-features = false }
 futures-channel = { version = "0.3.31", default-features = false }
@@ -94,11 +94,11 @@ tracing = { version = "0.1.40" }
 quinn = { version = "0.11.6", optional = true }
 h3 = { version = "0.0.6", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.7", optional = true }
-s2n-quic = { version = "1.50.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+s2n-quic = { version = "1.51.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.50.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.50.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.51.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.51.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
