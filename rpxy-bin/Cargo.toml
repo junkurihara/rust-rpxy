@@ -53,7 +53,7 @@ hot_reload = "0.1.8"
 serde_ignored = "0.1.10"
 
 # logging
-tracing = { version = "0.1.40" }
+tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 ################################
