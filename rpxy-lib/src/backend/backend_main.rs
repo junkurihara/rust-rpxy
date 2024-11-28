@@ -27,6 +27,8 @@ pub struct BackendApp {
   /// tls settings: mutual TLS is enabled
   #[builder(default)]
   pub mutual_tls: Option<bool>,
+  #[builder(default)]
+  pub cert: Option<String>,
 }
 impl<'a> BackendAppBuilder {
   pub fn server_name(&mut self, server_name: impl Into<Cow<'a, str>>) -> &mut Self {
@@ -61,6 +63,7 @@ impl TryFrom<&AppConfig> for BackendApp {
       let tls = app_config.tls.as_ref().unwrap();
       backend_builder
         .https_redirection(Some(tls.https_redirection))
+        .cert(tls.cert.clone())
         .mutual_tls(Some(tls.mutual_tls))
         .build()?
     };

@@ -27,7 +27,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 /* ------------------------------------------------ */
-pub use crate::globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
+pub use crate::globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, SniConsistency, TlsConfig, UpstreamUri};
 pub mod reexports {
   pub use hyper::Uri;
 }
@@ -91,8 +91,11 @@ pub async fn entrypoint(
   if proxy_config.http3 {
     info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
   }
-  if !proxy_config.sni_consistency {
-    info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
+  if proxy_config.sni_consistency != SniConsistency::Full {
+    info!(
+      "{} consistency between TLS SNI and Host header (or Request line). Note it violates RFC.",
+      proxy_config.sni_consistency
+    );
   }
   #[cfg(feature = "cache")]
   if proxy_config.cache_enabled {
