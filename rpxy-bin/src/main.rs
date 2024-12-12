@@ -40,10 +40,13 @@ fn main() {
         std::process::exit(1);
       }
     } else {
-      let (config_service, config_rx) =
-        ReloaderService::<ConfigTomlReloader, ConfigToml>::new(&parsed_opts.config_file_path, CONFIG_WATCH_DELAY_SECS, false)
-          .await
-          .unwrap();
+      let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::new(
+        &parsed_opts.config_file_path,
+        CONFIG_WATCH_DELAY_SECS,
+        false,
+      )
+      .await
+      .unwrap();
 
       tokio::select! {
         config_res = config_service.start() => {
@@ -246,7 +249,7 @@ async fn rpxy_service_without_watcher(
 }
 
 async fn rpxy_service_with_watcher(
-  mut config_rx: ReloaderReceiver<ConfigToml>,
+  mut config_rx: ReloaderReceiver<ConfigToml, String>,
   runtime_handle: tokio::runtime::Handle,
 ) -> Result<(), anyhow::Error> {
   info!("Start rpxy service with dynamic config reloader");

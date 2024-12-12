@@ -13,10 +13,8 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-# default = ["http3-quinn", "cache", "rustls-backend", "acme", "post-quantum"]
+default = ["http3-quinn", "cache", "rustls-backend", "acme", "post-quantum"]
 # default = ["http3-s2n", "cache", "rustls-backend", "acme", "post-quantum"]
-default = ["http3-quinn", "cache", "rustls-backend", "acme"]
-# default = ["http3-s2n", "cache", "rustls-backend", "acme"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
@@ -32,29 +30,29 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 ] }
 
 mimalloc = { version = "*", default-features = false }
-anyhow = "1.0.91"
-rustc-hash = "2.0.0"
-serde = { version = "1.0.214", default-features = false, features = ["derive"] }
-tokio = { version = "1.41.0", default-features = false, features = [
+anyhow = "1.0.94"
+rustc-hash = "2.1.0"
+serde = { version = "1.0.216", default-features = false, features = ["derive"] }
+tokio = { version = "1.42.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
 ] }
-tokio-util = { version = "0.7.12", default-features = false }
+tokio-util = { version = "0.7.13", default-features = false }
 async-trait = "0.1.83"
 futures-util = { version = "0.3.31", default-features = false }
 
 # config
-clap = { version = "4.5.20", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.5.23", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8.19", default-features = false, features = ["parse"] }
-hot_reload = "0.1.6"
+hot_reload = "0.1.8"
 serde_ignored = "0.1.10"
 
 # logging
-tracing = { version = "0.1.40" }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing = { version = "0.1.41" }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 ################################
 # cert management

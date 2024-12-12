@@ -1,6 +1,13 @@
 # CHANGELOG
 
-## 0.10.0 (Unreleased)
+## 0.9.5 or 0.10.0 (Unreleased)
+
+## 0.9.4
+
+### Improvement
+
+- Feat: Enable the hybrid post-quantum key exchange for TLS and QUIC with `X25519MLKEM768` by default.
+- Deps and refactor
 
 ## 0.9.3
 

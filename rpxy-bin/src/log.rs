@@ -21,7 +21,7 @@ pub fn init_logger() {
           .target()
           .starts_with(env!("CARGO_PKG_NAME").replace('-', "_").as_str())
           && metadata.level() <= &level)
-          || metadata.level() <= &tracing::Level::ERROR.min(level)
+          || metadata.level() <= &tracing::Level::WARN.min(level)
       }));
     tracing_subscriber::registry().with(stdio_layer).init();
   } else {

@@ -14,25 +14,25 @@ publish.workspace = true
 post-quantum = ["rustls-post-quantum"]
 
 [dependencies]
-url = { version = "2.5.2" }
-rustc-hash = "2.0.0"
-thiserror = "1.0.66"
-tracing = "0.1.40"
+url = { version = "2.5.4" }
+rustc-hash = "2.1.0"
+thiserror = "2.0.6"
+tracing = "0.1.41"
 async-trait = "0.1.83"
 base64 = "0.22.1"
-aws-lc-rs = { version = "1.10.0", default-features = false, features = [
+aws-lc-rs = { version = "1.11.1", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.1"
-rustls = { version = "0.23.16", default-features = false, features = [
+rustls = { version = "0.23.20", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
-rustls-platform-verifier = { version = "0.3.4" }
+rustls-platform-verifier = { version = "0.4.0" }
 rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, features = [
   "aws-lc-rs",
 ] }
-rustls-post-quantum = { version = "0.1.0", optional = true }
-tokio = { version = "1.41.0", default-features = false }
-tokio-util = { version = "0.7.12", default-features = false }
-tokio-stream = { version = "0.1.16", default-features = false }
+rustls-post-quantum = { version = "0.2.1", optional = true }
+tokio = { version = "1.42.0", default-features = false }
+tokio-util = { version = "0.7.13", default-features = false }
+tokio-stream = { version = "0.1.17", default-features = false }
