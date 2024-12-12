@@ -1,6 +1,12 @@
 # CHANGELOG
 
-## 0.9.5 or 0.10.0 (Unreleased)
+## 0.9.6 or 0.10.0 (Unreleased)
+
+## 0.9.5
+
+### Bugfix
+
+- Fix docker image build options with `post-quantum` feature.
 
 ## 0.9.4
 
