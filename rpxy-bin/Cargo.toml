@@ -14,9 +14,7 @@ publish.workspace = true
 
 [features]
 # default = ["http3-quinn", "cache", "rustls-backend", "acme", "post-quantum"] # make this default in future
-# default = ["http3-s2n", "cache", "rustls-backend", "acme", "post-quantum"]
-default = ["http3-quinn", "cache", "rustls-backend", "acme"]
-# default = ["http3-s2n", "cache", "rustls-backend", "acme"]
+default = ["http3-s2n", "cache", "rustls-backend", "acme", "post-quantum"]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
@@ -34,7 +32,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.94"
 rustc-hash = "2.1.0"
-serde = { version = "1.0.215", default-features = false, features = ["derive"] }
+serde = { version = "1.0.216", default-features = false, features = ["derive"] }
 tokio = { version = "1.42.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
