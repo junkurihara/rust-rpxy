@@ -16,11 +16,11 @@ post-quantum = ["rustls-post-quantum"]
 [dependencies]
 url = { version = "2.5.4" }
 rustc-hash = "2.1.0"
-thiserror = "2.0.6"
+thiserror = "2.0.9"
 tracing = "0.1.41"
 async-trait = "0.1.83"
 base64 = "0.22.1"
-aws-lc-rs = { version = "1.11.1", default-features = false, features = [
+aws-lc-rs = { version = "1.12.0", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.1"
@@ -28,7 +28,7 @@ rustls = { version = "0.23.20", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
-rustls-platform-verifier = { version = "0.4.0" }
+rustls-platform-verifier = { version = "0.5.0" }
 rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, features = [
   "aws-lc-rs",
 ] }
