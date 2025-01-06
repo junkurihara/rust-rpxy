@@ -1,6 +1,13 @@
 # CHANGELOG
 
-## 0.9.6 or 0.10.0 (Unreleased)
+## 0.9.7 or 0.10.0 (Unreleased)
+
+## 0.9.6
+
+### Improvement
+
+- Feat: Change the default hashing algorithm for internal hashmaps and hashsets from FxHash to aHash. This change is to improve the security against HashDos attacks for colliding domain names and paths, and to improve the speed of hash operations for string keys (c.f., [the performance comparison](https://github.com/tkaitchuck/aHash/blob/master/compare/readme.md)).
+- Deps and refactor
 
 ## 0.9.5
 
