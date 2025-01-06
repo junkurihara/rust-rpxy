@@ -1,7 +1,7 @@
 use crate::{constants::*, count::RequestCount};
 use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
-use std::{net::SocketAddr, time::Duration};
+use std::{fmt::Display, net::SocketAddr, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 /// Global object containing proxy configurations and shared object like counters.
@@ -50,7 +50,7 @@ pub struct ProxyConfig {
 
   // experimentals
   /// SNI consistency check
-  pub sni_consistency: bool, // Handler
+  pub sni_consistency: SniConsistency, // Handler
   /// Connection handling timeout
   /// timeout to handle a connection, total time of receive request, serve, and send response. this might limits the max length of response.
   pub connection_handling_timeout: Option<Duration>,
@@ -100,7 +100,7 @@ impl Default for ProxyConfig {
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,
       keepalive: true,
 
-      sni_consistency: true,
+      sni_consistency: SniConsistency::Full,
       connection_handling_timeout: None,
 
       #[cfg(feature = "cache")]
@@ -169,6 +169,24 @@ pub struct UpstreamUri {
 pub struct TlsConfig {
   pub mutual_tls: bool,
   pub https_redirection: bool,
+  pub cert: Option<String>,
   #[cfg(feature = "acme")]
   pub acme: bool,
+}
+
+#[derive(PartialEq, Eq, Clone)]
+pub enum SniConsistency {
+  Full,
+  SameCertificate,
+  Ignore,
+}
+
+impl Display for SniConsistency {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match self {
+      SniConsistency::Full => "Full",
+      SniConsistency::SameCertificate => "Same-certificate",
+      SniConsistency::Ignore => "Ignore",
+    })
+  }
 }

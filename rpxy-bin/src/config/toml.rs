@@ -3,7 +3,7 @@ use crate::{
   error::{anyhow, ensure},
   log::warn,
 };
-use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
+use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, SniConsistency, TlsConfig, UpstreamUri};
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
 use std::{fs, net::SocketAddr};
@@ -63,6 +63,7 @@ pub struct Experimental {
   pub acme: Option<AcmeOption>,
 
   pub ignore_sni_consistency: Option<bool>,
+  pub samecert_sni_consistency: Option<bool>,
   pub connection_handling_timeout: Option<u64>,
 }
 
@@ -191,9 +192,14 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         }
       }
 
-      if let Some(ignore) = exp.ignore_sni_consistency {
-        proxy_config.sni_consistency = !ignore;
-      }
+      proxy_config.sni_consistency = match (
+        exp.ignore_sni_consistency.unwrap_or_default(),
+        exp.samecert_sni_consistency.unwrap_or_default(),
+      ) {
+        (false, false) => SniConsistency::Full,
+        (false, true) => SniConsistency::SameCertificate,
+        (true, _) => SniConsistency::Ignore,
+      };
 
       if let Some(timeout) = exp.connection_handling_timeout {
         if timeout == 0u64 {
@@ -280,6 +286,7 @@ impl Application {
       Some(TlsConfig {
         mutual_tls: tls.client_ca_cert_path.is_some(),
         https_redirection,
+        cert: tls.tls_cert_path.clone(),
         #[cfg(feature = "acme")]
         acme: tls.acme.unwrap_or(false),
       })
