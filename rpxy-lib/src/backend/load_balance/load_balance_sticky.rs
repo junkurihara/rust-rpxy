@@ -4,8 +4,8 @@ use super::{
   Upstream,
 };
 use crate::{constants::STICKY_COOKIE_NAME, log::*};
+use ahash::HashMap;
 use derive_builder::Builder;
-use rustc_hash::FxHashMap as HashMap;
 use std::{
   borrow::Cow,
   sync::{

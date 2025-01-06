@@ -37,7 +37,7 @@ post-quantum = [
 
 [dependencies]
 rand = "0.8.5"
-rustc-hash = "2.1.0"
+ahash = "0.8.11"
 bytes = "1.9.0"
 derive_builder = "0.20.2"
 futures = { version = "0.3.31", features = ["alloc", "async-await"] }

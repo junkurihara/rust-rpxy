@@ -16,7 +16,7 @@ post-quantum = ["rustls-post-quantum"]
 http3 = []
 
 [dependencies]
-rustc-hash = { version = "2.1.0" }
+ahash = { version = "0.8.11" }
 tracing = { version = "0.1.41" }
 derive_builder = { version = "0.20.2" }
 thiserror = { version = "2.0.9" }

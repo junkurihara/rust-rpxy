@@ -3,8 +3,8 @@ use crate::{
   error::{anyhow, ensure},
   log::warn,
 };
+use ahash::HashMap;
 use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
-use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
 use std::{fs, net::SocketAddr};
 use tokio::time::Duration;
@@ -232,7 +232,7 @@ impl ConfigToml {
 
     // Check unused fields during deserialization
     let t = toml::de::Deserializer::new(&config_str);
-    let mut unused = rustc_hash::FxHashSet::default();
+    let mut unused = ahash::HashSet::default();
 
     let res = serde_ignored::deserialize(t, |path| {
       unused.insert(path.to_string());

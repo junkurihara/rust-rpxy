@@ -10,8 +10,8 @@ mod log {
 }
 
 use crate::{error::*, log::*, reloader_service::DynCryptoSource};
+use ahash::HashMap;
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use rustc_hash::FxHashMap as HashMap;
 use rustls::crypto::CryptoProvider;
 use std::sync::Arc;
 

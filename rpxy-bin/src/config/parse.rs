@@ -1,10 +1,10 @@
 use super::toml::ConfigToml;
 use crate::error::{anyhow, ensure};
+use ahash::HashMap;
 use clap::{Arg, ArgAction};
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use rpxy_certs::{build_cert_reloader, CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase};
 use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
-use rustc_hash::FxHashMap as HashMap;
 
 #[cfg(feature = "acme")]
 use rpxy_acme::{AcmeManager, ACME_DIR_URL, ACME_REGISTRY_PATH};

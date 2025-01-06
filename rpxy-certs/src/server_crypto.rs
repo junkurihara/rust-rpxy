@@ -1,5 +1,5 @@
 use crate::{certs::SingleServerCertsKeys, error::*, log::*};
-use rustc_hash::FxHashMap as HashMap;
+use ahash::HashMap;
 use rustls::{
   crypto::CryptoProvider,
   server::{ResolvesServerCertUsingSni, WebPkiClientVerifier},

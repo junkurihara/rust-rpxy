@@ -48,7 +48,7 @@ pub struct RpxyOptions {
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains
-  pub server_configs_acme_challenge: Arc<rustc_hash::FxHashMap<String, Arc<rustls::ServerConfig>>>,
+  pub server_configs_acme_challenge: Arc<ahash::HashMap<String, Arc<rustls::ServerConfig>>>,
 }
 
 /// Entrypoint that creates and spawns tasks of reverse proxy services
