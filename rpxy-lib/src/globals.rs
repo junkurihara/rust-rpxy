@@ -20,7 +20,7 @@ pub struct Globals {
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains
-  pub server_configs_acme_challenge: std::sync::Arc<rustc_hash::FxHashMap<String, std::sync::Arc<rustls::ServerConfig>>>,
+  pub server_configs_acme_challenge: std::sync::Arc<ahash::HashMap<String, std::sync::Arc<rustls::ServerConfig>>>,
 }
 
 /// Configuration parameters for proxy transport and request handlers

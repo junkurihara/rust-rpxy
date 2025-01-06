@@ -37,7 +37,7 @@ post-quantum = [
 
 [dependencies]
 rand = "0.8.5"
-rustc-hash = "2.1.0"
+ahash = "0.8.11"
 bytes = "1.9.0"
 derive_builder = "0.20.2"
 futures = { version = "0.3.31", features = ["alloc", "async-await"] }
@@ -51,16 +51,16 @@ tokio = { version = "1.42.0", default-features = false, features = [
 ] }
 tokio-util = { version = "0.7.13", default-features = false }
 pin-project-lite = "0.2.15"
-async-trait = "0.1.83"
+async-trait = "0.1.84"
 
 # Error handling
-anyhow = "1.0.94"
-thiserror = "2.0.6"
+anyhow = "1.0.95"
+thiserror = "2.0.9"
 
 # http for both server and client
 http = "1.2.0"
 http-body-util = "0.1.2"
-hyper = { version = "1.5.1", default-features = false }
+hyper = { version = "1.5.2", default-features = false }
 hyper-util = { version = "0.1.10", features = ["full"] }
 futures-util = { version = "0.3.31", default-features = false }
 futures-channel = { version = "0.3.31", default-features = false }
@@ -70,7 +70,7 @@ hyper-tls = { version = "0.6.0", features = [
   "alpn",
   "vendored",
 ], optional = true }
-hyper-rustls = { version = "0.27.3", default-features = false, features = [
+hyper-rustls = { version = "0.27.5", default-features = false, features = [
   "aws-lc-rs",
   "http1",
   "http2",

@@ -294,7 +294,7 @@ where
           let map = server_config.individual_config_map.clone().iter().map(|(k,v)| {
             let server_name = ServerName::from(k.as_slice());
             (server_name, v.clone())
-          }).collect::<rustc_hash::FxHashMap<_,_>>();
+          }).collect::<std::collections::HashMap<_,_,ahash::RandomState>>();
           server_crypto_map = Some(Arc::new(map));
         }
       }

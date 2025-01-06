@@ -11,10 +11,10 @@ use crate::{
   log::*,
   name_exp::{ByteName, PathName},
 };
+use ahash::{HashMap, HashSet};
 #[cfg(feature = "sticky-cookie")]
 use base64::{engine::general_purpose, Engine as _};
 use derive_builder::Builder;
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 #[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
