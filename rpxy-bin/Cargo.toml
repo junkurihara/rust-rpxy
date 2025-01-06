@@ -31,7 +31,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
 
 mimalloc = { version = "*", default-features = false }
 anyhow = "1.0.95"
-rustc-hash = "2.1.0"
+ahash = "0.8.11"
 serde = { version = "1.0.217", default-features = false, features = ["derive"] }
 tokio = { version = "1.42.0", default-features = false, features = [
   "net",

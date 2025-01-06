@@ -4,7 +4,7 @@ use crate::{
   error::RpxyAcmeError,
   log::*,
 };
-use rustc_hash::FxHashMap as HashMap;
+use ahash::HashMap;
 use rustls::ServerConfig;
 use rustls_acme::AcmeConfig;
 use std::{path::PathBuf, sync::Arc};

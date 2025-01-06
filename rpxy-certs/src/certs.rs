@@ -1,5 +1,5 @@
 use crate::error::*;
-use rustc_hash::FxHashMap as HashMap;
+use ahash::HashMap;
 use rustls::{crypto::aws_lc_rs::sign::any_supported_type, pki_types, sign::CertifiedKey};
 use std::sync::Arc;
 use x509_parser::prelude::*;

@@ -4,8 +4,8 @@ use crate::{
   name_exp::{ByteName, ServerName},
   AppConfig, AppConfigList,
 };
+use ahash::HashMap;
 use derive_builder::Builder;
-use rustc_hash::FxHashMap as HashMap;
 use std::borrow::Cow;
 
 use super::upstream::PathManager;
