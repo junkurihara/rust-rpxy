@@ -19,6 +19,16 @@ updates:
     schedule:
       interval: "daily"
 
+  - package-ecosystem: "cargo"
+    directory: "/rpxy-certs"
+    schedule:
+      interval: "daily"
+
+  - package-ecosystem: "cargo"
+    directory: "/rpxy-acme"
+    schedule:
+      interval: "daily"
+
   # Enable version updates for Docker
   - package-ecosystem: "docker"
     directory: "/docker"
