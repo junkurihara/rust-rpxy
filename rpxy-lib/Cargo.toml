@@ -41,7 +41,7 @@ ahash = "0.8.11"
 bytes = "1.9.0"
 derive_builder = "0.20.2"
 futures = { version = "0.3.31", features = ["alloc", "async-await"] }
-tokio = { version = "1.42.0", default-features = false, features = [
+tokio = { version = "1.43.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -50,12 +50,12 @@ tokio = { version = "1.42.0", default-features = false, features = [
   "fs",
 ] }
 tokio-util = { version = "0.7.13", default-features = false }
-pin-project-lite = "0.2.15"
-async-trait = "0.1.84"
+pin-project-lite = "0.2.16"
+async-trait = "0.1.85"
 
 # Error handling
 anyhow = "1.0.95"
-thiserror = "2.0.9"
+thiserror = "2.0.10"
 
 # http for both server and client
 http = "1.2.0"
