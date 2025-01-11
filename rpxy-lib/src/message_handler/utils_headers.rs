@@ -272,7 +272,7 @@ pub(super) fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
       .to_str()
       .unwrap_or("")
       .split(',')
-      .any(|w| w.trim().to_ascii_lowercase() == header::UPGRADE.as_str().to_ascii_lowercase())
+      .any(|w| w.trim().eq_ignore_ascii_case(header::UPGRADE.as_str()))
     {
       if let Some(u) = headers.get(header::UPGRADE) {
         if let Ok(m) = u.to_str() {
