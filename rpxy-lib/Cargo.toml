@@ -60,7 +60,7 @@ thiserror = "2.0.11"
 # http for both server and client
 http = "1.2.0"
 http-body-util = "0.1.2"
-hyper = { version = "1.5.2", default-features = false }
+hyper = { version = "1.6.0", default-features = false }
 hyper-util = { version = "0.1.10", features = ["full"] }
 futures-util = { version = "0.3.31", default-features = false }
 futures-channel = { version = "0.3.31", default-features = false }
@@ -108,7 +108,7 @@ socket2 = { version = "0.5.8", features = ["all"], optional = true }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
-lru = { version = "0.12.5", optional = true }
+lru = { version = "0.13.0", optional = true }
 sha2 = { version = "0.10.8", default-features = false, optional = true }
 
 # cookie handling for sticky cookie
