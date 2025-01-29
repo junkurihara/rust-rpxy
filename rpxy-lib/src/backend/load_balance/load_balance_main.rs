@@ -80,8 +80,8 @@ impl LoadBalanceRandomBuilder {
 impl LoadBalanceWithPointer for LoadBalanceRandom {
   /// Returns the random index within the range
   fn get_ptr(&self, _info: Option<&LoadBalanceContext>) -> PointerToUpstream {
-    let mut rng = rand::thread_rng();
-    let ptr = rng.gen_range(0..self.num_upstreams);
+    let mut rng = rand::rng();
+    let ptr = rng.random_range(0..self.num_upstreams);
     PointerToUpstream { ptr, context: None }
   }
 }
