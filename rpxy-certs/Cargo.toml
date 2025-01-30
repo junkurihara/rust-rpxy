@@ -32,7 +32,7 @@ rustls-webpki = { version = "0.102.8", default-features = false, features = [
   "aws_lc_rs",
 ] }
 rustls-post-quantum = { version = "0.2.1", optional = true }
-x509-parser = { version = "0.16.0" }
+x509-parser = { version = "0.17.0" }
 
 [dev-dependencies]
 tokio = { version = "1.43.0", default-features = false, features = [
