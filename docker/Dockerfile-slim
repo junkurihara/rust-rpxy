@@ -25,6 +25,7 @@ COPY . /tmp/
 ENV RUSTFLAGS "-C link-arg=-s"
 
 RUN echo "Building rpxy from source" && \
+  cargo update && \
   cargo build --release --target $(cat /arch)-unknown-linux-musl ${CARGO_FEATURES} && \
   musl-strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy && \
   cp /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy /tmp/target/release/rpxy
