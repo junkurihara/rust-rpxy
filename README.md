@@ -440,15 +440,10 @@ todo!
 `rpxy` cannot be built without the following projects and inspirations:
 
 - [`hyper`](https://github.com/hyperium/hyper) and [`hyperium/h3`](https://github.com/hyperium/h3)
-
 - [`rustls`](https://github.com/rustls/rustls)
-
 - [`tokio`](https://github.com/tokio-rs/tokio)
-
 - [`quinn`](https://github.com/quinn-rs/quinn)
-
 - [`s2n-quic`](https://github.com/aws/s2n-quic)
-
 - [`rustls-acme`](https://github.com/FlorianUekermann/rustls-acme)
 
 
