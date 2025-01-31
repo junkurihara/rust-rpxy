@@ -170,6 +170,14 @@ jobs:
           platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: check pull_request title
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
+        uses: kaisugi/action-regex-match@v1.0.1
+        id: regex-match
+        with:
+          text: ${{ github.event.pull_request.title }}
+          regex: "^(\\d+\\.\\d+\\.\\d+)$"
+
       - name: Release build and push from main branch
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
         uses: docker/build-push-action@v6
@@ -181,6 +189,8 @@ jobs:
             ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ env.DH_REGISTRY_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ matrix.aliases }}
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:${{ github.event.pull_request.title }}${{ matrix.tags-suffix }}
+            ${{ env.DH_REGISTRY_NAME }}:${{ github.event.pull_request.title }}${{ matrix.tags-suffix }}
           build-contexts: ${{ matrix.build-contexts }}
           file: ${{ matrix.dockerfile }}
           cache-from: type=gha,scope=rpxy-latest-${{ matrix.target }}
