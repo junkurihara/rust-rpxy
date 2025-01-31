@@ -1,6 +1,22 @@
 # CHANGELOG
 
-## 0.9.7 or 0.10.0 (Unreleased)
+## 0.9.8 or 0.10.0 (Unreleased)
+
+## 0.9.7
+
+### Improvement
+
+- Feat: add version tag for docker images via github actions
+- Feat: support gRPC: This makes rpxy to serve gRPC requests on the same port as HTTP and HTTPS, i.e., listen_port and listen_port_tls. This means that by using the different subdomain for HTTP(S) and gRPC, we can multiplex them on same ports without opening another port dedicated to gRPC. To this end, this update made the forwarder to force HTTP/2 for gRPC requests towards backend (gRPC) app.
+- Deps and refactor
+
+### Bugfix
+
+- Fixed bug for the upstream option "force_http2_upstream"
+
+### Other
+
+- Tentative downgrade of github actions `runs-on` from ubuntu-latest to ubuntu-22.04.
 
 ## 0.9.6
 

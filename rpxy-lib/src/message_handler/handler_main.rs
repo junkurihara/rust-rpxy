@@ -200,7 +200,7 @@ where
     // Handle StatusCode::SWITCHING_PROTOCOLS in response
     let upgrade_in_response = extract_upgrade(res_backend.headers());
     let should_upgrade = match (upgrade_in_request.as_ref(), upgrade_in_response.as_ref()) {
-      (Some(u_req), Some(u_res)) => u_req.to_ascii_lowercase() == u_res.to_ascii_lowercase(),
+      (Some(u_req), Some(u_res)) => u_req.eq_ignore_ascii_case(u_res),
       _ => false,
     };
 
