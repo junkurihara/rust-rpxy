@@ -226,7 +226,9 @@ where
     let connector = builder.https_or_http().enable_all_versions().wrap_connector(http.clone());
     let connector_h2 = builder_h2.https_or_http().enable_http2().wrap_connector(http);
     let inner = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone())).build::<_, B1>(connector);
-    let inner_h2 = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone())).build::<_, B1>(connector_h2);
+    let inner_h2 = Client::builder(LocalExecutor::new(_globals.runtime_handle.clone()))
+      .http2_only(true)
+      .build::<_, B1>(connector_h2);
 
     Ok(Self {
       inner,
