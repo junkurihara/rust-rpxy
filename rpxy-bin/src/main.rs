@@ -99,7 +99,7 @@ impl RpxyService {
     })
   }
 
-  async fn start(&self, cancel_token: Option<CancellationToken>) -> Result<(), anyhow::Error> {
+  async fn start(&self, cancel_token: CancellationToken) -> Result<(), anyhow::Error> {
     let RpxyService {
       runtime_handle,
       proxy_conf,
@@ -114,17 +114,19 @@ impl RpxyService {
     {
       let (acme_join_handles, server_config_acme_challenge) = acme_manager
         .as_ref()
-        .map(|m| m.spawn_manager_tasks(cancel_token.as_ref().map(|t| t.child_token())))
+        .map(|m| m.spawn_manager_tasks(cancel_token.child_token()))
         .unwrap_or((vec![], Default::default()));
       let rpxy_opts = RpxyOptionsBuilder::default()
         .proxy_config(proxy_conf.clone())
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.clone())
         .runtime_handle(runtime_handle.clone())
-        .cancel_token(cancel_token.as_ref().map(|t| t.child_token()))
         .server_configs_acme_challenge(Arc::new(server_config_acme_challenge))
         .build()?;
-      self.start_inner(rpxy_opts, acme_join_handles).await.map_err(|e| anyhow!(e))
+      self
+        .start_inner(rpxy_opts, cancel_token, acme_join_handles)
+        .await
+        .map_err(|e| anyhow!(e))
     }
 
     #[cfg(not(feature = "acme"))]
@@ -134,9 +136,8 @@ impl RpxyService {
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.clone())
         .runtime_handle(runtime_handle.clone())
-        .cancel_token(cancel_token.as_ref().map(|t| t.child_token()))
         .build()?;
-      self.start_inner(rpxy_opts).await.map_err(|e| anyhow!(e))
+      self.start_inner(rpxy_opts, cancel_token).await.map_err(|e| anyhow!(e))
     }
   }
 
@@ -144,19 +145,19 @@ impl RpxyService {
   async fn start_inner(
     &self,
     rpxy_opts: RpxyOptions,
+    cancel_token: CancellationToken,
     #[cfg(feature = "acme")] acme_task_handles: Vec<tokio::task::JoinHandle<()>>,
   ) -> Result<(), anyhow::Error> {
-    let cancel_token = rpxy_opts.cancel_token.clone();
+    let cancel_token = cancel_token.clone();
     let runtime_handle = rpxy_opts.runtime_handle.clone();
 
     // spawn rpxy entrypoint, where cancellation token is possibly contained inside the service
     let cancel_token_clone = cancel_token.clone();
+    let child_cancel_token = cancel_token.child_token();
     let rpxy_handle = runtime_handle.spawn(async move {
-      if let Err(e) = entrypoint(&rpxy_opts).await {
+      if let Err(e) = entrypoint(&rpxy_opts, child_cancel_token).await {
         error!("rpxy entrypoint exited on error: {e}");
-        if let Some(cancel_token) = cancel_token_clone {
-          cancel_token.cancel();
-        }
+        cancel_token_clone.cancel();
         return Err(anyhow!(e));
       }
       Ok(())
@@ -169,24 +170,20 @@ impl RpxyService {
     // spawn certificate reloader service, where cert service does not have cancellation token inside the service
     let cert_service = self.cert_service.as_ref().unwrap().clone();
     let cancel_token_clone = cancel_token.clone();
-    let child_cancel_token = cancel_token.as_ref().map(|c| c.child_token());
+    let child_cancel_token = cancel_token.child_token();
     let cert_handle = runtime_handle.spawn(async move {
-      if let Some(child_cancel_token) = child_cancel_token {
-        tokio::select! {
-          cert_res = cert_service.start() => {
-            if let Err(ref e) = cert_res {
-              error!("cert reloader service exited on error: {e}");
-            }
-            cancel_token_clone.unwrap().cancel();
-            cert_res.map_err(|e| anyhow!(e))
+      tokio::select! {
+        cert_res = cert_service.start() => {
+          if let Err(ref e) = cert_res {
+            error!("cert reloader service exited on error: {e}");
           }
-          _ = child_cancel_token.cancelled() => {
-            debug!("cert reloader service terminated");
-            Ok(())
-          }
+          cancel_token_clone.cancel();
+          cert_res.map_err(|e| anyhow!(e))
         }
-      } else {
-        cert_service.start().await.map_err(|e| anyhow!(e))
+        _ = child_cancel_token.cancelled() => {
+          debug!("cert reloader service terminated");
+          Ok(())
+        }
       }
     });
 
@@ -221,9 +218,7 @@ impl RpxyService {
         if let Err(ref e) = acme_res {
           error!("acme manager exited on error: {e}");
         }
-        if let Some(cancel_token) = cancel_token_clone {
-          cancel_token.cancel();
-        }
+        cancel_token_clone.cancel();
         acme_res.map_err(|e| anyhow!(e))
       });
       let (rpxy_res, cert_res, acme_res) = tokio::join!(rpxy_handle, cert_handle, acme_handle);
@@ -245,7 +240,8 @@ async fn rpxy_service_without_watcher(
   info!("Start rpxy service");
   let config_toml = ConfigToml::new(config_file_path).map_err(|e| anyhow!("Invalid toml file: {e}"))?;
   let service = RpxyService::new(&config_toml, runtime_handle).await?;
-  service.start(None).await
+  // Create cancel token that is never be called as dummy
+  service.start(tokio_util::sync::CancellationToken::new()).await
 }
 
 async fn rpxy_service_with_watcher(
@@ -268,7 +264,7 @@ async fn rpxy_service_with_watcher(
 
     tokio::select! {
       /* ---------- */
-      rpxy_res = service.start(Some(cancel_token.clone())) => {
+      rpxy_res = service.start(cancel_token.clone()) => {
         if let Err(ref e) = rpxy_res {
           error!("rpxy service exited on error: {e}");
         } else {
