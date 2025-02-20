@@ -54,7 +54,7 @@ pin-project-lite = "0.2.16"
 async-trait = "0.1.86"
 
 # Error handling
-anyhow = "1.0.95"
+anyhow = "1.0.96"
 thiserror = "2.0.11"
 
 # http for both server and client
