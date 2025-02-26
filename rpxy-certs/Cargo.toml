@@ -27,9 +27,9 @@ rustls = { version = "0.23.23", default-features = false, features = [
   "aws_lc_rs",
 ] }
 rustls-pemfile = { version = "2.2.0" }
-rustls-webpki = { version = "0.102.8", default-features = false, features = [
+rustls-webpki = { version = "0.103.0", default-features = false, features = [
   "std",
-  "aws_lc_rs",
+  "aws-lc-rs",
 ] }
 rustls-post-quantum = { version = "0.2.2", optional = true }
 x509-parser = { version = "0.17.0" }
