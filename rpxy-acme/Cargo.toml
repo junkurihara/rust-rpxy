@@ -16,11 +16,11 @@ post-quantum = ["rustls-post-quantum"]
 [dependencies]
 url = { version = "2.5.4" }
 ahash = "0.8.11"
-thiserror = "2.0.11"
+thiserror = "2.0.12"
 tracing = "0.1.41"
-async-trait = "0.1.86"
+async-trait = "0.1.87"
 base64 = "0.22.1"
-aws-lc-rs = { version = "1.12.4", default-features = false, features = [
+aws-lc-rs = { version = "1.12.5", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.1"

@@ -51,11 +51,11 @@ tokio = { version = "1.43.0", default-features = false, features = [
 ] }
 tokio-util = { version = "0.7.13", default-features = false }
 pin-project-lite = "0.2.16"
-async-trait = "0.1.86"
+async-trait = "0.1.87"
 
 # Error handling
-anyhow = "1.0.96"
-thiserror = "2.0.11"
+anyhow = "1.0.97"
+thiserror = "2.0.12"
 
 # http for both server and client
 http = "1.2.0"
@@ -82,7 +82,7 @@ rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.8"
 rustls = { version = "0.23.23", default-features = false }
 rustls-post-quantum = { version = "0.2.2", optional = true }
-tokio-rustls = { version = "0.26.1", features = ["early-data"] }
+tokio-rustls = { version = "0.26.2", features = ["early-data"] }
 
 # acme
 rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true }
