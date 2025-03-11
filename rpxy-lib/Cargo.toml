@@ -94,11 +94,11 @@ tracing = { version = "0.1.41" }
 quinn = { version = "0.11.6", optional = true }
 h3 = { version = "0.0.6", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.7", optional = true }
-s2n-quic = { version = "1.54.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+s2n-quic = { version = "1.55.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.54.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.54.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.55.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.55.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
