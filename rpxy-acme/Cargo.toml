@@ -20,7 +20,7 @@ thiserror = "2.0.12"
 tracing = "0.1.41"
 async-trait = "0.1.87"
 base64 = "0.22.1"
-aws-lc-rs = { version = "1.12.5", default-features = false, features = [
+aws-lc-rs = { version = "1.12.6", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.1"
@@ -33,6 +33,6 @@ rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, f
   "aws-lc-rs",
 ] }
 rustls-post-quantum = { version = "0.2.2", optional = true }
-tokio = { version = "1.44.0", default-features = false }
-tokio-util = { version = "0.7.13", default-features = false }
+tokio = { version = "1.44.1", default-features = false }
+tokio-util = { version = "0.7.14", default-features = false }
 tokio-stream = { version = "0.1.17", default-features = false }
