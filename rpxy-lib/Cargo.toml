@@ -51,7 +51,7 @@ tokio = { version = "1.44.1", default-features = false, features = [
 ] }
 tokio-util = { version = "0.7.14", default-features = false }
 pin-project-lite = "0.2.16"
-async-trait = "0.1.87"
+async-trait = "0.1.88"
 
 # Error handling
 anyhow = "1.0.97"
