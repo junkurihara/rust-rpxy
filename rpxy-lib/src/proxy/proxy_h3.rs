@@ -129,7 +129,7 @@ where
       }
 
       // trailers: use inner for work around. (directly get trailer)
-      let trailers = recv_stream.as_mut().recv_trailers().await?;
+      let trailers = futures_util::future::poll_fn(|cx| recv_stream.as_mut().poll_recv_trailers(cx)).await?;
       if trailers.is_some() {
         debug!("HTTP/3 incoming request trailers");
         sender.send_trailers(trailers.unwrap()).await?;
