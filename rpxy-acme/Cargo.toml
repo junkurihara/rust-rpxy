@@ -24,7 +24,7 @@ aws-lc-rs = { version = "1.12.6", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.1"
-rustls = { version = "0.23.23", default-features = false, features = [
+rustls = { version = "0.23.24", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
