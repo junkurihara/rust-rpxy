@@ -36,7 +36,6 @@ Supported features are summarized as follows:
 
  This project is still *work-in-progress*. But it is already working in some production environments and serves a number of domain names. Furthermore it *significantly outperforms* NGINX and Caddy, e.g., *1.5x faster than NGINX*, in the setting of a very simple HTTP reverse-proxy scenario (See [`bench`](./bench/) directory).
 
-
 ## Installing/Building an Executable Binary of `rpxy`
 
 ### Building from Source
@@ -445,7 +444,6 @@ todo!
 - [`quinn`](https://github.com/quinn-rs/quinn)
 - [`s2n-quic`](https://github.com/aws/s2n-quic)
 - [`rustls-acme`](https://github.com/FlorianUekermann/rustls-acme)
-
 
 ## License
 
