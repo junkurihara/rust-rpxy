@@ -8,6 +8,9 @@
 
 > **WIP Project**
 
+> [!NOTE]
+> This project is an HTTP, i.e., Layer 7, reverse-proxy. If you are looking for a TCP/UDP, i.e., Layer 4, reverse-proxy, please check my another project, [`rpxy-l4`](https://github.com/junkurihara/rust-rpxy-l4).
+
 ## Introduction
 
 `rpxy` [ahr-pik-see] is an implementation of simple and lightweight reverse-proxy with some additional features. The implementation is based on [`hyper`](https://github.com/hyperium/hyper), [`rustls`](https://github.com/rustls/rustls) and [`tokio`](https://github.com/tokio-rs/tokio), i.e., written in Rust [^pure_rust]. Our `rpxy` routes multiple host names to appropriate backend application servers while serving TLS connections.
