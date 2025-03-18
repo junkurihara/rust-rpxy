@@ -80,7 +80,7 @@ hyper-rustls = { version = "0.27.5", default-features = false, features = [
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.8"
-rustls = { version = "=0.23.23", default-features = false }
+rustls = { version = "0.23.25", default-features = false }
 rustls-post-quantum = { version = "0.2.2", optional = true }
 tokio-rustls = { version = "0.26.2", features = ["early-data"] }
 
@@ -91,7 +91,7 @@ rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true 
 tracing = { version = "0.1.41" }
 
 # http/3
-quinn = { version = "0.11.6", optional = true }
+quinn = { version = "0.11.7", optional = true }
 h3 = { version = "0.0.7", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.8", optional = true }
 s2n-quic = { version = "1.55.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
