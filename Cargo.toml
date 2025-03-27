@@ -5,7 +5,7 @@ homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"
 license = "MIT"
 readme = "./README.md"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [workspace]
