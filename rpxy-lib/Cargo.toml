@@ -79,7 +79,7 @@ hyper-rustls = { version = "0.27.5", default-features = false, features = [
 
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
-hot_reload = "0.1.8"
+hot_reload = "0.1.9"
 rustls = { version = "0.23.25", default-features = false }
 rustls-post-quantum = { version = "0.2.2", optional = true }
 tokio-rustls = { version = "0.26.2", features = ["early-data"] }
