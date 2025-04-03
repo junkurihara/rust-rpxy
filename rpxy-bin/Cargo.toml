@@ -29,8 +29,9 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
 ] }
 
-# TODO: stop using mimalloc doe to compilation failure by musl
-# mimalloc = { version = "*", default-features = false }
+# TODO: pin mimalloc due to compilation failure by musl
+mimalloc = { version = "=0.1.44", default-features = false }
+libmimalloc-sys = { version = "=0.1.40" }
 anyhow = "1.0.97"
 ahash = "0.8.11"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
