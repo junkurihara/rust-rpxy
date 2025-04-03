@@ -1,5 +1,5 @@
-#[global_allocator]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+// #[global_allocator]
+// static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod config;
 mod constants;
@@ -9,13 +9,13 @@ mod log;
 #[cfg(feature = "acme")]
 use crate::config::build_acme_manager;
 use crate::{
-  config::{build_cert_manager, build_settings, parse_opts, ConfigToml, ConfigTomlReloader},
+  config::{ConfigToml, ConfigTomlReloader, build_cert_manager, build_settings, parse_opts},
   constants::CONFIG_WATCH_DELAY_SECS,
   error::*,
   log::*,
 };
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use rpxy_lib::{entrypoint, RpxyOptions, RpxyOptionsBuilder};
+use rpxy_lib::{RpxyOptions, RpxyOptionsBuilder, entrypoint};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
