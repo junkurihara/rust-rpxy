@@ -36,7 +36,7 @@ post-quantum = [
 ]
 
 [dependencies]
-rand = "0.9.0"
+rand = "0.9.1"
 ahash = "0.8.11"
 bytes = "1.10.1"
 derive_builder = "0.20.2"
