@@ -65,7 +65,7 @@ impl SingleServerCertsKeys {
       .cert_keys
       .clone()
       .iter()
-      .find_map(|k| if let Ok(sk) = any_supported_type(k) { Some(sk) } else { None })
+      .find_map(|k| any_supported_type(k).ok())
       .ok_or_else(|| RpxyCertError::InvalidCertificateAndKey)?;
 
     let cert = self.certs.iter().map(|c| Certificate::from(c.to_vec())).collect::<Vec<_>>();
