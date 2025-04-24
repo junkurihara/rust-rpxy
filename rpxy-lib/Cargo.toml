@@ -36,7 +36,7 @@ post-quantum = [
 ]
 
 [dependencies]
-rand = "0.9.0"
+rand = "0.9.1"
 ahash = "0.8.11"
 bytes = "1.10.1"
 derive_builder = "0.20.2"
@@ -49,12 +49,12 @@ tokio = { version = "1.44.2", default-features = false, features = [
   "macros",
   "fs",
 ] }
-tokio-util = { version = "0.7.14", default-features = false }
+tokio-util = { version = "0.7.15", default-features = false }
 pin-project-lite = "0.2.16"
 async-trait = "0.1.88"
 
 # Error handling
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 thiserror = "2.0.12"
 
 # http for both server and client
@@ -80,7 +80,7 @@ hyper-rustls = { version = "0.27.5", default-features = false, features = [
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.1.9"
-rustls = { version = "0.23.25", default-features = false }
+rustls = { version = "0.23.26", default-features = false }
 rustls-post-quantum = { version = "0.2.2", optional = true }
 tokio-rustls = { version = "0.26.2", features = ["early-data"] }
 
