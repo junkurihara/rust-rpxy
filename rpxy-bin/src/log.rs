@@ -5,7 +5,12 @@ use tracing_subscriber::{fmt, prelude::*};
 pub use tracing::{debug, error, info, warn};
 
 /// Initialize the logger with the RUST_LOG environment variable.
-pub fn init_logger() {
+pub fn init_logger(log_dir_path: Option<&str>) {
+  if log_dir_path.is_some() {
+    // TODO:
+    println!("Activate logging to files")
+  }
+
   let level_string = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
   let level = tracing::Level::from_str(level_string.as_str()).unwrap_or(tracing::Level::INFO);
 

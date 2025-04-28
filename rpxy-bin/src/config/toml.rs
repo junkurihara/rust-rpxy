@@ -4,7 +4,7 @@ use crate::{
   log::warn,
 };
 use ahash::HashMap;
-use rpxy_lib::{reexports::Uri, AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
+use rpxy_lib::{AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
 use serde::Deserialize;
 use std::{fs, net::SocketAddr};
 use tokio::time::Duration;
