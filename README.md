@@ -88,9 +88,10 @@ The full help messages are given follows.
 usage: rpxy [OPTIONS] --config <FILE>
 
 Options:
-  -c, --config <FILE>  Configuration file path like ./config.toml
-  -h, --help           Print help
-  -V, --version        Print version
+  -c, --config <FILE>      Configuration file path like ./config.toml
+  -l, --log-dir <LOG_DIR>  Directory for log files. If not specified, logs are printed to stdout.
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
 If you set `--log-dir=<log_dir>`, the log files are created in the specified directory. Otherwise, the log is printed to stdout.
