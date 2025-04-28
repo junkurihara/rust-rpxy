@@ -48,7 +48,7 @@ futures-util = { version = "0.3.31", default-features = false }
 
 # config
 clap = { version = "4.5.37", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.20", default-features = false, features = ["parse"] }
+toml = { version = "0.8.21", default-features = false, features = ["parse"] }
 hot_reload = "0.1.9"
 serde_ignored = "0.1.11"
 
