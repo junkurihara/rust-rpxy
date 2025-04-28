@@ -97,8 +97,8 @@ Options:
 If you set `--log-dir=<log_dir>`, the log files are created in the specified directory. Otherwise, the log is printed to stdout.
 
 - `${log_dir}/access.log` for access log
-- `${log_dir}/error.log` for error log
-- `${log_dir}/rpxy.log` for system log
+<!-- - `${log_dir}/error.log` for error log -->
+- `${log_dir}/rpxy.log` for system and error log
 
 That's all!
 
