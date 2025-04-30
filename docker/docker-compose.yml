@@ -20,12 +20,11 @@ services:
         # - "linux/amd64"
         - "linux/arm64"
     environment:
-      - LOG_LEVEL=debug
+      - LOG_LEVEL=trace
       - LOG_TO_FILE=true
       - HOST_USER=jun
       - HOST_UID=501
       - HOST_GID=501
-      # - WATCH=true
     tty: false
     privileged: true
     volumes:
