@@ -5,3 +5,6 @@ pub const CONFIG_WATCH_DELAY_SECS: u32 = 15;
 #[cfg(feature = "cache")]
 // Cache directory
 pub const CACHE_DIR: &str = "./cache";
+
+pub(crate) const ACCESS_LOG_FILE: &str = "access.log";
+pub(crate) const SYSTEM_LOG_FILE: &str = "rpxy.log";

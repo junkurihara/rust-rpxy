@@ -22,6 +22,7 @@ use hyper_util::{client::legacy::connect::Connect, rt::TokioIo, server::conn::au
 use rpxy_certs::ServerCrypto;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
@@ -129,7 +130,7 @@ where
   }
 
   /// Start with TLS (HTTPS)
-  pub(super) async fn start_with_tls(&self) -> RpxyResult<()> {
+  pub(super) async fn start_with_tls(&self, cancel_token: CancellationToken) -> RpxyResult<()> {
     #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
     {
       self.tls_listener_service().await?;
@@ -139,14 +140,37 @@ where
     #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
       if self.globals.proxy_config.http3 {
-        select! {
-          _ = self.tls_listener_service().fuse() => {
-            error!("TCP proxy service for TLS exited");
-          },
-          _ = self.h3_listener_service().fuse() => {
-            error!("UDP proxy service for QUIC exited");
+        let jh_tls = self.globals.runtime_handle.spawn({
+          let self_clone = self.clone();
+          let cancel_token = cancel_token.clone();
+          async move {
+            select! {
+              _ = self_clone.tls_listener_service().fuse() => {
+                error!("TCP proxy service for TLS exited");
+                cancel_token.cancel();
+              },
+              _ = cancel_token.cancelled().fuse() => {
+                debug!("Cancel token is called for TLS listener");
+              }
+            }
           }
-        };
+        });
+        let jh_h3 = self.globals.runtime_handle.spawn({
+          let self_clone = self.clone();
+          async move {
+            select! {
+              _ = self_clone.h3_listener_service().fuse() => {
+                error!("UDP proxy service for QUIC exited");
+                cancel_token.cancel();
+              },
+              _ = cancel_token.cancelled().fuse() => {
+                debug!("Cancel token is called for QUIC listener");
+              }
+            }
+          }
+        });
+        let _ = futures::future::join(jh_tls, jh_h3).await;
+
         Ok(())
       } else {
         self.tls_listener_service().await?;
@@ -303,10 +327,10 @@ where
   }
 
   /// Entrypoint for HTTP/1.1, 2 and 3 servers
-  pub async fn start(&self) -> RpxyResult<()> {
+  pub async fn start(&self, cancel_token: CancellationToken) -> RpxyResult<()> {
     let proxy_service = async {
       if self.tls_enabled {
-        self.start_with_tls().await
+        self.start_with_tls(cancel_token).await
       } else {
         self.start_without_tls().await
       }

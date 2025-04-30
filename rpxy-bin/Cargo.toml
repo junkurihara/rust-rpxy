@@ -29,26 +29,28 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
   "sticky-cookie",
 ] }
 
-mimalloc = { version = "*", default-features = false }
-anyhow = "1.0.95"
+# TODO: pin mimalloc due to compilation failure by musl
+mimalloc = { version = "=0.1.44", default-features = false }
+libmimalloc-sys = { version = "=0.1.40" }
+anyhow = "1.0.98"
 ahash = "0.8.11"
-serde = { version = "1.0.217", default-features = false, features = ["derive"] }
-tokio = { version = "1.43.0", default-features = false, features = [
+serde = { version = "1.0.219", default-features = false, features = ["derive"] }
+tokio = { version = "1.44.2", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
 ] }
-tokio-util = { version = "0.7.13", default-features = false }
-async-trait = "0.1.85"
+tokio-util = { version = "0.7.15", default-features = false }
+async-trait = "0.1.88"
 futures-util = { version = "0.3.31", default-features = false }
 
 # config
-clap = { version = "4.5.27", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.19", default-features = false, features = ["parse"] }
-hot_reload = "0.1.8"
-serde_ignored = "0.1.10"
+clap = { version = "4.5.37", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.8.22", default-features = false, features = ["parse"] }
+hot_reload = "0.1.9"
+serde_ignored = "0.1.11"
 
 # logging
 tracing = { version = "0.1.41" }

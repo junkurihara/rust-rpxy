@@ -1,5 +1,7 @@
 #!/usr/bin/env sh
 CONFIG_FILE=/etc/rpxy.toml
+LOG_DIR=/rpxy/log
+LOGGING=${LOG_TO_FILE:-false}
 
 # debug level logging
 if [ -z $LOG_LEVEL ]; then
@@ -7,19 +9,11 @@ if [ -z $LOG_LEVEL ]; then
 fi
 echo "rpxy: Logging with level ${LOG_LEVEL}"
 
-# continuously watch and reload the config file
-if [ -z $WATCH ]; then
-  WATCH=false
-else
-  if [ "$WATCH" = "true" ]; then
-    WATCH=true
-  else
-    WATCH=false
-  fi
-fi
 
-if  $WATCH ; then
-  RUST_LOG=${LOG_LEVEL} /rpxy/bin/rpxy --config ${CONFIG_FILE} -w
+if "${LOGGING}"; then
+  echo "rpxy: Start with writing log files"
+  RUST_LOG=${LOG_LEVEL} /rpxy/bin/rpxy --config ${CONFIG_FILE} --log-dir ${LOG_DIR}
 else
+  echo "rpxy: Start without writing log files"
   RUST_LOG=${LOG_LEVEL} /rpxy/bin/rpxy --config ${CONFIG_FILE}
 fi

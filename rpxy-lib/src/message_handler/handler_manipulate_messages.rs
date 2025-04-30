@@ -1,11 +1,11 @@
-use super::{handler_main::HandlerContext, utils_headers::*, utils_request::update_request_line, HttpMessageHandler};
+use super::{HttpMessageHandler, handler_main::HandlerContext, utils_headers::*, utils_request::update_request_line};
 use crate::{
   backend::{BackendApp, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
   log::*,
 };
-use anyhow::{anyhow, ensure, Result};
-use http::{header, HeaderValue, Request, Response, Uri};
+use anyhow::{Result, anyhow, ensure};
+use http::{HeaderValue, Request, Response, Uri, header};
 use hyper_util::client::legacy::connect::Connect;
 use std::net::SocketAddr;
 
@@ -66,7 +66,7 @@ where
     upstream_candidates: &UpstreamCandidates,
     tls_enabled: bool,
   ) -> Result<HandlerContext> {
-    debug!("Generate request to be forwarded");
+    trace!("Generate request to be forwarded");
 
     // Add te: trailer if contained in original request
     let contains_te_trailers = {

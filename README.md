@@ -8,6 +8,9 @@
 
 > **WIP Project**
 
+> [!NOTE]
+> This project is an HTTP, i.e., Layer 7, reverse-proxy. If you are looking for a TCP/UDP, i.e., Layer 4, reverse-proxy, please check my another project, [`rpxy-l4`](https://github.com/junkurihara/rust-rpxy-l4).
+
 ## Introduction
 
 `rpxy` [ahr-pik-see] is an implementation of simple and lightweight reverse-proxy with some additional features. The implementation is based on [`hyper`](https://github.com/hyperium/hyper), [`rustls`](https://github.com/rustls/rustls) and [`tokio`](https://github.com/tokio-rs/tokio), i.e., written in Rust [^pure_rust]. Our `rpxy` routes multiple host names to appropriate backend application servers while serving TLS connections.
@@ -35,7 +38,6 @@ Supported features are summarized as follows:
 [^sanitization]: By default, `rpxy` provides the *TLS connection sanitization* by correctly binding a certificate used to establish a secure channel with the backend application. Specifically, it always keeps the consistency between the given SNI (server name indication) in `ClientHello` of the underlying TLS and the domain name given by the overlaid HTTP HOST header (or URL in Request line). We should note that NGINX doesn't guarantee such a consistency by default. To this end, you have to add `if` statement in the configuration file in NGINX.
 
  This project is still *work-in-progress*. But it is already working in some production environments and serves a number of domain names. Furthermore it *significantly outperforms* NGINX and Caddy, e.g., *1.5x faster than NGINX*, in the setting of a very simple HTTP reverse-proxy scenario (See [`bench`](./bench/) directory).
-
 
 ## Installing/Building an Executable Binary of `rpxy`
 
@@ -78,7 +80,7 @@ You can run `rpxy` with a configuration file like
 % ./target/release/rpxy --config config.toml
 ```
 
-If you specify `-w` option along with the config file path, `rpxy` tracks the change of `config.toml` in the real-time manner and apply the change immediately without restarting the process.
+`rpxy` tracks the change of `config.toml` in the real-time manner and apply the change immediately without restarting the process.
 
 The full help messages are given follows.
 
@@ -86,11 +88,17 @@ The full help messages are given follows.
 usage: rpxy [OPTIONS] --config <FILE>
 
 Options:
-  -c, --config <FILE>  Configuration file path like ./config.toml
-  -w, --watch          Activate dynamic reloading of the config file via continuous monitoring
-  -h, --help           Print help
-  -V, --version        Print version
+  -c, --config <FILE>      Configuration file path like ./config.toml
+  -l, --log-dir <LOG_DIR>  Directory for log files. If not specified, logs are printed to stdout.
+  -h, --help               Print help
+  -V, --version            Print version
 ```
+
+If you set `--log-dir=<log_dir>`, the log files are created in the specified directory. Otherwise, the log is printed to stdout.
+
+- `${log_dir}/access.log` for access log
+<!-- - `${log_dir}/error.log` for error log -->
+- `${log_dir}/rpxy.log` for system and error log
 
 That's all!
 
@@ -445,7 +453,6 @@ todo!
 - [`quinn`](https://github.com/quinn-rs/quinn)
 - [`s2n-quic`](https://github.com/aws/s2n-quic)
 - [`rustls-acme`](https://github.com/FlorianUekermann/rustls-acme)
-
 
 ## License
 

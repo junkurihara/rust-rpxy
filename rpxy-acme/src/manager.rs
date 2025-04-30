@@ -77,7 +77,7 @@ impl AcmeManager {
   /// Returns a Vec<JoinHandle<()>> as a tasks handles and a map of domain to ServerConfig for challenge.
   pub fn spawn_manager_tasks(
     &self,
-    cancel_token: Option<tokio_util::sync::CancellationToken>,
+    cancel_token: tokio_util::sync::CancellationToken,
   ) -> (Vec<tokio::task::JoinHandle<()>>, HashMap<String, Arc<ServerConfig>>) {
     let rustls_client_config = rustls::ClientConfig::builder()
       .dangerous() // The `Verifier` we're using is actually safe
@@ -115,13 +115,10 @@ impl AcmeManager {
                 }
               }
             };
-            if let Some(cancel_token) = cancel_token.as_ref() {
-              tokio::select! {
-                _ = task => {},
-                _ = cancel_token.cancelled() => { debug!("rpxy ACME manager task for {domain} terminated") }
-              }
-            } else {
-              task.await;
+
+            tokio::select! {
+              _ = task => {},
+              _ = cancel_token.cancelled() => { debug!("rpxy ACME manager task for {domain} terminated") }
             }
           }
         })
