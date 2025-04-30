@@ -110,7 +110,7 @@ where
 
     // quic event loop. this immediately cancels when crypto is updated by tokio::select!
     while let Some(new_conn) = server.accept().await {
-      debug!("New QUIC connection established");
+      trace!("New QUIC connection established");
       let Ok(Some(new_server_name)) = new_conn.server_name() else {
         warn!("HTTP/3 no SNI is given");
         continue;

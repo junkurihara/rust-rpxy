@@ -34,11 +34,7 @@ impl<T> From<&http::Request<T>> for HttpMessageLog {
       client_addr: "".to_string(),
       method: req.method().to_string(),
       host: header_mapper(header::HOST),
-      p_and_q: req
-        .uri()
-        .path_and_query()
-        .map_or_else(|| "", |v| v.as_str())
-        .to_string(),
+      p_and_q: req.uri().path_and_query().map_or_else(|| "", |v| v.as_str()).to_string(),
       version: req.version(),
       uri_scheme: req.uri().scheme_str().unwrap_or("").to_string(),
       uri_host: req.uri().host().unwrap_or("").to_string(),
@@ -47,6 +43,33 @@ impl<T> From<&http::Request<T>> for HttpMessageLog {
       status: "".to_string(),
       upstream: "".to_string(),
     }
+  }
+}
+
+impl std::fmt::Display for HttpMessageLog {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(
+      f,
+      "{} <- {} -- {} {} {:?} -- {} -- {} \"{}\", \"{}\" \"{}\"",
+      if !self.host.is_empty() {
+        self.host.as_str()
+      } else {
+        self.uri_host.as_str()
+      },
+      self.client_addr,
+      self.method,
+      self.p_and_q,
+      self.version,
+      self.status,
+      if !self.uri_scheme.is_empty() && !self.uri_host.is_empty() {
+        format!("{}://{}", self.uri_scheme, self.uri_host)
+      } else {
+        "".to_string()
+      },
+      self.ua,
+      self.xff,
+      self.upstream
+    )
   }
 }
 
@@ -74,26 +97,8 @@ impl HttpMessageLog {
 
   pub fn output(&self) {
     info!(
-      "{} <- {} -- {} {} {:?} -- {} -- {} \"{}\", \"{}\" \"{}\"",
-      if !self.host.is_empty() {
-        self.host.as_str()
-      } else {
-        self.uri_host.as_str()
-      },
-      self.client_addr,
-      self.method,
-      self.p_and_q,
-      self.version,
-      self.status,
-      if !self.uri_scheme.is_empty() && !self.uri_host.is_empty() {
-        format!("{}://{}", self.uri_scheme, self.uri_host)
-      } else {
-        "".to_string()
-      },
-      self.ua,
-      self.xff,
-      self.upstream,
-      // self.tls_server_name
+      name: crate::constants::log_event_names::ACCESS_LOG,
+      "{}", self
     );
   }
 }

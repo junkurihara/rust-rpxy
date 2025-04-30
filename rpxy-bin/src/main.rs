@@ -20,8 +20,6 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 fn main() {
-  init_logger();
-
   let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
   runtime_builder.enable_all();
   runtime_builder.thread_name("rpxy");
@@ -30,40 +28,34 @@ fn main() {
   runtime.block_on(async {
     // Initially load options
     let Ok(parsed_opts) = parse_opts() else {
-      error!("Invalid toml file");
       std::process::exit(1);
     };
 
-    if !parsed_opts.watch {
-      if let Err(e) = rpxy_service_without_watcher(&parsed_opts.config_file_path, runtime.handle().clone()).await {
-        error!("rpxy service existed: {e}");
-        std::process::exit(1);
-      }
-    } else {
-      let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::new(
-        &parsed_opts.config_file_path,
-        CONFIG_WATCH_DELAY_SECS,
-        false,
-      )
-      .await
-      .unwrap();
+    init_logger(parsed_opts.log_dir_path.as_deref());
 
-      tokio::select! {
-        config_res = config_service.start() => {
-          if let Err(e) = config_res {
-            error!("config reloader service exited: {e}");
-            std::process::exit(1);
-          }
-        }
-        rpxy_res = rpxy_service_with_watcher(config_rx, runtime.handle().clone()) => {
-          if let Err(e) = rpxy_res {
-            error!("rpxy service existed: {e}");
-            std::process::exit(1);
-          }
+    let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::new(
+      &parsed_opts.config_file_path,
+      CONFIG_WATCH_DELAY_SECS,
+      false,
+    )
+    .await
+    .unwrap();
+
+    tokio::select! {
+      config_res = config_service.start() => {
+        if let Err(e) = config_res {
+          error!("config reloader service exited: {e}");
+          std::process::exit(1);
         }
       }
-      std::process::exit(0);
+      rpxy_res = rpxy_service(config_rx, runtime.handle().clone()) => {
+        if let Err(e) = rpxy_res {
+          error!("rpxy service existed: {e}");
+          std::process::exit(1);
+        }
+      }
     }
+    std::process::exit(0);
   });
 }
 
@@ -233,18 +225,7 @@ impl RpxyService {
   }
 }
 
-async fn rpxy_service_without_watcher(
-  config_file_path: &str,
-  runtime_handle: tokio::runtime::Handle,
-) -> Result<(), anyhow::Error> {
-  info!("Start rpxy service");
-  let config_toml = ConfigToml::new(config_file_path).map_err(|e| anyhow!("Invalid toml file: {e}"))?;
-  let service = RpxyService::new(&config_toml, runtime_handle).await?;
-  // Create cancel token that is never be called as dummy
-  service.start(tokio_util::sync::CancellationToken::new()).await
-}
-
-async fn rpxy_service_with_watcher(
+async fn rpxy_service(
   mut config_rx: ReloaderReceiver<ConfigToml, String>,
   runtime_handle: tokio::runtime::Handle,
 ) -> Result<(), anyhow::Error> {

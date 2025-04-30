@@ -2,8 +2,8 @@ use super::{proxy_main::Proxy, socket::bind_udp_socket};
 use crate::{error::*, log::*, name_exp::ByteName};
 use hyper_util::client::legacy::connect::Connect;
 use quinn::{
-  crypto::rustls::{HandshakeData, QuicServerConfig},
   Endpoint, TransportConfig,
+  crypto::rustls::{HandshakeData, QuicServerConfig},
 };
 use rpxy_certs::ServerCrypto;
 use rustls::ServerConfig;
@@ -82,7 +82,7 @@ where
             let client_addr = incoming.remote_address();
             let quic_connection = match incoming.await {
               Ok(new_conn) => {
-                info!("New connection established");
+                trace!("New connection established");
                 h3_quinn::Connection::new(new_conn)
               },
               Err(e) => {

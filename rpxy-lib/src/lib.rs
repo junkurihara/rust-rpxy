@@ -27,6 +27,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 /* ------------------------------------------------ */
+pub use crate::constants::log_event_names;
 pub use crate::globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
 pub mod reexports {
   pub use hyper::Uri;

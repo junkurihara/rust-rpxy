@@ -71,7 +71,7 @@ where
         Ok(v)
       }
       Err(e) => {
-        error!("{e}");
+        error!("{e}: {log_data}");
         let code = StatusCode::from(e);
         log_data.status_code(&code).output();
         synthetic_error_response(code)

@@ -1,6 +1,18 @@
 # CHANGELOG
 
-## 0.9.8 or 0.10.0 (Unreleased)
+## 0.10.1 or 0.11.0 (Unreleased)
+
+## 0.10.0
+
+### Important Changes
+
+- [Breaking] We removed non-`watch` execute option and enabled the dynamic reloading of the config file by default.
+- We newly added `log-dir` execute option to specify the directory for `access.log`,`error.log` and `rpxy.log`. This is optional, and if not specified, the logs are written to the standard output by default.
+
+### Improvement
+
+- Refactor: lots of minor improvements
+- Deps
 
 ## 0.9.7
 
