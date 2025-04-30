@@ -33,7 +33,7 @@ where
     <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
   {
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
-    info!(
+    debug!(
       "QUIC/HTTP3 connection established from {:?} {}",
       client_addr,
       <&ServerName as TryInto<String>>::try_into(&tls_server_name).unwrap_or_default()
@@ -115,7 +115,7 @@ where
       let mut sender = body_sender;
       let mut size = 0usize;
       while let Some(mut body) = recv_stream.recv_data().await? {
-        debug!("HTTP/3 incoming request body: remaining {}", body.remaining());
+        trace!("HTTP/3 incoming request body: remaining {}", body.remaining());
         size += body.remaining();
         if size > max_body_size {
           error!(
@@ -131,7 +131,7 @@ where
       // trailers: use inner for work around. (directly get trailer)
       let trailers = futures_util::future::poll_fn(|cx| recv_stream.as_mut().poll_recv_trailers(cx)).await?;
       if trailers.is_some() {
-        debug!("HTTP/3 incoming request trailers");
+        trace!("HTTP/3 incoming request trailers");
         sender.send_trailers(trailers.unwrap()).await?;
       }
       Ok(()) as RpxyResult<()>
@@ -154,13 +154,13 @@ where
 
     match send_stream.send_response(new_res).await {
       Ok(_) => {
-        debug!("HTTP/3 response to connection successful");
+        trace!("HTTP/3 response to connection successful");
         // on-demand body streaming to downstream without expanding the object onto memory.
         loop {
           let frame = match new_body.frame().await {
             Some(frame) => frame,
             None => {
-              debug!("Response body finished");
+              trace!("Response body finished");
               break;
             }
           }
