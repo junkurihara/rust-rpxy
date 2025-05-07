@@ -92,8 +92,8 @@ tracing = { version = "0.1.41" }
 
 # http/3
 quinn = { version = "0.11.7", optional = true }
-h3 = { version = "0.0.7", features = ["tracing"], optional = true }
-h3-quinn = { version = "0.0.9", optional = true }
+h3 = { version = "0.0.8", features = ["tracing"], optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
 s2n-quic = { version = "1.57.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }

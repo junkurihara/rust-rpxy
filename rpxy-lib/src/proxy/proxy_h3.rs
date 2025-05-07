@@ -49,12 +49,17 @@ where
         }
         Err(e) => {
           warn!("HTTP/3 error on accept incoming connection: {}", e);
-          match e.get_error_level() {
-            h3::error::ErrorLevel::ConnectionError => break,
-            h3::error::ErrorLevel::StreamError => continue,
-          }
+          break;
         }
-        Ok(Some((req, stream))) => {
+        // Ok(Some((req, stream))) => {
+        Ok(Some(req_resolver)) => {
+          let (req, stream) = match req_resolver.resolve_request().await {
+            Ok((req, stream)) => (req, stream),
+            Err(e) => {
+              warn!("HTTP/3 error on resolve request in stream: {}", e);
+              continue;
+            }
+          };
           // We consider the connection count separately from the stream count.
           // Max clients for h1/h2 = max 'stream' for h3.
           let request_count = self.globals.request_count.clone();

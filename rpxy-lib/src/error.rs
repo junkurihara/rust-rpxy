@@ -37,8 +37,11 @@ pub enum RpxyError {
 
   // http/3 errors
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-  #[error("H3 error: {0}")]
-  H3Error(#[from] h3::Error),
+  #[error("h3 connection error: {0}")]
+  H3ConnectionError(#[from] h3::error::ConnectionError),
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[error("h3 connection error: {0}")]
+  H3StreamError(#[from] h3::error::StreamError),
   // #[cfg(feature = "http3-s2n")]
   // #[error("H3 error: {0}")]
   // H3Error(#[from] s2n_quic_h3::h3::Error),
