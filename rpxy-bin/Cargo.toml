@@ -47,10 +47,10 @@ async-trait = "0.1.88"
 futures-util = { version = "0.3.31", default-features = false }
 
 # config
-clap = { version = "4.5.37", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.5.38", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.8.22", default-features = false, features = ["parse"] }
 hot_reload = "0.1.9"
-serde_ignored = "0.1.11"
+serde_ignored = "0.1.12"
 
 # logging
 tracing = { version = "0.1.41" }
