@@ -1,8 +1,8 @@
 use crate::{
+  AppConfig, AppConfigList,
   error::*,
   log::*,
   name_exp::{ByteName, ServerName},
-  AppConfig, AppConfigList,
 };
 use ahash::HashMap;
 use derive_builder::Builder;

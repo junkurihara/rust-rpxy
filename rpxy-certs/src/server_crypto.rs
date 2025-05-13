@@ -1,9 +1,9 @@
 use crate::{certs::SingleServerCertsKeys, error::*, log::*};
 use ahash::HashMap;
 use rustls::{
+  RootCertStore, ServerConfig,
   crypto::CryptoProvider,
   server::{ResolvesServerCertUsingSni, WebPkiClientVerifier},
-  RootCertStore, ServerConfig,
 };
 use std::sync::Arc;
 

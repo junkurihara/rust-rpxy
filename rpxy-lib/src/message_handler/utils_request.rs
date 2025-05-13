@@ -2,8 +2,8 @@ use crate::{
   backend::{Upstream, UpstreamCandidates, UpstreamOption},
   log::*,
 };
-use anyhow::{anyhow, ensure, Result};
-use http::{header, uri::Scheme, Request, Version};
+use anyhow::{Result, anyhow, ensure};
+use http::{Request, Version, header, uri::Scheme};
 
 /// Trait defining parser of hostname
 /// Inspect and extract hostname from either the request HOST header or request line

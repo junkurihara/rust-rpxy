@@ -1,7 +1,7 @@
 use super::http_result::{HttpError, HttpResult};
 use crate::{
   error::*,
-  hyper_ext::body::{empty, ResponseBody},
+  hyper_ext::body::{ResponseBody, empty},
   name_exp::ServerName,
 };
 use http::{Request, Response, StatusCode, Uri};

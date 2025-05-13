@@ -11,7 +11,7 @@ use crate::{
   message_handler::HttpMessageHandler,
   name_exp::ServerName,
 };
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use http::{Request, Response};
 use hyper::{
   body::Incoming,

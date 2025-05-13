@@ -1,7 +1,7 @@
 #[cfg(feature = "sticky-cookie")]
 use super::load_balance::LoadBalanceStickyBuilder;
 use super::load_balance::{
-  load_balance_options as lb_opts, LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder,
+  LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder, load_balance_options as lb_opts,
 };
 // use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
 use super::upstream_opts::UpstreamOption;
@@ -13,7 +13,7 @@ use crate::{
 };
 use ahash::{HashMap, HashSet};
 #[cfg(feature = "sticky-cookie")]
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use derive_builder::Builder;
 #[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};

@@ -3,9 +3,9 @@ use crate::{
   backend::{UpstreamCandidates, UpstreamOption},
   log::*,
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{Result, anyhow, ensure};
 use bytes::BufMut;
-use http::{header, HeaderMap, HeaderName, HeaderValue, Uri};
+use http::{HeaderMap, HeaderName, HeaderValue, Uri, header};
 use std::{borrow::Cow, net::SocketAddr};
 
 #[cfg(feature = "sticky-cookie")]

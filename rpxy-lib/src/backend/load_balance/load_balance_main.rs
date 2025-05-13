@@ -7,8 +7,8 @@ pub use super::{
 use derive_builder::Builder;
 use rand::Rng;
 use std::sync::{
-  atomic::{AtomicUsize, Ordering},
   Arc,
+  atomic::{AtomicUsize, Ordering},
 };
 
 /// Constants to specify a load balance option

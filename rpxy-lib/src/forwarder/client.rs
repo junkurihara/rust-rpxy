@@ -9,13 +9,13 @@ use async_trait::async_trait;
 use http::{Request, Response, Version};
 use hyper::body::{Body, Incoming};
 use hyper_util::client::legacy::{
-  connect::{Connect, HttpConnector},
   Client,
+  connect::{Connect, HttpConnector},
 };
 use std::sync::Arc;
 
 #[cfg(feature = "cache")]
-use super::cache::{get_policy_if_cacheable, RpxyCache};
+use super::cache::{RpxyCache, get_policy_if_cacheable};
 
 #[async_trait]
 /// Definition of the forwarder that simply forward requests from downstream client to upstream app servers.

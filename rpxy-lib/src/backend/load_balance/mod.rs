@@ -8,7 +8,7 @@ use super::upstream::Upstream;
 use thiserror::Error;
 
 pub use load_balance_main::{
-  load_balance_options, LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder,
+  LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder, load_balance_options,
 };
 #[cfg(feature = "sticky-cookie")]
 pub use load_balance_sticky::LoadBalanceStickyBuilder;

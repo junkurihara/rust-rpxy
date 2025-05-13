@@ -1,7 +1,7 @@
 use super::{
+  Upstream,
   load_balance_main::{LoadBalanceContext, LoadBalanceWithPointer, PointerToUpstream},
   sticky_cookie::StickyCookieConfig,
-  Upstream,
 };
 use crate::{constants::STICKY_COOKIE_NAME, log::*};
 use ahash::HashMap;
@@ -9,8 +9,8 @@ use derive_builder::Builder;
 use std::{
   borrow::Cow,
   sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
   },
 };
 
