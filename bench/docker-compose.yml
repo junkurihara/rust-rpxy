@@ -28,7 +28,7 @@ services:
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     environment:
-      - LOG_LEVEL=info
+      - LOG_LEVEL=error # almost nolog
       - LOG_TO_FILE=false
     ports:
       - 127.0.0.1:8080:8080
@@ -47,7 +47,7 @@ services:
     tty: false
     privileged: true
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro # set as almost nolog
       - /var/run/docker.sock:/tmp/docker.sock:ro
     logging:
       options:
@@ -64,7 +64,7 @@ services:
     restart: unless-stopped
     tty: false
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro # set as almost no log
     networks:
       bench-nw:
 
