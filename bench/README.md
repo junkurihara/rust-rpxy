@@ -15,7 +15,7 @@ Done at May. 17, 2025
 - `rpxy` commit id: `e259e0b58897258d98fdb7504a1cbcbd7c5b37db`
 - Docker Desktop 4.41.2 (191736)
 - ReWrk 0.3.2
-- MacBook Pro '14 (2021, M1 Max, 64GB RAM)
+- Mac mini (2024, M4 Pro, 64GB RAM)
 
 The docker images of `nginx` and `caddy` for `linux/arm64/v8` are pulled from the official registry.
 
@@ -27,20 +27,20 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8080 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    10.62ms  4.47ms   0.47ms   73.01ms
+    6.90ms   3.42ms   0.78ms   80.26ms
   Requests:
-    Total: 720148  Req/Sec: 48025.92
+    Total: 1107885 Req/Sec: 73866.03
   Transfer:
-    Total: 563.85 MB Transfer Rate: 37.60 MB/Sec
+    Total: 867.44 MB Transfer Rate: 57.83 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |     54.78ms     |
-|       99%       |     35.86ms     |
-|       95%       |     23.09ms     |
-|       90%       |     19.82ms     |
-|       75%       |     16.14ms     |
-|       50%       |     13.54ms     |
+|      99.9%      |     49.76ms     |
+|       99%       |     29.57ms     |
+|       95%       |     15.78ms     |
+|       90%       |     13.05ms     |
+|       75%       |     10.41ms     |
+|       50%       |     8.72ms      |
 + --------------- + --------------- +
 
 sleep 3 secs
@@ -50,23 +50,23 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8090 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    14.55ms  13.05ms  0.57ms   255.24ms
+    11.65ms  14.04ms  0.40ms   205.93ms
   Requests:
-    Total: 525866  Req/Sec: 35073.37
+    Total: 654978  Req/Sec: 43666.56
   Transfer:
-    Total: 427.78 MB Transfer Rate: 28.53 MB/Sec
+    Total: 532.81 MB Transfer Rate: 35.52 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |    235.17ms     |
-|       99%       |     91.77ms     |
-|       95%       |     48.86ms     |
-|       90%       |     39.08ms     |
-|       75%       |     28.78ms     |
-|       50%       |     21.77ms     |
+|      99.9%      |    151.00ms     |
+|       99%       |    102.80ms     |
+|       95%       |     62.44ms     |
+|       90%       |     42.98ms     |
+|       75%       |     26.44ms     |
+|       50%       |     18.25ms     |
 + --------------- + --------------- +
 
-227 Errors: connection closed
+512 Errors: connection closed
 
 sleep 3 secs
 ----------------------------
@@ -75,20 +75,20 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8100 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    70.44ms  220.19ms  0.67ms   4140.08ms
+    77.54ms  368.11ms  0.37ms   6770.73ms
   Requests:
-    Total:  79980  Req/Sec: 5334.74
+    Total:  86963  Req/Sec: 5798.35
   Transfer:
-    Total: 64.45 MB Transfer Rate: 4.30 MB/Sec
+    Total: 70.00 MB Transfer Rate: 4.67 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |    3550.19ms    |
-|       99%       |    1847.80ms    |
-|       95%       |    672.82ms     |
-|       90%       |    440.34ms     |
-|       75%       |    224.81ms     |
-|       50%       |    128.79ms     |
+|      99.9%      |    5789.65ms    |
+|       99%       |    3407.02ms    |
+|       95%       |    1022.31ms    |
+|       90%       |    608.17ms     |
+|       75%       |    281.95ms     |
+|       50%       |    149.29ms     |
 + --------------- + --------------- +
 ```
 
