@@ -236,10 +236,9 @@ pub(super) fn add_forwarding_header(
 pub(super) fn remove_connection_header(headers: &mut HeaderMap) {
   if let Some(values) = headers.get(header::CONNECTION) {
     if let Ok(v) = values.clone().to_str() {
-      for m in v.split(',') {
-        if !m.is_empty() {
-          headers.remove(m.trim());
-        }
+      let keys = v.split(',').map(|m| m.trim()).filter(|m| !m.is_empty());
+      for m in keys {
+        headers.remove(m);
       }
     }
   }
@@ -274,11 +273,9 @@ pub(super) fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
       .split(',')
       .any(|w| w.trim().eq_ignore_ascii_case(header::UPGRADE.as_str()))
     {
-      if let Some(u) = headers.get(header::UPGRADE) {
-        if let Ok(m) = u.to_str() {
-          debug!("Upgrade in request header: {}", m);
-          return Some(m.to_owned());
-        }
+      if let Some(Ok(m)) = headers.get(header::UPGRADE).map(|u| u.to_str()) {
+        debug!("Upgrade in request header: {}", m);
+        return Some(m.to_owned());
       }
     }
   }

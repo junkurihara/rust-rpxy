@@ -112,13 +112,16 @@ impl LoadBalanceWithPointer for LoadBalanceSticky {
       }
       Some(context) => {
         let server_id = &context.sticky_cookie.value.value;
-        if let Some(server_index) = self.get_server_index_from_id(server_id) {
-          debug!("Valid sticky cookie: id={}, index={}", server_id, server_index);
-          server_index
-        } else {
-          debug!("Invalid sticky cookie: id={}", server_id);
-          self.simple_increment_ptr()
-        }
+        self.get_server_index_from_id(server_id).map_or_else(
+          || {
+            debug!("Invalid sticky cookie: id={}", server_id);
+            self.simple_increment_ptr()
+          },
+          |server_index| {
+            debug!("Valid sticky cookie: id={}, index={}", server_id, server_index);
+            server_index
+          },
+        )
       }
     };
 

@@ -185,9 +185,7 @@ impl RpxyCache {
     let cache_key = derive_cache_key_from_uri(req.uri());
 
     // First check cache chance
-    let Ok(Some(cached_object)) = self.inner.get(&cache_key) else {
-      return None;
-    };
+    let cached_object = self.inner.get(&cache_key).ok()??;
 
     // Secondly check the cache freshness as an HTTP message
     let now = SystemTime::now();
@@ -451,10 +449,10 @@ impl LruCacheManager {
 
   /// Push an entry
   fn push(&self, cache_key: &str, cache_object: &CacheObject) -> CacheResult<Option<(String, CacheObject)>> {
-    let Ok(mut lock) = self.inner.lock() else {
+    let mut lock = self.inner.lock().map_err(|_| {
       error!("Failed to acquire mutex lock for writing cache entry");
-      return Err(CacheError::FailedToAcquiredMutexLockForCache);
-    };
+      CacheError::FailedToAcquiredMutexLockForCache
+    })?;
     let res = Ok(lock.push(cache_key.to_string(), cache_object.clone()));
     // This may be inconsistent with the actual number of entries
     self.cnt.store(lock.len(), Ordering::Relaxed);
@@ -463,10 +461,10 @@ impl LruCacheManager {
 
   /// Get an entry
   fn get(&self, cache_key: &str) -> CacheResult<Option<CacheObject>> {
-    let Ok(mut lock) = self.inner.lock() else {
+    let mut lock = self.inner.lock().map_err(|_| {
       error!("Mutex can't be locked for checking cache entry");
-      return Err(CacheError::FailedToAcquiredMutexLockForCheck);
-    };
+      CacheError::FailedToAcquiredMutexLockForCheck
+    })?;
     let Some(cached_object) = lock.get(cache_key) else {
       return Ok(None);
     };
