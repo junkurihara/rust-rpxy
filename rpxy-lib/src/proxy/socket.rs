@@ -16,10 +16,12 @@ pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> RpxyResult<TcpSocket
   }?;
   tcp_socket.set_reuseaddr(true)?;
   tcp_socket.set_reuseport(true)?;
-  if let Err(e) = tcp_socket.bind(*listening_on) {
+
+  tcp_socket.bind(*listening_on).map_err(|e| {
     error!("Failed to bind TCP socket: {}", e);
-    return Err(RpxyError::Io(e));
-  };
+    RpxyError::Io(e)
+  })?;
+
   Ok(tcp_socket)
 }
 
@@ -36,11 +38,10 @@ pub(super) fn bind_udp_socket(listening_on: &SocketAddr) -> RpxyResult<UdpSocket
   socket.set_reuse_port(true)?;
   socket.set_nonblocking(true)?; // This was made true inside quinn. so this line isn't necessary here. but just in case.
 
-  if let Err(e) = socket.bind(&(*listening_on).into()) {
+  socket.bind(&(*listening_on).into()).map_err(|e| {
     error!("Failed to bind UDP socket: {}", e);
-    return Err(RpxyError::Io(e));
-  };
-  let udp_socket: UdpSocket = socket.into();
+    RpxyError::Io(e)
+  })?;
 
-  Ok(udp_socket)
+  Ok(socket.into())
 }

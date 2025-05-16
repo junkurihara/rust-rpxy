@@ -80,7 +80,7 @@ where
       request_count.decrement();
       return;
     }
-    debug!("Request incoming: current # {}", request_count.current());
+    trace!("Request incoming: current # {}", request_count.current());
 
     let server_clone = self.connection_builder.clone();
     let message_handler_clone = self.message_handler.clone();
@@ -110,7 +110,7 @@ where
       }
 
       request_count.decrement();
-      debug!("Request processed: current # {}", request_count.current());
+      trace!("Request processed: current # {}", request_count.current());
     });
   }
 
@@ -131,52 +131,55 @@ where
 
   /// Start with TLS (HTTPS)
   pub(super) async fn start_with_tls(&self, cancel_token: CancellationToken) -> RpxyResult<()> {
+    // By default, TLS listener is spawned
+    let join_handle_tls = self.globals.runtime_handle.spawn({
+      let self_clone = self.clone();
+      let cancel_token = cancel_token.clone();
+      async move {
+        select! {
+          _ = self_clone.tls_listener_service().fuse() => {
+            error!("TCP proxy service for TLS exited");
+            cancel_token.cancel();
+          },
+          _ = cancel_token.cancelled().fuse() => {
+            debug!("Cancel token is called for TLS listener");
+          }
+        }
+      }
+    });
+
     #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
     {
-      self.tls_listener_service().await?;
-      error!("TCP proxy service for TLS exited");
+      let _ = join_handle_tls.await;
       Ok(())
     }
+
     #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
-      if self.globals.proxy_config.http3 {
-        let jh_tls = self.globals.runtime_handle.spawn({
-          let self_clone = self.clone();
-          let cancel_token = cancel_token.clone();
-          async move {
-            select! {
-              _ = self_clone.tls_listener_service().fuse() => {
-                error!("TCP proxy service for TLS exited");
-                cancel_token.cancel();
-              },
-              _ = cancel_token.cancelled().fuse() => {
-                debug!("Cancel token is called for TLS listener");
-              }
-            }
-          }
-        });
-        let jh_h3 = self.globals.runtime_handle.spawn({
-          let self_clone = self.clone();
-          async move {
-            select! {
-              _ = self_clone.h3_listener_service().fuse() => {
-                error!("UDP proxy service for QUIC exited");
-                cancel_token.cancel();
-              },
-              _ = cancel_token.cancelled().fuse() => {
-                debug!("Cancel token is called for QUIC listener");
-              }
-            }
-          }
-        });
-        let _ = futures::future::join(jh_tls, jh_h3).await;
-
-        Ok(())
-      } else {
-        self.tls_listener_service().await?;
-        error!("TCP proxy service for TLS exited");
-        Ok(())
+      // If HTTP/3 is not enabled, wait for TLS listener to finish
+      if !self.globals.proxy_config.http3 {
+        let _ = join_handle_tls.await;
+        return Ok(());
       }
+
+      // If HTTP/3 is enabled, spawn a task to handle HTTP/3 connections
+      let join_handle_h3 = self.globals.runtime_handle.spawn({
+        let self_clone = self.clone();
+        async move {
+          select! {
+            _ = self_clone.h3_listener_service().fuse() => {
+              error!("UDP proxy service for QUIC exited");
+              cancel_token.cancel();
+            },
+            _ = cancel_token.cancelled().fuse() => {
+              debug!("Cancel token is called for QUIC listener");
+            }
+          }
+        }
+      });
+      let _ = futures::future::join(join_handle_tls, join_handle_h3).await;
+
+      Ok(())
     }
   }
 

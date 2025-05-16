@@ -26,6 +26,7 @@ pub struct BackendApp {
   pub https_redirection: Option<bool>,
   /// tls settings: mutual TLS is enabled
   #[builder(default)]
+  #[allow(unused)]
   pub mutual_tls: Option<bool>,
 }
 impl<'a> BackendAppBuilder {

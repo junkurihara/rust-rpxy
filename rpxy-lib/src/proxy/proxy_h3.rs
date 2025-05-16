@@ -68,7 +68,7 @@ where
             h3_conn.shutdown(0).await?;
             break;
           }
-          debug!("Request incoming: current # {}", request_count.current());
+          trace!("Request incoming: current # {}", request_count.current());
 
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
@@ -82,7 +82,7 @@ where
               warn!("HTTP/3 error on serve stream: {}", e);
             }
             request_count.decrement();
-            debug!("Request processed: current # {}", request_count.current());
+            trace!("Request processed: current # {}", request_count.current());
           });
         }
       }
