@@ -98,7 +98,7 @@ Done at May 20, 2025
 
 ### Environment
 
-- `rpxy` commit id: `7c0945a5124418aa9a1024568c1989bb77cf312f`
+- `rpxy` commit id: `e259e0b58897258d98fdb7504a1cbcbd7c5b37db`
 - Docker Desktop 4.41.2 (192736)
 - ReWrk 0.3.2 and Wrk 0.4.2
 - iMac '27 (2020, 10-Core Intel Core i9, 128GB RAM)
