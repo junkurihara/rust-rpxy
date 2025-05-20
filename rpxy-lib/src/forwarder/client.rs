@@ -126,9 +126,9 @@ where
     warn!(
       "
 --------------------------------------------------------------------------------------------------
-Request forwarder is working without TLS support!!!
-We recommend to use this just for testing.
-Please enable native-tls-backend or rustls-backend feature to enable TLS support.
+Request forwarder is working without TLS support!
+This mode is intended for testing only.
+Enable 'native-tls-backend' or 'rustls-backend' feature for TLS support.
 --------------------------------------------------------------------------------------------------"
     );
     let executor = LocalExecutor::new(_globals.runtime_handle.clone());
@@ -159,7 +159,7 @@ where
   /// Build forwarder
   pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
     // build hyper client with hyper-tls
-    info!("Native TLS support is enabled for the connection to backend applications");
+    info!("Native TLS support enabled for backend connections (native-tls)");
     let executor = LocalExecutor::new(_globals.runtime_handle.clone());
 
     let try_build_connector = |alpns: &[&str]| {
@@ -209,14 +209,14 @@ where
     #[cfg(feature = "webpki-roots")]
     let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_webpki_roots();
     #[cfg(feature = "webpki-roots")]
-    info!("Mozilla WebPKI root certs with rustls is used for the connection to backend applications");
+    info!("Rustls backend: Mozilla WebPKI root certs used for backend connections");
 
     #[cfg(not(feature = "webpki-roots"))]
     let builder = hyper_rustls::HttpsConnectorBuilder::new().with_platform_verifier();
     #[cfg(not(feature = "webpki-roots"))]
     let builder_h2 = hyper_rustls::HttpsConnectorBuilder::new().with_platform_verifier();
     #[cfg(not(feature = "webpki-roots"))]
-    info!("Platform verifier with rustls is used for the connection to backend applications");
+    info!("Rustls backend: Platform verifier used for backend connections");
 
     let mut http = HttpConnector::new();
     http.enforce_http(false);
