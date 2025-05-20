@@ -1,4 +1,4 @@
-use super::toml::ConfigToml;
+use super::toml::{ConfigToml, ConfigTomlExt};
 use crate::error::{anyhow, ensure};
 use ahash::HashMap;
 use clap::Arg;
@@ -52,8 +52,6 @@ pub fn parse_opts() -> Result<Opts, anyhow::Error> {
     log_dir_path,
   })
 }
-
-use super::toml::ConfigTomlExt;
 
 /// Build proxy and app settings from config using ConfigTomlExt
 pub fn build_settings(config: &ConfigToml) -> Result<(ProxyConfig, AppConfigList), anyhow::Error> {
