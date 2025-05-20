@@ -71,6 +71,7 @@ struct RpxyService {
 }
 
 impl RpxyService {
+  /// Create a new RpxyService from config and runtime handle.
   async fn new(config_toml: &ConfigToml, runtime_handle: tokio::runtime::Handle) -> Result<Self, anyhow::Error> {
     let (proxy_conf, app_conf) = build_settings(config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
 
@@ -80,7 +81,7 @@ impl RpxyService {
       .map(|(s, r)| (Some(Arc::new(s)), Some(r)))
       .unwrap_or((None, None));
 
-    Ok(RpxyService {
+    Ok(Self {
       runtime_handle: runtime_handle.clone(),
       proxy_conf,
       app_conf,
