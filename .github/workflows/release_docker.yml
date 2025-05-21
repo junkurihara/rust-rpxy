@@ -16,6 +16,10 @@ env:
 
 jobs:
   build_and_push:
+    permissions:
+      contents: read
+      packages: write
+
     runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
     strategy:
@@ -199,6 +203,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   dispatch_release_event:
+    permissions:
+      contents: write
+      actions: write
+
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
     needs: build_and_push
