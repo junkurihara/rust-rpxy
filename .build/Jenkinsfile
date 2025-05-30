@@ -37,9 +37,6 @@ pipeline {
 
                     dir('rust-rpxy') {
                         sh """
-                        # Update submodule URLs to HTTPS (allows cloning without SSH keys)
-                        sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
-
                         # Initialize and update submodules
                         git submodule update --init
                         """
@@ -59,7 +56,7 @@ pipeline {
 
                         // Build the binary
                         sh 'cargo build --release'
-                    
+
                         // Prepare and stash files
                         sh """
                             # Move binary to workspace root for easier access
@@ -81,7 +78,7 @@ pipeline {
                     stash includes: "${BINARY_NAME}.spec", name: "rpm-files"
                     stash includes: "rpxy.service, config.toml", name: "service-file"
                     stash includes: "LICENSE, README.md", name: "docs"
-                        
+
                     // Archive the binary as an artifact
                     archiveArtifacts artifacts: "${BINARY_NAME}", allowEmptyArchive: false, fingerprint: true
                 }
