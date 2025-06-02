@@ -1185,7 +1185,7 @@ dependencies = [
  "hyper-util",
  "rustls",
  "rustls-pki-types",
- "rustls-platform-verifier",
+ "rustls-platform-verifier 0.5.3",
  "tokio",
  "tokio-rustls",
  "tower-service",
@@ -1913,7 +1913,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "rustls",
  "rustls-pki-types",
- "rustls-platform-verifier",
+ "rustls-platform-verifier 0.5.3",
  "slab",
  "thiserror 2.0.12",
  "tinyvec",
@@ -2126,7 +2126,7 @@ dependencies = [
  "blocking",
  "rustls",
  "rustls-acme",
- "rustls-platform-verifier",
+ "rustls-platform-verifier 0.6.0",
  "rustls-post-quantum",
  "thiserror 2.0.12",
  "tokio",
@@ -2342,6 +2342,27 @@ dependencies = [
  "security-framework 3.2.0",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "rustls-platform-verifier"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eda84358ed17f1f354cf4b1909ad346e6c7bc2513e8c40eb08e0157aa13a9070"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "jni",
+ "log",
+ "once_cell",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier-android",
+ "rustls-webpki",
+ "security-framework 3.2.0",
+ "security-framework-sys",
+ "webpki-root-certs 1.0.0",
  "windows-sys 0.59.0",
 ]
 
