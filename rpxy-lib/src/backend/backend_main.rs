@@ -85,24 +85,27 @@ impl TryFrom<&AppConfigList> for BackendAppManager {
     }
 
     // default backend application for plaintext http requests
-    if let Some(default_app_name) = &config_list.default_app {
-      let default_server_name = manager
-        .apps
-        .iter()
-        .filter(|(_k, v)| &v.app_name == default_app_name)
-        .map(|(_, v)| v.server_name.clone())
-        .collect::<Vec<_>>();
+    let Some(default_app_name) = &config_list.default_app else {
+      return Ok(manager);
+    };
 
-      if !default_server_name.is_empty() {
-        info!(
-          "Serving plaintext http for requests to unconfigured server_name by app {} (server_name: {}).",
-          &default_app_name,
-          (&default_server_name[0]).try_into().unwrap_or_else(|_| "".to_string())
-        );
+    let default_server_name = manager
+      .apps
+      .iter()
+      .filter(|(_k, v)| &v.app_name == default_app_name)
+      .map(|(_, v)| v.server_name.clone())
+      .collect::<Vec<_>>();
 
-        manager.default_server_name = Some(default_server_name[0].clone());
-      }
+    if !default_server_name.is_empty() {
+      info!(
+        "Serving plaintext http for requests to unconfigured server_name by app {} (server_name: {}).",
+        &default_app_name,
+        (&default_server_name[0]).try_into().unwrap_or_else(|_| "".to_string())
+      );
+
+      manager.default_server_name = Some(default_server_name[0].clone());
     }
+
     Ok(manager)
   }
 }
