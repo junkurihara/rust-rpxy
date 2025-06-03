@@ -412,9 +412,9 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "cc"
-version = "1.2.24"
+version = "1.2.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16595d3be041c03b09d08d0858631facccee9221e579704070e6e9e4915d3bc7"
+checksum = "d0fc897dc1e865cc67c0e05a836d9d3f1df3cbe442aa4a9473b18e12624a4951"
 dependencies = [
  "jobserver",
  "libc",
@@ -1185,7 +1185,7 @@ dependencies = [
  "hyper-util",
  "rustls",
  "rustls-pki-types",
- "rustls-platform-verifier",
+ "rustls-platform-verifier 0.5.3",
  "tokio",
  "tokio-rustls",
  "tower-service",
@@ -1854,9 +1854,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.32"
+version = "0.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "664ec5419c51e34154eec046ebcba56312d5a2fc3b09a06da188e1ad21afadf6"
+checksum = "9dee91521343f4c5c6a63edd65e54f31f5c92fe8978c40a4282f8372194c6a7d"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -1913,7 +1913,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "rustls",
  "rustls-pki-types",
- "rustls-platform-verifier",
+ "rustls-platform-verifier 0.5.3",
  "slab",
  "thiserror 2.0.12",
  "tinyvec",
@@ -2126,7 +2126,7 @@ dependencies = [
  "blocking",
  "rustls",
  "rustls-acme",
- "rustls-platform-verifier",
+ "rustls-platform-verifier 0.6.0",
  "rustls-post-quantum",
  "thiserror 2.0.12",
  "tokio",
@@ -2346,6 +2346,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-platform-verifier"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eda84358ed17f1f354cf4b1909ad346e6c7bc2513e8c40eb08e0157aa13a9070"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "jni",
+ "log",
+ "once_cell",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier-android",
+ "rustls-webpki",
+ "security-framework 3.2.0",
+ "security-framework-sys",
+ "webpki-root-certs 1.0.0",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "rustls-platform-verifier-android"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2523,9 +2544,9 @@ dependencies = [
 
 [[package]]
 name = "s2n-tls"
-version = "0.3.20"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c5b886e605d71d8e78e37c7f6195887112f4c9d0a3269057f6447d3dae99908"
+checksum = "23c23a50f9733440df3a1e8c94d71026b02e5080395f080f4f66d1fecc2fca86"
 dependencies = [
  "errno",
  "hex",
@@ -2536,9 +2557,9 @@ dependencies = [
 
 [[package]]
 name = "s2n-tls-sys"
-version = "0.3.20"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "753c5eb4a0632b275ee3c503b0a108b2430b429566c86501f311f67cf579b35f"
+checksum = "00d42ff433e7a1267cc7105ee1aa8f8785473cee48376ddbb13e2d9f23e2291d"
 dependencies = [
  "aws-lc-rs",
  "cc",
