@@ -131,6 +131,4 @@ impl LoadBalance {
 pub struct LoadBalanceContext {
   #[cfg(feature = "sticky-cookie")]
   pub sticky_cookie: StickyCookie,
-  #[cfg(not(feature = "sticky-cookie"))]
-  pub sticky_cookie: (),
 }

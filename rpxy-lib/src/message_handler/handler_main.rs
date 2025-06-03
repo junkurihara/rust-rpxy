@@ -24,10 +24,7 @@ use tokio::io::copy_bidirectional;
 #[derive(Debug)]
 /// Context object to handle sticky cookies at HTTP message handler
 pub(super) struct HandlerContext {
-  #[cfg(feature = "sticky-cookie")]
   pub(super) context_lb: Option<LoadBalanceContext>,
-  #[cfg(not(feature = "sticky-cookie"))]
-  pub(super) context_lb: Option<()>,
 }
 
 #[derive(Clone, Builder)]
