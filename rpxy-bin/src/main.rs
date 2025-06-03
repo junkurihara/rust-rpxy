@@ -9,19 +9,17 @@ mod log;
 #[cfg(feature = "acme")]
 use crate::config::build_acme_manager;
 use crate::{
-  config::{build_cert_manager, build_settings, parse_opts, ConfigToml, ConfigTomlReloader},
+  config::{ConfigToml, ConfigTomlReloader, build_cert_manager, build_settings, parse_opts},
   constants::CONFIG_WATCH_DELAY_SECS,
   error::*,
   log::*,
 };
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use rpxy_lib::{entrypoint, RpxyOptions, RpxyOptionsBuilder};
+use rpxy_lib::{RpxyOptions, RpxyOptionsBuilder, entrypoint};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 fn main() {
-  init_logger();
-
   let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
   runtime_builder.enable_all();
   runtime_builder.thread_name("rpxy");
@@ -30,37 +28,34 @@ fn main() {
   runtime.block_on(async {
     // Initially load options
     let Ok(parsed_opts) = parse_opts() else {
-      error!("Invalid toml file");
       std::process::exit(1);
     };
 
-    if !parsed_opts.watch {
-      if let Err(e) = rpxy_service_without_watcher(&parsed_opts.config_file_path, runtime.handle().clone()).await {
-        error!("rpxy service existed: {e}");
-        std::process::exit(1);
-      }
-    } else {
-      let (config_service, config_rx) =
-        ReloaderService::<ConfigTomlReloader, ConfigToml>::new(&parsed_opts.config_file_path, CONFIG_WATCH_DELAY_SECS, false)
-          .await
-          .unwrap();
+    init_logger(parsed_opts.log_dir_path.as_deref());
 
-      tokio::select! {
-        config_res = config_service.start() => {
-          if let Err(e) = config_res {
-            error!("config reloader service exited: {e}");
-            std::process::exit(1);
-          }
-        }
-        rpxy_res = rpxy_service_with_watcher(config_rx, runtime.handle().clone()) => {
-          if let Err(e) = rpxy_res {
-            error!("rpxy service existed: {e}");
-            std::process::exit(1);
-          }
+    let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::new(
+      &parsed_opts.config_file_path,
+      CONFIG_WATCH_DELAY_SECS,
+      false,
+    )
+    .await
+    .unwrap();
+
+    tokio::select! {
+      config_res = config_service.start() => {
+        if let Err(e) = config_res {
+          error!("config reloader service exited: {e}");
+          std::process::exit(1);
         }
       }
-      std::process::exit(0);
+      rpxy_res = rpxy_service(config_rx, runtime.handle().clone()) => {
+        if let Err(e) = rpxy_res {
+          error!("rpxy service existed: {e}");
+          std::process::exit(1);
+        }
+      }
     }
+    std::process::exit(0);
   });
 }
 
@@ -76,6 +71,7 @@ struct RpxyService {
 }
 
 impl RpxyService {
+  /// Create a new RpxyService from config and runtime handle.
   async fn new(config_toml: &ConfigToml, runtime_handle: tokio::runtime::Handle) -> Result<Self, anyhow::Error> {
     let (proxy_conf, app_conf) = build_settings(config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
 
@@ -85,7 +81,7 @@ impl RpxyService {
       .map(|(s, r)| (Some(Arc::new(s)), Some(r)))
       .unwrap_or((None, None));
 
-    Ok(RpxyService {
+    Ok(Self {
       runtime_handle: runtime_handle.clone(),
       proxy_conf,
       app_conf,
@@ -96,7 +92,7 @@ impl RpxyService {
     })
   }
 
-  async fn start(&self, cancel_token: Option<CancellationToken>) -> Result<(), anyhow::Error> {
+  async fn start(&self, cancel_token: CancellationToken) -> Result<(), anyhow::Error> {
     let RpxyService {
       runtime_handle,
       proxy_conf,
@@ -111,17 +107,19 @@ impl RpxyService {
     {
       let (acme_join_handles, server_config_acme_challenge) = acme_manager
         .as_ref()
-        .map(|m| m.spawn_manager_tasks(cancel_token.as_ref().map(|t| t.child_token())))
+        .map(|m| m.spawn_manager_tasks(cancel_token.child_token()))
         .unwrap_or((vec![], Default::default()));
       let rpxy_opts = RpxyOptionsBuilder::default()
         .proxy_config(proxy_conf.clone())
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.clone())
         .runtime_handle(runtime_handle.clone())
-        .cancel_token(cancel_token.as_ref().map(|t| t.child_token()))
         .server_configs_acme_challenge(Arc::new(server_config_acme_challenge))
         .build()?;
-      self.start_inner(rpxy_opts, acme_join_handles).await.map_err(|e| anyhow!(e))
+      self
+        .start_inner(rpxy_opts, cancel_token, acme_join_handles)
+        .await
+        .map_err(|e| anyhow!(e))
     }
 
     #[cfg(not(feature = "acme"))]
@@ -131,9 +129,8 @@ impl RpxyService {
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.clone())
         .runtime_handle(runtime_handle.clone())
-        .cancel_token(cancel_token.as_ref().map(|t| t.child_token()))
         .build()?;
-      self.start_inner(rpxy_opts).await.map_err(|e| anyhow!(e))
+      self.start_inner(rpxy_opts, cancel_token).await.map_err(|e| anyhow!(e))
     }
   }
 
@@ -141,19 +138,19 @@ impl RpxyService {
   async fn start_inner(
     &self,
     rpxy_opts: RpxyOptions,
+    cancel_token: CancellationToken,
     #[cfg(feature = "acme")] acme_task_handles: Vec<tokio::task::JoinHandle<()>>,
   ) -> Result<(), anyhow::Error> {
-    let cancel_token = rpxy_opts.cancel_token.clone();
+    let cancel_token = cancel_token.clone();
     let runtime_handle = rpxy_opts.runtime_handle.clone();
 
     // spawn rpxy entrypoint, where cancellation token is possibly contained inside the service
     let cancel_token_clone = cancel_token.clone();
+    let child_cancel_token = cancel_token.child_token();
     let rpxy_handle = runtime_handle.spawn(async move {
-      if let Err(e) = entrypoint(&rpxy_opts).await {
+      if let Err(e) = entrypoint(&rpxy_opts, child_cancel_token).await {
         error!("rpxy entrypoint exited on error: {e}");
-        if let Some(cancel_token) = cancel_token_clone {
-          cancel_token.cancel();
-        }
+        cancel_token_clone.cancel();
         return Err(anyhow!(e));
       }
       Ok(())
@@ -166,24 +163,20 @@ impl RpxyService {
     // spawn certificate reloader service, where cert service does not have cancellation token inside the service
     let cert_service = self.cert_service.as_ref().unwrap().clone();
     let cancel_token_clone = cancel_token.clone();
-    let child_cancel_token = cancel_token.as_ref().map(|c| c.child_token());
+    let child_cancel_token = cancel_token.child_token();
     let cert_handle = runtime_handle.spawn(async move {
-      if let Some(child_cancel_token) = child_cancel_token {
-        tokio::select! {
-          cert_res = cert_service.start() => {
-            if let Err(ref e) = cert_res {
-              error!("cert reloader service exited on error: {e}");
-            }
-            cancel_token_clone.unwrap().cancel();
-            cert_res.map_err(|e| anyhow!(e))
+      tokio::select! {
+        cert_res = cert_service.start() => {
+          if let Err(ref e) = cert_res {
+            error!("cert reloader service exited on error: {e}");
           }
-          _ = child_cancel_token.cancelled() => {
-            debug!("cert reloader service terminated");
-            Ok(())
-          }
+          cancel_token_clone.cancel();
+          cert_res.map_err(|e| anyhow!(e))
         }
-      } else {
-        cert_service.start().await.map_err(|e| anyhow!(e))
+        _ = child_cancel_token.cancelled() => {
+          debug!("cert reloader service terminated");
+          Ok(())
+        }
       }
     });
 
@@ -218,9 +211,7 @@ impl RpxyService {
         if let Err(ref e) = acme_res {
           error!("acme manager exited on error: {e}");
         }
-        if let Some(cancel_token) = cancel_token_clone {
-          cancel_token.cancel();
-        }
+        cancel_token_clone.cancel();
         acme_res.map_err(|e| anyhow!(e))
       });
       let (rpxy_res, cert_res, acme_res) = tokio::join!(rpxy_handle, cert_handle, acme_handle);
@@ -235,18 +226,8 @@ impl RpxyService {
   }
 }
 
-async fn rpxy_service_without_watcher(
-  config_file_path: &str,
-  runtime_handle: tokio::runtime::Handle,
-) -> Result<(), anyhow::Error> {
-  info!("Start rpxy service");
-  let config_toml = ConfigToml::new(config_file_path).map_err(|e| anyhow!("Invalid toml file: {e}"))?;
-  let service = RpxyService::new(&config_toml, runtime_handle).await?;
-  service.start(None).await
-}
-
-async fn rpxy_service_with_watcher(
-  mut config_rx: ReloaderReceiver<ConfigToml>,
+async fn rpxy_service(
+  mut config_rx: ReloaderReceiver<ConfigToml, String>,
   runtime_handle: tokio::runtime::Handle,
 ) -> Result<(), anyhow::Error> {
   info!("Start rpxy service with dynamic config reloader");
@@ -265,7 +246,7 @@ async fn rpxy_service_with_watcher(
 
     tokio::select! {
       /* ---------- */
-      rpxy_res = service.start(Some(cancel_token.clone())) => {
+      rpxy_res = service.start(cancel_token.clone()) => {
         if let Err(ref e) = rpxy_res {
           error!("rpxy service exited on error: {e}");
         } else {

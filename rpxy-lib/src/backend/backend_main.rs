@@ -1,11 +1,11 @@
 use crate::{
+  AppConfig, AppConfigList,
   error::*,
   log::*,
   name_exp::{ByteName, ServerName},
-  AppConfig, AppConfigList,
 };
+use ahash::HashMap;
 use derive_builder::Builder;
-use rustc_hash::FxHashMap as HashMap;
 use std::borrow::Cow;
 
 use super::upstream::PathManager;
@@ -26,6 +26,7 @@ pub struct BackendApp {
   pub https_redirection: Option<bool>,
   /// tls settings: mutual TLS is enabled
   #[builder(default)]
+  #[allow(unused)]
   pub mutual_tls: Option<bool>,
 }
 impl<'a> BackendAppBuilder {

@@ -1,7 +1,7 @@
 use super::body::IncomingLike;
 use crate::error::RpxyError;
 use futures::channel::mpsc::UnboundedReceiver;
-use http_body_util::{combinators, BodyExt, Empty, Full, StreamBody};
+use http_body_util::{BodyExt, Empty, Full, StreamBody, combinators};
 use hyper::body::{Body, Bytes, Frame, Incoming};
 use std::pin::Pin;
 

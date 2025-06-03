@@ -3,48 +3,45 @@
 This test simply measures the performance of several reverse proxy through HTTP/1.1 by the following command using [`rewrk`](https://github.com/lnx-search/rewrk).
 
 ```sh:
-$ rewrk -c 512 -t 4 -d 15s -h http://localhost:8080 --pct
+rewrk -c 512 -t 4 -d 15s -h http://localhost:8080 --pct
 ```
 
 ## Tests on `linux/arm64/v8`
 
-Done at Jul. 15, 2023
+Done at May. 17, 2025
 
 ### Environment
 
-- `rpxy` commit id: `1da7e5bfb77d1ce4ee8d6cfc59b1c725556fc192`
-- Docker Desktop 4.21.1 (114176)
+- `rpxy` commit id: `e259e0b58897258d98fdb7504a1cbcbd7c5b37db`
+- Docker Desktop 4.41.2 (191736)
 - ReWrk 0.3.2
-- Macbook Pro '14 (2021, M1 Max, 64GB RAM)
+- Mac mini (2024, M4 Pro, 64GB RAM)
 
 The docker images of `nginx` and `caddy` for `linux/arm64/v8` are pulled from the official registry.
 
 ### Result for `rpxy`, `nginx` and `caddy`
 
-```
-----------------------------
+```bash
 Benchmark on rpxy
 Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8080 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    19.64ms  8.85ms   0.67ms   113.22ms
+    6.90ms   3.42ms   0.78ms   80.26ms
   Requests:
-    Total: 390078  Req/Sec: 26011.25
+    Total: 1107885 Req/Sec: 73866.03
   Transfer:
-    Total: 304.85 MB Transfer Rate: 20.33 MB/Sec
+    Total: 867.44 MB Transfer Rate: 57.83 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |     79.24ms     |
-|       99%       |     54.28ms     |
-|       95%       |     42.50ms     |
-|       90%       |     37.82ms     |
-|       75%       |     31.54ms     |
-|       50%       |     26.37ms     |
+|      99.9%      |     49.76ms     |
+|       99%       |     29.57ms     |
+|       95%       |     15.78ms     |
+|       90%       |     13.05ms     |
+|       75%       |     10.41ms     |
+|       50%       |     8.72ms      |
 + --------------- + --------------- +
-
-721 Errors: error shutting down connection: Socket is not connected (os error 57)
 
 sleep 3 secs
 ----------------------------
@@ -53,23 +50,23 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8090 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    33.26ms  15.18ms  1.40ms   118.94ms
+    11.65ms  14.04ms  0.40ms   205.93ms
   Requests:
-    Total: 230268  Req/Sec: 15356.08
+    Total: 654978  Req/Sec: 43666.56
   Transfer:
-    Total: 186.77 MB Transfer Rate: 12.46 MB/Sec
+    Total: 532.81 MB Transfer Rate: 35.52 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |     99.91ms     |
-|       99%       |     83.74ms     |
-|       95%       |     70.67ms     |
-|       90%       |     64.03ms     |
-|       75%       |     54.32ms     |
-|       50%       |     45.19ms     |
+|      99.9%      |    151.00ms     |
+|       99%       |    102.80ms     |
+|       95%       |     62.44ms     |
+|       90%       |     42.98ms     |
+|       75%       |     26.44ms     |
+|       50%       |     18.25ms     |
 + --------------- + --------------- +
 
-677 Errors: error shutting down connection: Socket is not connected (os error 57)
+512 Errors: connection closed
 
 sleep 3 secs
 ----------------------------
@@ -78,33 +75,31 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8100 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    48.51ms  50.74ms  0.34ms   554.58ms
+    77.54ms  368.11ms  0.37ms   6770.73ms
   Requests:
-    Total: 157239  Req/Sec: 10485.98
+    Total:  86963  Req/Sec: 5798.35
   Transfer:
-    Total: 125.99 MB Transfer Rate: 8.40 MB/Sec
+    Total: 70.00 MB Transfer Rate: 4.67 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |    473.82ms     |
-|       99%       |    307.16ms     |
-|       95%       |    212.28ms     |
-|       90%       |    169.05ms     |
-|       75%       |    115.92ms     |
-|       50%       |     80.24ms     |
+|      99.9%      |    5789.65ms    |
+|       99%       |    3407.02ms    |
+|       95%       |    1022.31ms    |
+|       90%       |    608.17ms     |
+|       75%       |    281.95ms     |
+|       50%       |    149.29ms     |
 + --------------- + --------------- +
-
-708 Errors: error shutting down connection: Socket is not connected (os error 57)
 ```
 
 ## Results on `linux/amd64`
 
-Done at Jul. 24, 2023
+Done at May 20, 2025
 
 ### Environment
 
-- `rpxy` commit id: `7c0945a5124418aa9a1024568c1989bb77cf312f`
-- Docker Desktop 4.21.1 (114176)
+- `rpxy` commit id: `e259e0b58897258d98fdb7504a1cbcbd7c5b37db`
+- Docker Desktop 4.41.2 (192736)
 - ReWrk 0.3.2 and Wrk 0.4.2
 - iMac '27 (2020, 10-Core Intel Core i9, 128GB RAM)
 
@@ -112,8 +107,8 @@ The docker images of `nginx` and `caddy` for `linux/amd64` were pulled from the 
 
 Also, when `Sozu` is configured as an HTTP reverse proxy, it cannot handle HTTP request messages emit from `ReWrk` due to hostname parsing errors though it can correctly handle messages dispatched from `curl` and browsers. So, we additionally test using [`Wrk`](https://github.com/wg/wrk) to examine `Sozu` with the following command.
 
-```sh:
-$ wrk -c 512 -t 4 -d 15s http://localhost:8110
+```bash
+wrk -c 512 -t 4 -d 15s http://localhost:8110
 ```
 
 <!-- ```
@@ -124,7 +119,7 @@ ERROR  Error connecting to backend: Could not get cluster id from request: Host 
 
 #### With ReWrk for `rpxy`, `nginx` and `caddy`
 
-```
+```bash
 ----------------------------
 Benchmark [x86_64] with ReWrk
 ----------------------------
@@ -133,23 +128,21 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8080 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    20.37ms  8.95ms   1.63ms   160.27ms
+    15.75ms  6.75ms   1.75ms   124.25ms
   Requests:
-    Total: 376345  Req/Sec: 25095.19
+    Total: 486635  Req/Sec: 32445.33
   Transfer:
-    Total: 295.61 MB Transfer Rate: 19.71 MB/Sec
+    Total: 381.02 MB Transfer Rate: 25.40 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |    112.50ms     |
-|       99%       |     61.33ms     |
-|       95%       |     44.26ms     |
-|       90%       |     38.74ms     |
-|       75%       |     32.00ms     |
-|       50%       |     26.82ms     |
+|      99.9%      |     91.91ms     |
+|       99%       |     55.53ms     |
+|       95%       |     34.87ms     |
+|       90%       |     29.55ms     |
+|       75%       |     23.99ms     |
+|       50%       |     20.17ms     |
 + --------------- + --------------- +
-
-626 Errors: error shutting down connection: Socket is not connected (os error 57)
 
 sleep 3 secs
 ----------------------------
@@ -158,23 +151,21 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8090 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    23.45ms  12.42ms  1.18ms   154.44ms
+    24.02ms  15.84ms  1.31ms   207.97ms
   Requests:
-    Total: 326685  Req/Sec: 21784.73
+    Total: 318516  Req/Sec: 21236.67
   Transfer:
-    Total: 265.22 MB Transfer Rate: 17.69 MB/Sec
+    Total: 259.11 MB Transfer Rate: 17.28 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |     96.85ms     |
-|       99%       |     73.93ms     |
-|       95%       |     57.57ms     |
-|       90%       |     50.36ms     |
-|       75%       |     40.57ms     |
-|       50%       |     32.70ms     |
+|      99.9%      |    135.56ms     |
+|       99%       |     92.59ms     |
+|       95%       |     68.54ms     |
+|       90%       |     58.75ms     |
+|       75%       |     45.88ms     |
+|       50%       |     35.64ms     |
 + --------------- + --------------- +
-
-657 Errors: error shutting down connection: Socket is not connected (os error 57)
 
 sleep 3 secs
 ----------------------------
@@ -183,30 +174,26 @@ Beginning round 1...
 Benchmarking 512 connections @ http://localhost:8100 for 15 second(s)
   Latencies:
     Avg      Stdev    Min      Max
-    45.71ms  50.47ms  0.88ms   908.49ms
+    74.60ms  181.26ms  0.94ms   2723.20ms
   Requests:
-    Total: 166917  Req/Sec: 11129.80
+    Total: 101893  Req/Sec: 6792.16
   Transfer:
-    Total: 133.77 MB Transfer Rate: 8.92 MB/Sec
+    Total: 82.03 MB Transfer Rate: 5.47 MB/Sec
 + --------------- + --------------- +
 |   Percentile    |   Avg Latency   |
 + --------------- + --------------- +
-|      99.9%      |    608.92ms     |
-|       99%       |    351.18ms     |
-|       95%       |    210.56ms     |
-|       90%       |    162.68ms     |
-|       75%       |    106.97ms     |
-|       50%       |     73.90ms     |
+|      99.9%      |    2232.12ms    |
+|       99%       |    1517.73ms    |
+|       95%       |    624.63ms     |
+|       90%       |    406.69ms     |
+|       75%       |    222.42ms     |
+|       50%       |    133.46ms     |
 + --------------- + --------------- +
-
-646 Errors: error shutting down connection: Socket is not connected (os error 57)
-
-sleep 3 secs
 ```
 
 #### With Wrk for `rpxy`, `nginx`, `caddy` and `sozu`
 
-```
+```bash
 ----------------------------
 Benchmark [x86_64] with Wrk
 ----------------------------
@@ -214,12 +201,11 @@ Benchmark on rpxy
 Running 15s test @ http://localhost:8080
   4 threads and 512 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    18.68ms    8.09ms 122.64ms   74.03%
-    Req/Sec     6.95k   815.23     8.45k    83.83%
-  414819 requests in 15.01s, 326.37MB read
-  Socket errors: connect 0, read 608, write 0, timeout 0
-Requests/sec:  27627.79
-Transfer/sec:     21.74MB
+    Latency    15.65ms    6.94ms 104.73ms   81.28%
+    Req/Sec     8.36k     0.90k    9.90k    77.83%
+  499550 requests in 15.02s, 391.14MB read
+Requests/sec:  33267.61
+Transfer/sec:     26.05MB
 
 sleep 3 secs
 ----------------------------
@@ -227,12 +213,11 @@ Benchmark on nginx
 Running 15s test @ http://localhost:8090
   4 threads and 512 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    23.34ms   13.80ms 126.06ms   74.66%
-    Req/Sec     5.71k   607.41     7.07k    73.17%
-  341127 requests in 15.03s, 277.50MB read
-  Socket errors: connect 0, read 641, write 0, timeout 0
-Requests/sec:  22701.54
-Transfer/sec:     18.47MB
+    Latency    24.26ms   15.29ms 167.43ms   73.34%
+    Req/Sec     5.53k   493.14     6.91k    69.67%
+  330569 requests in 15.02s, 268.91MB read
+Requests/sec:  22014.96
+Transfer/sec:     17.91MB
 
 sleep 3 secs
 ----------------------------
@@ -240,13 +225,13 @@ Benchmark on caddy
 Running 15s test @ http://localhost:8100
   4 threads and 512 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    54.19ms   55.63ms 674.53ms   88.55%
-    Req/Sec     2.92k     1.40k    5.57k    56.17%
-  174748 requests in 15.03s, 140.61MB read
-  Socket errors: connect 0, read 660, write 0, timeout 0
-  Non-2xx or 3xx responses: 70
-Requests/sec:  11624.63
-Transfer/sec:      9.35MB
+    Latency   212.89ms  300.23ms   1.99s    86.56%
+    Req/Sec     1.31k     1.64k    5.72k    78.79%
+  67749 requests in 15.04s, 51.97MB read
+  Socket errors: connect 0, read 0, write 0, timeout 222
+  Non-2xx or 3xx responses: 3686
+Requests/sec:   4505.12
+Transfer/sec:      3.46MB
 
 sleep 3 secs
 ----------------------------
@@ -254,10 +239,9 @@ Benchmark on sozu
 Running 15s test @ http://localhost:8110
   4 threads and 512 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    19.78ms    4.89ms  98.09ms   76.88%
-    Req/Sec     6.49k   824.75     8.11k    76.17%
-  387744 requests in 15.02s, 329.11MB read
-  Socket errors: connect 0, read 647, write 0, timeout 0
-Requests/sec:  25821.93
-Transfer/sec:     21.92MB
+    Latency    34.68ms    6.30ms  90.21ms   72.49%
+    Req/Sec     3.69k   397.85     5.08k    73.00%
+  220655 requests in 15.01s, 187.29MB read
+Requests/sec:  14699.17
+Transfer/sec:     12.48MB
 ```

@@ -28,10 +28,10 @@ max_clients = 512
 listen_ipv6 = false
 
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
-# execpt for configured application.
+# except for configured application.
 # Note that this is only for http.
 # Note that nothing is served for requests via https since secure channel cannot be
-# established for unconfigured server_name, and they are always rejected by checking SNI.
+# established for non-configured server_name, and they are always rejected by checking SNI.
 default_app = 'another_localhost'
 
 ###################################
@@ -106,7 +106,7 @@ tls = { https_redirection = true, acme = true }
 #      Experimantal settings      #
 ###################################
 [experimental]
-# Higly recommend not to be true. If true, you ignore RFC. if not specified, it is always false.
+# Highly recommend not to be true. If true, you ignore RFC. if not specified, it is always false.
 # This might be required to be true when a certificate is used by multiple backend hosts, especially in case where a TLS connection is re-used.
 # We should note that this strongly depends on the client implementation.
 ignore_sni_consistency = false

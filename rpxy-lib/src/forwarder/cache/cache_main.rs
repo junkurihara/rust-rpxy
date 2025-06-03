@@ -1,10 +1,10 @@
 use super::cache_error::*;
 use crate::{
   globals::Globals,
-  hyper_ext::body::{full, BoxBody, ResponseBody, UnboundedStreamBody},
+  hyper_ext::body::{BoxBody, ResponseBody, UnboundedStreamBody, full},
   log::*,
 };
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use bytes::{Buf, Bytes, BytesMut};
 use futures::channel::mpsc;
 use http::{Request, Response, Uri};
@@ -16,8 +16,8 @@ use sha2::{Digest, Sha256};
 use std::{
   path::{Path, PathBuf},
   sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
   },
   time::SystemTime,
 };
@@ -52,23 +52,30 @@ impl RpxyCache {
     if !globals.proxy_config.cache_enabled {
       return None;
     }
-    let cache_dir = globals.proxy_config.cache_dir.as_ref().unwrap();
+    let cache_dir = match globals.proxy_config.cache_dir.as_ref() {
+      Some(dir) => dir,
+      None => {
+        warn!("Cache directory not set in proxy config");
+        return None;
+      }
+    };
     let file_store = FileStore::new(&globals.runtime_handle).await;
     let inner = LruCacheManager::new(globals.proxy_config.cache_max_entry);
 
     let max_each_size = globals.proxy_config.cache_max_each_size;
     let mut max_each_size_on_memory = globals.proxy_config.cache_max_each_size_on_memory;
     if max_each_size < max_each_size_on_memory {
-      warn!(
-        "Maximum size of on memory cache per entry must be smaller than or equal to the maximum of each file cache"
-      );
+      warn!("Maximum size of on-memory cache per entry must be smaller than or equal to the maximum of each file cache");
       max_each_size_on_memory = max_each_size;
     }
 
     if let Err(e) = fs::remove_dir_all(cache_dir).await {
       warn!("Failed to clean up the cache dir: {e}");
-    };
-    fs::create_dir_all(&cache_dir).await.unwrap();
+    }
+    if let Err(e) = fs::create_dir_all(&cache_dir).await {
+      error!("Failed to create cache dir: {e}");
+      return None;
+    }
 
     Some(Self {
       file_store,
@@ -89,12 +96,7 @@ impl RpxyCache {
   }
 
   /// Put response into the cache
-  pub(crate) async fn put(
-    &self,
-    uri: &hyper::Uri,
-    mut body: Incoming,
-    policy: &CachePolicy,
-  ) -> CacheResult<UnboundedStreamBody> {
+  pub(crate) async fn put(&self, uri: &hyper::Uri, mut body: Incoming, policy: &CachePolicy) -> CacheResult<UnboundedStreamBody> {
     let cache_manager = self.inner.clone();
     let mut file_store = self.file_store.clone();
     let uri = uri.clone();
@@ -155,7 +157,7 @@ impl RpxyCache {
       let mut hasher = Sha256::new();
       hasher.update(buf.as_ref());
       let hash_bytes = Bytes::copy_from_slice(hasher.finalize().as_ref());
-      debug!("Cached data: {} bytes, hash = {:?}", size, hash_bytes);
+      trace!("Cached data: {} bytes, hash = {:?}", size, hash_bytes);
 
       // Create cache object
       let cache_key = derive_cache_key_from_uri(&uri);
@@ -188,16 +190,11 @@ impl RpxyCache {
 
   /// Get cached response
   pub(crate) async fn get<R>(&self, req: &Request<R>) -> Option<Response<ResponseBody>> {
-    debug!(
-      "Current cache status: (total, on-memory, file) = {:?}",
-      self.count().await
-    );
+    trace!("Current cache status: (total, on-memory, file) = {:?}", self.count().await);
     let cache_key = derive_cache_key_from_uri(req.uri());
 
     // First check cache chance
-    let Ok(Some(cached_object)) = self.inner.get(&cache_key) else {
-      return None;
-    };
+    let cached_object = self.inner.get(&cache_key).ok()??;
 
     // Secondly check the cache freshness as an HTTP message
     let now = SystemTime::now();
@@ -268,25 +265,20 @@ impl FileStore {
     let inner = self.inner.read().await;
     inner.cnt
   }
-  /// Create a temporary file cache
+  /// Create a temporary file cache, returns error if file cannot be created or written
   async fn create(&mut self, cache_object: &CacheObject, body_bytes: &Bytes) -> CacheResult<()> {
     let mut inner = self.inner.write().await;
     inner.create(cache_object, body_bytes).await
   }
-  /// Evict a temporary file cache
+  /// Evict a temporary file cache, logs warning if removal fails
   async fn evict(&self, path: impl AsRef<Path>) {
-    // Acquire the write lock
     let mut inner = self.inner.write().await;
     if let Err(e) = inner.remove(path).await {
       warn!("Eviction failed during file object removal: {:?}", e);
-    };
+    }
   }
-  /// Read a temporary file cache
-  async fn read(
-    &self,
-    path: impl AsRef<Path> + Send + Sync + 'static,
-    hash: &Bytes,
-  ) -> CacheResult<UnboundedStreamBody> {
+  /// Read a temporary file cache, returns error if file cannot be opened or hash mismatches
+  async fn read(&self, path: impl AsRef<Path> + Send + Sync + 'static, hash: &Bytes) -> CacheResult<UnboundedStreamBody> {
     let inner = self.inner.read().await;
     inner.read(path, hash).await
   }
@@ -321,26 +313,22 @@ impl FileStoreInner {
         return Err(CacheError::InvalidCacheTarget);
       }
     };
-    let Ok(mut file) = File::create(&cache_filepath).await else {
-      return Err(CacheError::FailedToCreateFileCache);
-    };
+    let mut file = File::create(&cache_filepath)
+      .await
+      .map_err(|_| CacheError::FailedToCreateFileCache)?;
     let mut bytes_clone = body_bytes.clone();
     while bytes_clone.has_remaining() {
-      if let Err(e) = file.write_buf(&mut bytes_clone).await {
+      file.write_buf(&mut bytes_clone).await.map_err(|e| {
         error!("Failed to write file cache: {e}");
-        return Err(CacheError::FailedToWriteFileCache);
-      };
+        CacheError::FailedToWriteFileCache
+      })?;
     }
     self.cnt += 1;
     Ok(())
   }
 
   /// Retrieve a stored temporary file cache
-  async fn read(
-    &self,
-    path: impl AsRef<Path> + Send + Sync + 'static,
-    hash: &Bytes,
-  ) -> CacheResult<UnboundedStreamBody> {
+  async fn read(&self, path: impl AsRef<Path> + Send + Sync + 'static, hash: &Bytes) -> CacheResult<UnboundedStreamBody> {
     let Ok(mut file) = File::open(&path).await else {
       warn!("Cache file object cannot be opened");
       return Err(CacheError::FailedToOpenCacheFile);
@@ -455,11 +443,14 @@ impl LruCacheManager {
     self.cnt.load(Ordering::Relaxed)
   }
 
-  /// Evict an entry
+  /// Evict an entry from the LRU cache, logs error if mutex cannot be acquired
   fn evict(&self, cache_key: &str) -> Option<(String, CacheObject)> {
-    let Ok(mut lock) = self.inner.lock() else {
-      error!("Mutex can't be locked to evict a cache entry");
-      return None;
+    let mut lock = match self.inner.lock() {
+      Ok(lock) => lock,
+      Err(_) => {
+        error!("Mutex can't be locked to evict a cache entry");
+        return None;
+      }
     };
     let res = lock.pop_entry(cache_key);
     // This may be inconsistent with the actual number of entries
@@ -467,24 +458,24 @@ impl LruCacheManager {
     res
   }
 
-  /// Push an entry
+  /// Push an entry into the LRU cache, returns error if mutex cannot be acquired
   fn push(&self, cache_key: &str, cache_object: &CacheObject) -> CacheResult<Option<(String, CacheObject)>> {
-    let Ok(mut lock) = self.inner.lock() else {
+    let mut lock = self.inner.lock().map_err(|_| {
       error!("Failed to acquire mutex lock for writing cache entry");
-      return Err(CacheError::FailedToAcquiredMutexLockForCache);
-    };
+      CacheError::FailedToAcquiredMutexLockForCache
+    })?;
     let res = Ok(lock.push(cache_key.to_string(), cache_object.clone()));
     // This may be inconsistent with the actual number of entries
     self.cnt.store(lock.len(), Ordering::Relaxed);
     res
   }
 
-  /// Get an entry
+  /// Get an entry from the LRU cache, returns error if mutex cannot be acquired
   fn get(&self, cache_key: &str) -> CacheResult<Option<CacheObject>> {
-    let Ok(mut lock) = self.inner.lock() else {
+    let mut lock = self.inner.lock().map_err(|_| {
       error!("Mutex can't be locked for checking cache entry");
-      return Err(CacheError::FailedToAcquiredMutexLockForCheck);
-    };
+      CacheError::FailedToAcquiredMutexLockForCheck
+    })?;
     let Some(cached_object) = lock.get(cache_key) else {
       return Ok(None);
     };

@@ -32,3 +32,9 @@ pub const MAX_CACHE_EACH_SIZE: usize = 65_535;
 pub const MAX_CACHE_EACH_SIZE_ON_MEMORY: usize = 4_096;
 
 // TODO: max cache size in total
+
+/// Logging event name TODO: Other separated logs?
+pub mod log_event_names {
+  /// access log
+  pub const ACCESS_LOG: &str = "rpxy::access";
+}

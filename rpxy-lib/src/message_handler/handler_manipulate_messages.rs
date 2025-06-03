@@ -1,11 +1,11 @@
-use super::{handler_main::HandlerContext, utils_headers::*, utils_request::update_request_line, HttpMessageHandler};
+use super::{HttpMessageHandler, handler_main::HandlerContext, utils_headers::*, utils_request::update_request_line};
 use crate::{
   backend::{BackendApp, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
   log::*,
 };
-use anyhow::{anyhow, ensure, Result};
-use http::{header, HeaderValue, Request, Response, Uri};
+use anyhow::{Result, anyhow, ensure};
+use http::{HeaderValue, Request, Response, Uri, header};
 use hyper_util::client::legacy::connect::Connect;
 use std::net::SocketAddr;
 
@@ -66,17 +66,19 @@ where
     upstream_candidates: &UpstreamCandidates,
     tls_enabled: bool,
   ) -> Result<HandlerContext> {
-    debug!("Generate request to be forwarded");
+    trace!("Generate request to be forwarded");
 
     // Add te: trailer if contained in original request
     let contains_te_trailers = {
-      if let Some(te) = req.headers().get(header::TE) {
-        te.as_bytes()
-          .split(|v| v == &b',' || v == &b' ')
-          .any(|x| x == "trailers".as_bytes())
-      } else {
-        false
-      }
+      req
+        .headers()
+        .get(header::TE)
+        .map(|te| {
+          te.as_bytes()
+            .split(|v| v == &b',' || v == &b' ')
+            .any(|x| x == "trailers".as_bytes())
+        })
+        .unwrap_or(false)
     };
 
     let original_uri = req.uri().to_string();
@@ -136,11 +138,7 @@ where
     let new_uri = Uri::builder()
       .scheme(upstream_chosen.uri.scheme().unwrap().as_str())
       .authority(upstream_chosen.uri.authority().unwrap().as_str());
-    let org_pq = match req.uri().path_and_query() {
-      Some(pq) => pq.to_string(),
-      None => "/".to_string(),
-    }
-    .into_bytes();
+    let org_pq = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/").as_bytes();
 
     // replace some parts of path if opt_replace_path is enabled for chosen upstream
     let new_pq = match &upstream_candidates.replace_path {
@@ -155,7 +153,7 @@ where
         new_pq.extend_from_slice(&org_pq[matched_path.len()..]);
         new_pq
       }
-      None => org_pq,
+      None => org_pq.to_vec(),
     };
     *req.uri_mut() = new_uri.path_and_query(new_pq).build()?;
 

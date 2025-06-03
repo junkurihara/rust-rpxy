@@ -16,7 +16,11 @@ env:
 
 jobs:
   build_and_push:
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
     strategy:
       fail-fast: false
@@ -30,17 +34,6 @@ jobs:
               jqtype/rpxy:latest
               ghcr.io/junkurihara/rust-rpxy:latest
 
-          - target: "default-pq"
-            dockerfile: ./docker/Dockerfile
-            platforms: linux/amd64,linux/arm64
-            build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,rustls-backend,acme,post-quantum"
-            tags-suffix: "-pq"
-            # Aliases must be used only for release builds
-            aliases: |
-              jqtype/rpxy:pq
-              ghcr.io/junkurihara/rust-rpxy:pq
-
           - target: "default-slim"
             dockerfile: ./docker/Dockerfile-slim
             build-contexts: |
@@ -53,24 +46,10 @@ jobs:
               jqtype/rpxy:slim
               ghcr.io/junkurihara/rust-rpxy:slim
 
-          - target: "default-slim-pq"
-            dockerfile: ./docker/Dockerfile-slim
-            build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,rustls-backend,acme,post-quantum"
-            build-contexts: |
-              messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
-              messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
-            platforms: linux/amd64,linux/arm64
-            tags-suffix: "-slim-pq"
-            # Aliases must be used only for release builds
-            aliases: |
-              jqtype/rpxy:slim-pq
-              ghcr.io/junkurihara/rust-rpxy:slim-pq
-
           - target: "s2n"
             dockerfile: ./docker/Dockerfile
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,rustls-backend,acme"
+              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,rustls-backend,acme,post-quantum"
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n"
@@ -79,23 +58,11 @@ jobs:
               jqtype/rpxy:s2n
               ghcr.io/junkurihara/rust-rpxy:s2n
 
-          - target: "s2n-pq"
-            dockerfile: ./docker/Dockerfile
-            build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,rustls-backend,acme,post-quantum"
-              "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
-            platforms: linux/amd64,linux/arm64
-            tags-suffix: "-s2n-pq"
-            # Aliases must be used only for release builds
-            aliases: |
-              jqtype/rpxy:s2n-pq
-              ghcr.io/junkurihara/rust-rpxy:s2n-pq
-
           - target: "webpki-roots"
             dockerfile: ./docker/Dockerfile
             platforms: linux/amd64,linux/arm64
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots,acme"
+              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots,acme,post-quantum"
             tags-suffix: "-webpki-roots"
             # Aliases must be used only for release builds
             aliases: |
@@ -105,7 +72,7 @@ jobs:
           - target: "slim-webpki-roots"
             dockerfile: ./docker/Dockerfile-slim
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots,acme"
+              "CARGO_FEATURES=--no-default-features --features=http3-quinn,cache,webpki-roots,acme,post-quantum"
             build-contexts: |
               messense/rust-musl-cross:amd64-musl=docker-image://messense/rust-musl-cross:x86_64-musl
               messense/rust-musl-cross:arm64-musl=docker-image://messense/rust-musl-cross:aarch64-musl
@@ -119,7 +86,7 @@ jobs:
           - target: "s2n-webpki-roots"
             dockerfile: ./docker/Dockerfile
             build-args: |
-              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,webpki-roots,acme"
+              "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,webpki-roots,acme,post-quantum"
               "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n-webpki-roots"
@@ -207,6 +174,14 @@ jobs:
           platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: check pull_request title
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
+        uses: kaisugi/action-regex-match@v1.0.1
+        id: regex-match
+        with:
+          text: ${{ github.event.pull_request.title }}
+          regex: "^(\\d+\\.\\d+\\.\\d+)$"
+
       - name: Release build and push from main branch
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
         uses: docker/build-push-action@v6
@@ -218,6 +193,8 @@ jobs:
             ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ env.DH_REGISTRY_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ matrix.aliases }}
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:${{ github.event.pull_request.title }}${{ matrix.tags-suffix }}
+            ${{ env.DH_REGISTRY_NAME }}:${{ github.event.pull_request.title }}${{ matrix.tags-suffix }}
           build-contexts: ${{ matrix.build-contexts }}
           file: ${{ matrix.dockerfile }}
           cache-from: type=gha,scope=rpxy-latest-${{ matrix.target }}
@@ -226,6 +203,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   dispatch_release_event:
+    permissions:
+      contents: write
+      actions: write
+
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
     needs: build_and_push

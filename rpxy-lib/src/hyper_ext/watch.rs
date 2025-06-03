@@ -7,8 +7,8 @@
 
 use futures_util::task::AtomicWaker;
 use std::sync::{
-  atomic::{AtomicUsize, Ordering},
   Arc,
+  atomic::{AtomicUsize, Ordering},
 };
 use std::task;
 

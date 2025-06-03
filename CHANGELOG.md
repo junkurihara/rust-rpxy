@@ -1,6 +1,54 @@
 # CHANGELOG
 
-## 0.9.4 or 0.10.0 (Unreleased)
+## 0.10.1 or 0.11.0 (Unreleased)
+
+## 0.10.0
+
+### Important Changes
+
+- [Breaking] We removed non-`watch` execute option and enabled the dynamic reloading of the config file by default.
+- We newly added `log-dir` execute option to specify the directory for `access.log`,`error.log` and `rpxy.log`. This is optional, and if not specified, the logs are written to the standard output by default.
+
+### Improvement
+
+- Refactor: lots of minor improvements
+- Deps
+
+## 0.9.7
+
+### Improvement
+
+- Feat: add version tag for docker images via github actions
+- Feat: support gRPC: This makes rpxy to serve gRPC requests on the same port as HTTP and HTTPS, i.e., listen_port and listen_port_tls. This means that by using the different subdomain for HTTP(S) and gRPC, we can multiplex them on same ports without opening another port dedicated to gRPC. To this end, this update made the forwarder to force HTTP/2 for gRPC requests towards backend (gRPC) app.
+- Deps and refactor
+
+### Bugfix
+
+- Fixed bug for the upstream option "force_http2_upstream"
+
+### Other
+
+- Tentative downgrade of github actions `runs-on` from ubuntu-latest to ubuntu-22.04.
+
+## 0.9.6
+
+### Improvement
+
+- Feat: Change the default hashing algorithm for internal hashmaps and hashsets from FxHash to aHash. This change is to improve the security against HashDos attacks for colliding domain names and paths, and to improve the speed of hash operations for string keys (c.f., [the performance comparison](https://github.com/tkaitchuck/aHash/blob/master/compare/readme.md)).
+- Deps and refactor
+
+## 0.9.5
+
+### Bugfix
+
+- Fix docker image build options with `post-quantum` feature.
+
+## 0.9.4
+
+### Improvement
+
+- Feat: Enable the hybrid post-quantum key exchange for TLS and QUIC with `X25519MLKEM768` by default.
+- Deps and refactor
 
 ## 0.9.3
 

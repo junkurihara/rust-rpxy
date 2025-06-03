@@ -2,8 +2,8 @@ use crate::{
   backend::{Upstream, UpstreamCandidates, UpstreamOption},
   log::*,
 };
-use anyhow::{anyhow, ensure, Result};
-use http::{header, uri::Scheme, Request, Version};
+use anyhow::{Result, anyhow, ensure};
+use http::{Request, Version, header, uri::Scheme};
 
 /// Trait defining parser of hostname
 /// Inspect and extract hostname from either the request HOST header or request line
@@ -59,6 +59,18 @@ pub(super) fn update_request_line<B>(
   upstream_chosen: &Upstream,
   upstream_candidates: &UpstreamCandidates,
 ) -> anyhow::Result<()> {
+  // If request is grpc, HTTP/2 is required
+  if req
+    .headers()
+    .get(header::CONTENT_TYPE)
+    .map(|v| v.as_bytes().starts_with(b"application/grpc"))
+    == Some(true)
+  {
+    debug!("Must be http/2 for gRPC request.");
+    *req.version_mut() = Version::HTTP_2;
+    return Ok(());
+  }
+
   // If not specified (force_httpXX_upstream) and https, version is preserved except for http/3
   if upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
     // Change version to http/1.1 when destination scheme is http

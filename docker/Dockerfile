@@ -2,13 +2,13 @@ FROM ubuntu:24.04 AS base
 LABEL maintainer="Jun Kurihara"
 
 SHELL ["/bin/sh", "-x", "-c"]
-ENV SERIAL 2
+ENV SERIAL=2
 
 ########################################
 FROM --platform=$BUILDPLATFORM base AS builder
 
 ENV CFLAGS=-Ofast
-ENV BUILD_DEPS curl make ca-certificates build-essential
+ENV BUILD_DEPS="curl make ca-certificates build-essential"
 ENV TARGET_SUFFIX=unknown-linux-gnu
 
 WORKDIR /tmp
@@ -17,9 +17,9 @@ COPY . /tmp/
 
 ARG TARGETARCH
 ARG CARGO_FEATURES
-ENV CARGO_FEATURES ${CARGO_FEATURES}
+ENV CARGO_FEATURES="${CARGO_FEATURES}"
 ARG ADDITIONAL_DEPS
-ENV ADDITIONAL_DEPS ${ADDITIONAL_DEPS}
+ENV ADDITIONAL_DEPS="${ADDITIONAL_DEPS}"
 
 RUN if [ $TARGETARCH = "amd64" ]; then \
   echo "x86_64" > /arch; \
@@ -30,7 +30,7 @@ RUN if [ $TARGETARCH = "amd64" ]; then \
   exit 1; \
   fi
 
-ENV RUSTFLAGS "-C link-arg=-s"
+ENV RUSTFLAGS="-C link-arg=-s"
 
 RUN update-ca-certificates 2> /dev/null || true
 
@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS ${
   echo "Install toolchain" && \
   rustup target add $(cat /arch)-${TARGET_SUFFIX} && \
   echo "Building rpxy from source" && \
+  cargo update &&\
   cargo build --release --target=$(cat /arch)-${TARGET_SUFFIX} ${CARGO_FEATURES} && \
   strip --strip-all /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy &&\
   cp /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy /tmp/target/release/rpxy
@@ -47,7 +48,7 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS ${
 ########################################
 FROM --platform=$TARGETPLATFORM base AS runner
 
-ENV RUNTIME_DEPS logrotate ca-certificates gosu
+ENV RUNTIME_DEPS="logrotate ca-certificates gosu"
 
 RUN apt-get update && \
   apt-get install -qy --no-install-recommends $RUNTIME_DEPS && \

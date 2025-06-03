@@ -44,10 +44,7 @@ mod tests {
   }
   #[test]
   fn ipv6_to_canonical() {
-    let socket = SocketAddr::new(
-      IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0xdead, 0xbeef)),
-      8080,
-    );
+    let socket = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0xdead, 0xbeef)), 8080);
     assert_eq!(socket.to_canonical(), socket);
   }
   #[test]

@@ -2,7 +2,6 @@ use crate::{constants::*, count::RequestCount};
 use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
 use std::{net::SocketAddr, time::Duration};
-use tokio_util::sync::CancellationToken;
 
 /// Global object containing proxy configurations and shared object like counters.
 /// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
@@ -13,14 +12,12 @@ pub struct Globals {
   pub request_count: RequestCount,
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
-  /// Shared context - Notify object to stop async tasks
-  pub cancel_token: Option<CancellationToken>,
   /// Shared context - Certificate reloader service receiver // TODO: newer one
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains
-  pub server_configs_acme_challenge: std::sync::Arc<rustc_hash::FxHashMap<String, std::sync::Arc<rustls::ServerConfig>>>,
+  pub server_configs_acme_challenge: std::sync::Arc<ahash::HashMap<String, std::sync::Arc<rustls::ServerConfig>>>,
 }
 
 /// Configuration parameters for proxy transport and request handlers

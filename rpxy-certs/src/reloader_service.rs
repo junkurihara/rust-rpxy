@@ -4,9 +4,9 @@ use crate::{
   log::*,
   server_crypto::{ServerCryptoBase, ServerNameBytes},
 };
+use ahash::HashMap;
 use async_trait::async_trait;
 use hot_reload::{Reload, ReloaderError};
-use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 
 /* ------------------------------------------------ */

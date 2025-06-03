@@ -1,21 +1,29 @@
-use super::toml::ConfigToml;
+use super::toml::{ConfigToml, ConfigTomlExt};
 use crate::error::{anyhow, ensure};
-use clap::{Arg, ArgAction};
+use ahash::HashMap;
+use clap::Arg;
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use rpxy_certs::{build_cert_reloader, CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase};
-use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig};
-use rustc_hash::FxHashMap as HashMap;
+use rpxy_certs::{CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase, build_cert_reloader};
+use rpxy_lib::{AppConfigList, ProxyConfig};
 
 #[cfg(feature = "acme")]
-use rpxy_acme::{AcmeManager, ACME_DIR_URL, ACME_REGISTRY_PATH};
+use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
 
-/// Parsed options
+/// Parsed options from CLI
+/// Options for configuring the application.
+///
+/// # Fields
+/// - `config_file_path`: Path to the configuration file.
+/// - `log_dir_path`: Optional path to the log directory.
 pub struct Opts {
   pub config_file_path: String,
-  pub watch: bool,
+  pub log_dir_path: Option<String>,
 }
 
-/// Parse arg values passed from cli
+/// Parses command-line arguments into an [`Opts`](rpxy-bin/src/config/parse.rs:13) struct.
+///
+/// Returns a populated [`Opts`](rpxy-bin/src/config/parse.rs:13) on success, or an error if parsing fails.
+/// Expects a required `--config` argument and an optional `--log-dir` argument.
 pub fn parse_opts() -> Result<Opts, anyhow::Error> {
   let _ = include_str!("../../Cargo.toml");
   let options = clap::command!()
@@ -28,78 +36,60 @@ pub fn parse_opts() -> Result<Opts, anyhow::Error> {
         .help("Configuration file path like ./config.toml"),
     )
     .arg(
-      Arg::new("watch")
-        .long("watch")
-        .short('w')
-        .action(ArgAction::SetTrue)
-        .help("Activate dynamic reloading of the config file via continuous monitoring"),
+      Arg::new("log_dir")
+        .long("log-dir")
+        .short('l')
+        .value_name("LOG_DIR")
+        .help("Directory for log files. If not specified, logs are printed to stdout."),
     );
   let matches = options.get_matches();
 
-  ///////////////////////////////////
   let config_file_path = matches.get_one::<String>("config_file").unwrap().to_owned();
-  let watch = matches.get_one::<bool>("watch").unwrap().to_owned();
+  let log_dir_path = matches.get_one::<String>("log_dir").map(|v| v.to_owned());
 
-  Ok(Opts { config_file_path, watch })
+  Ok(Opts {
+    config_file_path,
+    log_dir_path,
+  })
 }
 
-pub fn build_settings(config: &ConfigToml) -> std::result::Result<(ProxyConfig, AppConfigList), anyhow::Error> {
-  // build proxy config
-  let proxy_config: ProxyConfig = config.try_into()?;
-
-  // backend_apps
-  let apps = config.apps.clone().ok_or(anyhow!("Missing application spec"))?;
-
-  // assertions for all backend apps
-  ensure!(!apps.0.is_empty(), "Wrong application spec.");
-  // if only https_port is specified, tls must be configured for all apps
-  if proxy_config.http_port.is_none() {
-    ensure!(
-      apps.0.iter().all(|(_, app)| app.tls.is_some()),
-      "Some apps serves only plaintext HTTP"
-    );
-  }
-  // https redirection port must be configured only when both http_port and https_port are configured.
-  if proxy_config.https_redirection_port.is_some() {
-    ensure!(
-      proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
-      "https_redirection_port can be specified only when both http_port and https_port are specified"
-    );
-  }
-  // https redirection can be configured if both ports are active
-  if !(proxy_config.https_port.is_some() && proxy_config.http_port.is_some()) {
-    ensure!(
-      apps.0.iter().all(|(_, app)| {
-        if let Some(tls) = app.tls.as_ref() {
-          tls.https_redirection.is_none()
-        } else {
-          true
-        }
-      }),
-      "https_redirection can be specified only when both http_port and https_port are specified"
-    );
-  }
-
-  // build applications
-  let mut app_config_list_inner = Vec::<AppConfig>::new();
-
-  for (app_name, app) in apps.0.iter() {
-    let _server_name_string = app.server_name.as_ref().ok_or(anyhow!("No server name"))?;
-    let registered_app_name = app_name.to_ascii_lowercase();
-    let app_config = app.build_app_config(&registered_app_name)?;
-    app_config_list_inner.push(app_config);
-  }
-
-  let app_config_list = AppConfigList {
-    inner: app_config_list_inner,
-    default_app: config.default_app.clone().map(|v| v.to_ascii_lowercase()), // default backend application for plaintext http requests
-  };
-
-  Ok((proxy_config, app_config_list))
+/// Build proxy and app settings from config using ConfigTomlExt
+pub fn build_settings(config: &ConfigToml) -> Result<(ProxyConfig, AppConfigList), anyhow::Error> {
+  config.validate_and_build_settings()
 }
 
 /* ----------------------- */
+
+/// Helper to build a CryptoFileSource for an app, handling ACME if enabled
+#[cfg(feature = "acme")]
+fn build_tls_for_app_acme(
+  tls: &mut super::toml::TlsOption,
+  acme_option: &Option<super::toml::AcmeOption>,
+  server_name: &str,
+  acme_registry_path: &str,
+  acme_dir_url: &str,
+) -> Result<(), anyhow::Error> {
+  if let Some(true) = tls.acme {
+    ensure!(acme_option.is_some() && tls.tls_cert_key_path.is_none() && tls.tls_cert_path.is_none());
+    let subdir = format!("{}/{}", acme_registry_path, server_name.to_ascii_lowercase());
+    let file_name =
+      rpxy_acme::DirCache::cached_cert_file_name(&[server_name.to_ascii_lowercase()], acme_dir_url.to_ascii_lowercase());
+    let cert_path = format!("{}/{}", subdir, file_name);
+    tls.tls_cert_key_path = Some(cert_path.clone());
+    tls.tls_cert_path = Some(cert_path);
+  }
+  Ok(())
+}
+
 /// Build cert map
+/// Builds the certificate manager for TLS applications.
+///
+/// # Arguments
+/// * `config` - Reference to the parsed configuration.
+///
+/// # Returns
+/// Returns an option containing a tuple of certificate reloader service and receiver, or `None` if TLS is not enabled.
+/// Returns an error if configuration is invalid or required fields are missing.
 pub async fn build_cert_manager(
   config: &ConfigToml,
 ) -> Result<
@@ -136,19 +126,9 @@ pub async fn build_cert_manager(
       ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
 
       #[cfg(feature = "acme")]
-      let tls = {
-        let mut tls = tls.clone();
-        if let Some(true) = tls.acme {
-          ensure!(acme_option.is_some() && tls.tls_cert_key_path.is_none() && tls.tls_cert_path.is_none());
-          // Both of tls_cert_key_path and tls_cert_path must be the same for ACME since it's a single file
-          let subdir = format!("{}/{}", acme_registry_path, server_name.to_ascii_lowercase());
-          let file_name =
-            rpxy_acme::DirCache::cached_cert_file_name(&[server_name.to_ascii_lowercase()], acme_dir_url.to_ascii_lowercase());
-          tls.tls_cert_key_path = Some(format!("{}/{}", subdir, file_name));
-          tls.tls_cert_path = Some(format!("{}/{}", subdir, file_name));
-        }
-        tls
-      };
+      let mut tls = tls.clone();
+      #[cfg(feature = "acme")]
+      build_tls_for_app_acme(&mut tls, &acme_option, server_name, acme_registry_path, acme_dir_url)?;
 
       let crypto_file_source = CryptoFileSourceBuilder::default()
         .tls_cert_path(tls.tls_cert_path.as_ref().unwrap())
@@ -165,24 +145,31 @@ pub async fn build_cert_manager(
 /* ----------------------- */
 #[cfg(feature = "acme")]
 /// Build acme manager
+/// Builds the ACME manager for automatic certificate management (enabled with the `acme` feature).
+///
+/// # Arguments
+/// * `config` - Reference to the parsed configuration.
+/// * `runtime_handle` - Tokio runtime handle for async operations.
+///
+/// # Returns
+/// Returns an option containing an [`AcmeManager`](rpxy-bin/src/config/parse.rs:153) if ACME is configured, or `None` otherwise.
+/// Returns an error if configuration is invalid or required fields are missing.
 pub async fn build_acme_manager(
   config: &ConfigToml,
   runtime_handle: tokio::runtime::Handle,
 ) -> Result<Option<AcmeManager>, anyhow::Error> {
   let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
-  if acme_option.is_none() {
+  let Some(acme_option) = acme_option else {
     return Ok(None);
-  }
-  let acme_option = acme_option.unwrap();
+  };
 
-  let domains = config
+  let domains: Vec<String> = config
     .apps
     .as_ref()
     .unwrap()
     .0
     .values()
     .filter_map(|app| {
-      //
       if let Some(tls) = app.tls.as_ref() {
         if let Some(true) = tls.acme {
           return Some(app.server_name.as_ref().unwrap().to_owned());
@@ -190,7 +177,7 @@ pub async fn build_acme_manager(
       }
       None
     })
-    .collect::<Vec<_>>();
+    .collect();
 
   if domains.is_empty() {
     return Ok(None);

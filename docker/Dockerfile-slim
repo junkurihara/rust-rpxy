@@ -5,7 +5,7 @@ LABEL maintainer="Jun Kurihara"
 
 ARG TARGETARCH
 ARG CARGO_FEATURES
-ENV CARGO_FEATURES ${CARGO_FEATURES}
+ENV CARGO_FEATURES=${CARGO_FEATURES}
 
 RUN if [ $TARGETARCH = "amd64" ]; then \
   echo "x86_64" > /arch; \
@@ -22,9 +22,10 @@ WORKDIR /tmp
 
 COPY . /tmp/
 
-ENV RUSTFLAGS "-C link-arg=-s"
+ENV RUSTFLAGS="-C link-arg=-s"
 
 RUN echo "Building rpxy from source" && \
+  cargo update && \
   cargo build --release --target $(cat /arch)-unknown-linux-musl ${CARGO_FEATURES} && \
   musl-strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy && \
   cp /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy /tmp/target/release/rpxy
@@ -33,7 +34,7 @@ RUN echo "Building rpxy from source" && \
 FROM --platform=$TARGETPLATFORM alpine:latest AS runner
 LABEL maintainer="Jun Kurihara"
 
-ENV RUNTIME_DEPS logrotate ca-certificates su-exec
+ENV RUNTIME_DEPS="logrotate ca-certificates su-exec"
 
 RUN apk add --no-cache ${RUNTIME_DEPS} && \
   update-ca-certificates && \

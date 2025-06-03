@@ -91,12 +91,7 @@ impl<'a> StickyCookieBuilder {
     self
   }
   /// Set the meta information of sticky cookie
-  pub fn info(
-    &mut self,
-    domain: impl Into<Cow<'a, str>>,
-    path: impl Into<Cow<'a, str>>,
-    duration_secs: i64,
-  ) -> &mut Self {
+  pub fn info(&mut self, domain: impl Into<Cow<'a, str>>, path: impl Into<Cow<'a, str>>, duration_secs: i64) -> &mut Self {
     let info = StickyCookieInfoBuilder::default()
       .domain(domain)
       .path(path)

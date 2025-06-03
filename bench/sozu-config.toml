@@ -1,4 +1,4 @@
-log_level = "info"
+log_level = "error"
 log_target = "stdout"
 max_connections = 512
 activate_listeners = true

@@ -1,16 +1,16 @@
 use super::{
+  Upstream,
   load_balance_main::{LoadBalanceContext, LoadBalanceWithPointer, PointerToUpstream},
   sticky_cookie::StickyCookieConfig,
-  Upstream,
 };
 use crate::{constants::STICKY_COOKIE_NAME, log::*};
+use ahash::HashMap;
 use derive_builder::Builder;
-use rustc_hash::FxHashMap as HashMap;
 use std::{
   borrow::Cow,
   sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
   },
 };
 
@@ -112,13 +112,16 @@ impl LoadBalanceWithPointer for LoadBalanceSticky {
       }
       Some(context) => {
         let server_id = &context.sticky_cookie.value.value;
-        if let Some(server_index) = self.get_server_index_from_id(server_id) {
-          debug!("Valid sticky cookie: id={}, index={}", server_id, server_index);
-          server_index
-        } else {
-          debug!("Invalid sticky cookie: id={}", server_id);
-          self.simple_increment_ptr()
-        }
+        self.get_server_index_from_id(server_id).map_or_else(
+          || {
+            debug!("Invalid sticky cookie: id={}", server_id);
+            self.simple_increment_ptr()
+          },
+          |server_index| {
+            debug!("Valid sticky cookie: id={}, index={}", server_id, server_index);
+            server_index
+          },
+        )
       }
     };
 

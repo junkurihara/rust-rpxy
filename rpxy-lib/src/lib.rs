@@ -27,6 +27,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 /* ------------------------------------------------ */
+pub use crate::constants::log_event_names;
 pub use crate::globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
 pub mod reexports {
   pub use hyper::Uri;
@@ -43,12 +44,10 @@ pub struct RpxyOptions {
   pub cert_rx: Option<ReloaderReceiver<ServerCryptoBase>>, // TODO:
   /// Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
-  /// Notify object to stop async tasks
-  pub cancel_token: Option<CancellationToken>,
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains
-  pub server_configs_acme_challenge: Arc<rustc_hash::FxHashMap<String, Arc<rustls::ServerConfig>>>,
+  pub server_configs_acme_challenge: Arc<ahash::HashMap<String, Arc<rustls::ServerConfig>>>,
 }
 
 /// Entrypoint that creates and spawns tasks of reverse proxy services
@@ -58,10 +57,10 @@ pub async fn entrypoint(
     app_config_list,
     cert_rx, // TODO:
     runtime_handle,
-    cancel_token,
     #[cfg(feature = "acme")]
     server_configs_acme_challenge,
   }: &RpxyOptions,
+  cancel_token: CancellationToken,
 ) -> RpxyResult<()> {
   #[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
   warn!("Both \"http3-quinn\" and \"http3-s2n\" features are enabled. \"http3-quinn\" will be used");
@@ -117,7 +116,6 @@ pub async fn entrypoint(
     proxy_config: proxy_config.clone(),
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
-    cancel_token: cancel_token.clone(),
     cert_reloader_rx: cert_rx.clone(),
 
     #[cfg(feature = "acme")]
@@ -153,25 +151,21 @@ pub async fn entrypoint(
       message_handler: message_handler.clone(),
     };
 
-    let cancel_token = globals.cancel_token.as_ref().map(|t| t.child_token());
-    let parent_cancel_token_clone = globals.cancel_token.clone();
+    let cancel_token = cancel_token.clone();
     globals.runtime_handle.spawn(async move {
       info!("rpxy proxy service for {listening_on} started");
-      if let Some(cancel_token) = cancel_token {
-        tokio::select! {
-          _ = cancel_token.cancelled() => {
-            debug!("rpxy proxy service for {listening_on} terminated");
-            Ok(())
-          },
-          proxy_res = proxy.start() => {
-            info!("rpxy proxy service for {listening_on} exited");
-            // cancel other proxy tasks
-            parent_cancel_token_clone.unwrap().cancel();
-            proxy_res
-          }
+
+      tokio::select! {
+        _ = cancel_token.cancelled() => {
+          debug!("rpxy proxy service for {listening_on} terminated");
+          Ok(())
+        },
+        proxy_res = proxy.start(cancel_token.child_token()) => {
+          info!("rpxy proxy service for {listening_on} exited");
+          // cancel other proxy tasks
+          cancel_token.cancel();
+          proxy_res
         }
-      } else {
-        proxy.start().await
       }
     })
   });
@@ -186,9 +180,5 @@ pub async fn entrypoint(
     }
   });
   // returns the first error as the representative error
-  if let Some(e) = errs.next() {
-    return Err(e);
-  }
-
-  Ok(())
+  errs.next().map_or(Ok(()), |e| Err(e))
 }

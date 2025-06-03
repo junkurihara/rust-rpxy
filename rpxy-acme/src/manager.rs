@@ -4,7 +4,7 @@ use crate::{
   error::RpxyAcmeError,
   log::*,
 };
-use rustc_hash::FxHashMap as HashMap;
+use ahash::HashMap;
 use rustls::ServerConfig;
 use rustls_acme::AcmeConfig;
 use std::{path::PathBuf, sync::Arc};
@@ -77,13 +77,9 @@ impl AcmeManager {
   /// Returns a Vec<JoinHandle<()>> as a tasks handles and a map of domain to ServerConfig for challenge.
   pub fn spawn_manager_tasks(
     &self,
-    cancel_token: Option<tokio_util::sync::CancellationToken>,
+    cancel_token: tokio_util::sync::CancellationToken,
   ) -> (Vec<tokio::task::JoinHandle<()>>, HashMap<String, Arc<ServerConfig>>) {
-    let rustls_client_config = rustls::ClientConfig::builder()
-      .dangerous() // The `Verifier` we're using is actually safe
-      .with_custom_certificate_verifier(Arc::new(rustls_platform_verifier::Verifier::new()))
-      .with_no_client_auth();
-    let rustls_client_config = Arc::new(rustls_client_config);
+    let rustls_client_config = Self::create_tls_client_config().expect("Failed to create TLS client configuration for ACME");
 
     let mut server_configs_for_challenge: HashMap<String, Arc<ServerConfig>> = HashMap::default();
     let join_handles = self
@@ -115,13 +111,10 @@ impl AcmeManager {
                 }
               }
             };
-            if let Some(cancel_token) = cancel_token.as_ref() {
-              tokio::select! {
-                _ = task => {},
-                _ = cancel_token.cancelled() => { debug!("rpxy ACME manager task for {domain} terminated") }
-              }
-            } else {
-              task.await;
+
+            tokio::select! {
+              _ = task => {},
+              _ = cancel_token.cancelled() => { debug!("rpxy ACME manager task for {domain} terminated") }
             }
           }
         })
@@ -129,6 +122,26 @@ impl AcmeManager {
       .collect::<Vec<_>>();
 
     (join_handles, server_configs_for_challenge)
+  }
+
+  /// Creates a TLS client configuration with platform certificate verification.
+  ///
+  /// This configuration uses the system's certificate store for verification,
+  /// which is appropriate for ACME certificate validation.
+  fn create_tls_client_config() -> Result<Arc<rustls::ClientConfig>, RpxyAcmeError> {
+    let crypto_provider = rustls::crypto::CryptoProvider::get_default().ok_or(RpxyAcmeError::TlsClientConfig(
+      "No default crypto provider available".to_string(),
+    ))?;
+
+    let verifier = rustls_platform_verifier::Verifier::new(crypto_provider.clone())
+      .map_err(|e| RpxyAcmeError::TlsClientConfig(format!("Failed to create certificate verifier: {}", e)))?;
+
+    let client_config = rustls::ClientConfig::builder()
+      .dangerous() // Safe: using platform certificate verifier
+      .with_custom_certificate_verifier(Arc::new(verifier))
+      .with_no_client_auth();
+
+    Ok(Arc::new(client_config))
   }
 }
 

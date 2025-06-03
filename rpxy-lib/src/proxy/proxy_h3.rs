@@ -33,7 +33,7 @@ where
     <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
   {
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
-    info!(
+    debug!(
       "QUIC/HTTP3 connection established from {:?} {}",
       client_addr,
       <&ServerName as TryInto<String>>::try_into(&tls_server_name).unwrap_or_default()
@@ -49,12 +49,17 @@ where
         }
         Err(e) => {
           warn!("HTTP/3 error on accept incoming connection: {}", e);
-          match e.get_error_level() {
-            h3::error::ErrorLevel::ConnectionError => break,
-            h3::error::ErrorLevel::StreamError => continue,
-          }
+          break;
         }
-        Ok(Some((req, stream))) => {
+        // Ok(Some((req, stream))) => {
+        Ok(Some(req_resolver)) => {
+          let (req, stream) = match req_resolver.resolve_request().await {
+            Ok((req, stream)) => (req, stream),
+            Err(e) => {
+              warn!("HTTP/3 error on resolve request in stream: {}", e);
+              continue;
+            }
+          };
           // We consider the connection count separately from the stream count.
           // Max clients for h1/h2 = max 'stream' for h3.
           let request_count = self.globals.request_count.clone();
@@ -63,7 +68,7 @@ where
             h3_conn.shutdown(0).await?;
             break;
           }
-          debug!("Request incoming: current # {}", request_count.current());
+          trace!("Request incoming: current # {}", request_count.current());
 
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
@@ -77,7 +82,7 @@ where
               warn!("HTTP/3 error on serve stream: {}", e);
             }
             request_count.decrement();
-            debug!("Request processed: current # {}", request_count.current());
+            trace!("Request processed: current # {}", request_count.current());
           });
         }
       }
@@ -115,7 +120,7 @@ where
       let mut sender = body_sender;
       let mut size = 0usize;
       while let Some(mut body) = recv_stream.recv_data().await? {
-        debug!("HTTP/3 incoming request body: remaining {}", body.remaining());
+        trace!("HTTP/3 incoming request body: remaining {}", body.remaining());
         size += body.remaining();
         if size > max_body_size {
           error!(
@@ -129,9 +134,9 @@ where
       }
 
       // trailers: use inner for work around. (directly get trailer)
-      let trailers = recv_stream.as_mut().recv_trailers().await?;
+      let trailers = futures_util::future::poll_fn(|cx| recv_stream.as_mut().poll_recv_trailers(cx)).await?;
       if trailers.is_some() {
-        debug!("HTTP/3 incoming request trailers");
+        trace!("HTTP/3 incoming request trailers");
         sender.send_trailers(trailers.unwrap()).await?;
       }
       Ok(()) as RpxyResult<()>
@@ -154,13 +159,13 @@ where
 
     match send_stream.send_response(new_res).await {
       Ok(_) => {
-        debug!("HTTP/3 response to connection successful");
+        trace!("HTTP/3 response to connection successful");
         // on-demand body streaming to downstream without expanding the object onto memory.
         loop {
           let frame = match new_body.frame().await {
             Some(frame) => frame,
             None => {
-              debug!("Response body finished");
+              trace!("Response body finished");
               break;
             }
           }

@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 LOG_DIR=/rpxy/log
-LOG_FILE=${LOG_DIR}/rpxy.log
+SYSTEM_LOG_FILE=${LOG_DIR}/rpxy.log
+ACCESS_LOG_FILE=${LOG_DIR}/access.log
 LOG_SIZE=10M
 LOG_NUM=10
 
@@ -43,8 +44,24 @@ include /etc/logrotate.d
 # system-specific logs may be also be configured here.
 EOF
 
-  cat > /etc/logrotate.d/rpxy.conf << EOF
-${LOG_FILE} {
+  cat > /etc/logrotate.d/rpxy-system.conf << EOF
+${SYSTEM_LOG_FILE} {
+    dateext
+    daily
+    missingok
+    rotate ${LOG_NUM}
+    notifempty
+    compress
+    delaycompress
+    dateformat -%Y-%m-%d-%s
+    size ${LOG_SIZE}
+    copytruncate
+    su ${USER} ${USER}
+}
+EOF
+
+  cat > /etc/logrotate.d/rpxy-access.conf << EOF
+${ACCESS_LOG_FILE} {
     dateext
     daily
     missingok
@@ -157,10 +174,4 @@ fi
 # Run rpxy
 cd /rpxy
 echo "rpxy: Start with user: ${USER} (${USER_ID}:${GROUP_ID})"
-if "${LOGGING}"; then
-  echo "rpxy: Start with writing log file"
-  gosu ${USER} sh -c "/rpxy/run.sh 2>&1 | tee ${LOG_FILE}"
-else
-  echo "rpxy: Start without writing log file"
-  gosu ${USER} sh -c "/rpxy/run.sh 2>&1"
-fi
+gosu ${USER} sh -c "/rpxy/run.sh 2>&1"
