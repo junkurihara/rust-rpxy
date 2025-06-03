@@ -3,7 +3,7 @@ use crate::{
   backend::{UpstreamCandidates, UpstreamOption},
   log::*,
 };
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Result, anyhow};
 use bytes::BufMut;
 use http::{HeaderMap, HeaderName, HeaderValue, Uri, header};
 use std::{borrow::Cow, net::SocketAddr};
@@ -22,8 +22,6 @@ pub(super) fn takeout_sticky_cookie_lb_context(
   headers: &mut HeaderMap,
   expected_cookie_name: &str,
 ) -> Result<Option<LoadBalanceContext>> {
-  use anyhow::ensure;
-
   let mut headers_clone = headers.clone();
 
   match headers_clone.entry(header::COOKIE) {
@@ -37,7 +35,7 @@ pub(super) fn takeout_sticky_cookie_lb_context(
       if sticky_cookies.is_empty() {
         return Ok(None);
       }
-      ensure!(sticky_cookies.len() == 1, "Invalid cookie: Multiple sticky cookie values");
+      anyhow::ensure!(sticky_cookies.len() == 1, "Invalid cookie: Multiple sticky cookie values");
 
       let cookies_passed_to_upstream = without_sticky_cookies.join("; ");
       let cookie_passed_to_lb = sticky_cookies.first().unwrap();
