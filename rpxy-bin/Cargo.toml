@@ -68,6 +68,7 @@ serde_ignored = "0.1.12"
 # logging
 tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-appender = "0.2.3"
 
 ################################
 # cert management
