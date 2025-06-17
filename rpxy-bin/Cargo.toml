@@ -42,9 +42,8 @@ sticky-cookie = ["rpxy-lib/sticky-cookie"]
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 
-# TODO: pin mimalloc due to compilation failure by musl
-mimalloc = { version = "=0.1.44", default-features = false }
-libmimalloc-sys = { version = "=0.1.40" }
+mimalloc = { version = "0.1.47", default-features = false }
+libmimalloc-sys = { version = "0.1.43" }
 anyhow = "1.0.98"
 ahash = "0.8.12"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
