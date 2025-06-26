@@ -388,9 +388,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.18.1"
+version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793db76d6187cd04dff33004d8e6c9cc4e05cd330500379d2394209271b4aeee"
+checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
 name = "bytemuck"
@@ -2407,7 +2407,7 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "s2n-codec"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -2416,7 +2416,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic"
-version = "1.59.0"
+version = "1.60.0"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -2439,7 +2439,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-core"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "atomic-waker",
  "byteorder",
@@ -2458,7 +2458,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-crypto"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "aws-lc-rs",
  "cfg-if",
@@ -2481,7 +2481,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-platform"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "cfg-if",
  "futures",
@@ -2494,7 +2494,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-rustls"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "bytes",
  "rustls",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "bytes",
  "errno",
@@ -2520,7 +2520,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls-default"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "s2n-quic-rustls",
  "s2n-quic-tls",
@@ -2528,7 +2528,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-transport"
-version = "0.59.0"
+version = "0.60.0"
 dependencies = [
  "bytes",
  "futures-channel",
