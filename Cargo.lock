@@ -2101,7 +2101,6 @@ dependencies = [
  "clap",
  "futures-util",
  "hot_reload",
- "libmimalloc-sys",
  "mimalloc",
  "rpxy-acme",
  "rpxy-certs",
