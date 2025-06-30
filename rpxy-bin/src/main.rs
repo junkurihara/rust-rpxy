@@ -33,10 +33,9 @@ fn main() {
 
     init_logger(parsed_opts.log_dir_path.as_deref());
 
-    let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::new(
+    let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::with_delay(
       &parsed_opts.config_file_path,
       CONFIG_WATCH_DELAY_SECS,
-      false,
     )
     .await
     .unwrap();
@@ -256,7 +255,7 @@ async fn rpxy_service(
       }
       /* ---------- */
       _ = config_rx.changed() => {
-        let Some(new_config_toml) = config_rx.borrow().clone() else {
+        let Some(new_config_toml) = config_rx.get() else {
           error!("Something wrong in config reloader receiver");
           return Err(anyhow!("Something wrong in config reloader receiver"));
         };

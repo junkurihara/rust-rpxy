@@ -313,7 +313,7 @@ where
             error!("Reloader is broken");
             break;
           }
-          let server_crypto_base = server_crypto_rx.borrow().clone().unwrap();
+          let server_crypto_base = server_crypto_rx.get().unwrap();
           let Some(server_config): Option<Arc<ServerCrypto>> = (&server_crypto_base).try_into().ok() else {
             error!("Failed to update server crypto");
             break;

@@ -52,7 +52,7 @@ where
 
   /// Receive server crypto from reloader
   fn receive_server_crypto(&self, server_crypto_rx: ReloaderReceiver<ServerCryptoBase>) -> RpxyResult<s2n_quic_rustls::Server> {
-    let cert_keys_map = server_crypto_rx.borrow().clone().ok_or_else(|| {
+    let cert_keys_map = server_crypto_rx.get().ok_or_else(|| {
       error!("Reloader is broken");
       RpxyError::CertificateReloadError(anyhow!("Reloader is broken").into())
     })?;

@@ -1088,9 +1088,9 @@ dependencies = [
 
 [[package]]
 name = "hot_reload"
-version = "0.1.9"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75c6b9b663cacaa5655b282218152476f7d38f6dc29b0d9b93a7f5fd73209b6a"
+checksum = "469bdabdc9436358811cd8fa2d35b3a0fc60534aca57979b931b9f5f9551ce16"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2093,7 +2093,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2117,7 +2117,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-acme"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2138,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-certs"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2156,7 +2156,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-lib"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "ahash",
  "anyhow",
