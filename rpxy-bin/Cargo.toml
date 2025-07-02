@@ -46,7 +46,7 @@ mimalloc = { version = "0.1.47", default-features = false }
 anyhow = "1.0.98"
 ahash = "0.8.12"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
-tokio = { version = "1.45.1", default-features = false, features = [
+tokio = { version = "1.46.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
