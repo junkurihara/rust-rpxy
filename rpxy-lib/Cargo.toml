@@ -41,7 +41,7 @@ ahash = "0.8.12"
 bytes = "1.10.1"
 derive_builder = "0.20.2"
 futures = { version = "0.3.31", features = ["alloc", "async-await"] }
-tokio = { version = "1.45.1", default-features = false, features = [
+tokio = { version = "1.46.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
