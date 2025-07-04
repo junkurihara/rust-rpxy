@@ -102,6 +102,7 @@ pub(super) fn apply_upstream_options_to_header(
   upstream_base_uri: &Uri,
   // _client_addr: &SocketAddr,
   upstream: &UpstreamCandidates,
+  original_uri: &Uri,
 ) -> Result<()> {
   for opt in upstream.options.iter() {
     match opt {
@@ -121,11 +122,9 @@ pub(super) fn apply_upstream_options_to_header(
       UpstreamOption::ForwardedHeader => {
         // This is called after X-Forwarded-For is added
         // Generate RFC 7239 Forwarded header
-        // TODO: host is generated from x-original-uri
-        let host = headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("unknown");
         let tls = upstream_base_uri.scheme_str() == Some("https");
 
-        match generate_forwarded_header(headers, tls, host) {
+        match generate_forwarded_header(headers, tls, original_uri) {
           Ok(forwarded_value) => {
             add_header_entry_overwrite_if_exist(headers, "forwarded", forwarded_value)?;
           }
@@ -220,7 +219,7 @@ pub(super) fn add_forwarding_header(
   client_addr: &SocketAddr,
   listen_addr: &SocketAddr,
   tls: bool,
-  uri_str: &str,
+  original_uri: &Uri,
 ) -> Result<()> {
   let canonical_client_addr = client_addr.to_canonical().ip().to_string();
   let has_forwarded = headers.contains_key("forwarded");
@@ -241,9 +240,7 @@ pub(super) fn add_forwarding_header(
   // IMPORTANT: If Forwarded header exists, always update it for consistency
   // This ensures headers remain consistent even when forwarded_header upstream option is not specified
   if has_forwarded {
-    let host = headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("unknown");
-
-    match generate_forwarded_header(headers, tls, host) {
+    match generate_forwarded_header(headers, tls, original_uri) {
       Ok(forwarded_value) => {
         add_header_entry_overwrite_if_exist(headers, "forwarded", forwarded_value)?;
       }
@@ -272,7 +269,7 @@ pub(super) fn add_forwarding_header(
   // x-forwarded-ssl
   add_header_entry_overwrite_if_exist(headers, "x-forwarded-ssl", if tls { "on" } else { "off" })?;
   // x-original-uri
-  add_header_entry_overwrite_if_exist(headers, "x-original-uri", uri_str.to_string())?;
+  add_header_entry_overwrite_if_exist(headers, "x-original-uri", original_uri.to_string())?;
   // proxy
   add_header_entry_overwrite_if_exist(headers, "proxy", "")?;
 
@@ -325,7 +322,7 @@ fn update_xff_from_forwarded(headers: &mut HeaderMap, client_addr: &SocketAddr) 
 
 /// Generate RFC 7239 Forwarded header from X-Forwarded-For
 /// This function assumes that the X-Forwarded-For header is present and well-formed.
-fn generate_forwarded_header(headers: &HeaderMap, tls: bool, host: &str) -> Result<String> {
+fn generate_forwarded_header(headers: &HeaderMap, tls: bool, original_uri: &Uri) -> Result<String> {
   let for_values = headers
     .get("x-forwarded-for")
     .and_then(|h| h.to_str().ok())
@@ -356,10 +353,25 @@ fn generate_forwarded_header(headers: &HeaderMap, tls: bool, host: &str) -> Resu
     "for={};proto={};host={}",
     for_values,
     if tls { "https" } else { "http" },
-    host
+    host_from_uri(original_uri)?
   );
 
   Ok(forwarded_value)
+}
+
+#[inline]
+/// Extract host from URI
+fn host_from_uri(uri: &Uri) -> Result<String> {
+  uri
+    .host()
+    .map(|host| {
+      if let Some(port) = uri.port_u16() {
+        format!("{}:{}", host, port)
+      } else {
+        host.to_string()
+      }
+    })
+    .ok_or_else(|| anyhow!("No host found in URI"))
 }
 
 /// Remove connection header

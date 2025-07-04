@@ -81,7 +81,7 @@ where
         .unwrap_or(false)
     };
 
-    let original_uri = req.uri().to_string();
+    let original_uri = req.uri().clone();
     let headers = req.headers_mut();
     // delete headers specified in header.connection
     remove_connection_header(headers);
@@ -98,18 +98,6 @@ where
     // by default, add "host" header of original server_name if not exist
     if req.headers().get(header::HOST).is_none() {
       let org_host = req.uri().host().ok_or_else(|| anyhow!("Invalid request"))?.to_owned();
-      // Omit port 80 if !tls_enabled, omit port 443 if tls_enabled
-      let org_host = req
-        .uri()
-        .port_u16()
-        .map(|port| {
-          if (tls_enabled && port == 443) || (!tls_enabled && port == 80) {
-            org_host.clone()
-          } else {
-            format!("{}:{}", org_host, port)
-          }
-        })
-        .unwrap_or(org_host);
       req.headers_mut().insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
 
@@ -139,7 +127,7 @@ where
     // apply upstream-specific headers given in upstream_option
     let headers = req.headers_mut();
     // apply upstream options to header, after X-Forwarded-For is added
-    apply_upstream_options_to_header(headers, &upstream_chosen.uri, upstream_candidates)?;
+    apply_upstream_options_to_header(headers, &upstream_chosen.uri, upstream_candidates, &original_uri)?;
 
     // update uri in request
     ensure!(
