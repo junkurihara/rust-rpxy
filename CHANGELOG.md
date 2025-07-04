@@ -5,6 +5,7 @@
 ### Improvement
 
 - Feat: Support `Forwarded` header in addition to `X-Forwarded-For` header. This is to support the standard forwarding header for reverse proxy applications (RFC 7239). Use the `forwarded_header` upstream option to enable this feature.
+  By default, it is not appended to the outgoing header. However, if the incoming request has the forwarded header, it would be preserved and updated simultaneously with `x-forwarded-for` header. if both forwarded and x-forwarded-for headers exists (and they are inconsistent), x-forwarded-for is prioritized. This means that x-forwarded-for is first updated and it is then copied (overridden) to `for` param of forwarded header.
 
 ## 0.10.0
 
