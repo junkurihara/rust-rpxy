@@ -98,6 +98,18 @@ where
     // by default, add "host" header of original server_name if not exist
     if req.headers().get(header::HOST).is_none() {
       let org_host = req.uri().host().ok_or_else(|| anyhow!("Invalid request"))?.to_owned();
+      // Omit port 80 if !tls_enabled, omit port 443 if tls_enabled
+      let org_host = req
+        .uri()
+        .port_u16()
+        .map(|port| {
+          if (tls_enabled && port == 443) || (!tls_enabled && port == 80) {
+            org_host.clone()
+          } else {
+            format!("{}:{}", org_host, port)
+          }
+        })
+        .unwrap_or(org_host);
       req.headers_mut().insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
 

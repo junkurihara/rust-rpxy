@@ -121,6 +121,7 @@ pub(super) fn apply_upstream_options_to_header(
       UpstreamOption::ForwardedHeader => {
         // This is called after X-Forwarded-For is added
         // Generate RFC 7239 Forwarded header
+        // TODO: host is generated from x-original-uri
         let host = headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("unknown");
         let tls = upstream_base_uri.scheme_str() == Some("https");
 
@@ -240,11 +241,8 @@ pub(super) fn add_forwarding_header(
   // IMPORTANT: If Forwarded header exists, always update it for consistency
   // This ensures headers remain consistent even when forwarded_header upstream option is not specified
   if has_forwarded {
-    let host = headers
-      .get(header::HOST)
-      .and_then(|h| h.to_str().ok())
-      .unwrap_or("unknown");
-    
+    let host = headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("unknown");
+
     match generate_forwarded_header(headers, tls, host) {
       Ok(forwarded_value) => {
         add_header_entry_overwrite_if_exist(headers, "forwarded", forwarded_value)?;

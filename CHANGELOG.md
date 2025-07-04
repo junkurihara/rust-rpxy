@@ -2,6 +2,10 @@
 
 ## 0.10.1 or 0.11.0 (Unreleased)
 
+### Improvement
+
+- Feat: Support `Forwarded` header in addition to `X-Forwarded-For` header. This is to support the standard forwarding header for reverse proxy applications (RFC 7239). Use the `forwarded_header` upstream option to enable this feature.
+
 ## 0.10.0
 
 ### Important Changes
