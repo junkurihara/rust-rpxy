@@ -360,25 +360,30 @@ fn generate_forwarded_header(headers: &HeaderMap, tls: bool, original_uri: &Uri)
     "for={};proto={};host={}",
     for_values,
     if tls { "https" } else { "http" },
-    host_from_uri(original_uri)?
+    host_from_uri_or_host_header(original_uri, headers.get(header::HOST).cloned())?
   );
 
   Ok(forwarded_value)
 }
 
-#[inline]
 /// Extract host from URI
-fn host_from_uri(uri: &Uri) -> Result<String> {
-  uri
-    .host()
-    .map(|host| {
-      if let Some(port) = uri.port_u16() {
-        format!("{}:{}", host, port)
-      } else {
-        host.to_string()
-      }
-    })
-    .ok_or_else(|| anyhow!("No host found in URI"))
+pub(super) fn host_from_uri_or_host_header(uri: &Uri, host_header_value: Option<header::HeaderValue>) -> Result<String> {
+  // Prioritize uri host over host header
+  let uri_host = uri.host().map(|host| {
+    if let Some(port) = uri.port_u16() {
+      format!("{}:{}", host, port)
+    } else {
+      host.to_string()
+    }
+  });
+  if let Some(host) = uri_host {
+    return Ok(host);
+  }
+  // If uri host is not available, use host header
+  host_header_value
+    .map(|h| h.to_str().map(|s| s.to_string()))
+    .transpose()?
+    .ok_or_else(|| anyhow!("No host found in URI or Host header"))
 }
 
 /// Remove connection header

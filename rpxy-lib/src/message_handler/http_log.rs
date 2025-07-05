@@ -1,5 +1,5 @@
 use super::canonical_address::ToCanonical;
-use crate::log::*;
+use crate::{log::*, message_handler::utils_headers};
 use http::header;
 use std::net::SocketAddr;
 
@@ -12,10 +12,11 @@ pub struct HttpMessageLog {
   pub host: String,
   pub p_and_q: String,
   pub version: http::Version,
-  pub uri_scheme: String,
-  pub uri_host: String,
+  pub scheme: String,
+  pub path: String,
   pub ua: String,
   pub xff: String,
+  pub forwarded: String,
   pub status: String,
   pub upstream: String,
 }
@@ -29,17 +30,21 @@ impl<T> From<&http::Request<T>> for HttpMessageLog {
         .map_or_else(|| "", |s| s.to_str().unwrap_or(""))
         .to_string()
     };
+    let host =
+      utils_headers::host_from_uri_or_host_header(req.uri(), req.headers().get(header::HOST).cloned()).unwrap_or_default();
+
     Self {
       // tls_server_name: "".to_string(),
       client_addr: "".to_string(),
       method: req.method().to_string(),
-      host: header_mapper(header::HOST),
+      host,
       p_and_q: req.uri().path_and_query().map_or_else(|| "", |v| v.as_str()).to_string(),
       version: req.version(),
-      uri_scheme: req.uri().scheme_str().unwrap_or("").to_string(),
-      uri_host: req.uri().host().unwrap_or("").to_string(),
+      scheme: req.uri().scheme_str().unwrap_or("").to_string(),
+      path: req.uri().path().to_string(),
       ua: header_mapper(header::USER_AGENT),
       xff: header_mapper(header::HeaderName::from_static("x-forwarded-for")),
+      forwarded: header_mapper(header::FORWARDED),
       status: "".to_string(),
       upstream: "".to_string(),
     }
@@ -48,26 +53,29 @@ impl<T> From<&http::Request<T>> for HttpMessageLog {
 
 impl std::fmt::Display for HttpMessageLog {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let forwarded_part = if !self.forwarded.is_empty() {
+      format!(" \"{}\"", self.forwarded)
+    } else {
+      "".to_string()
+    };
+
     write!(
       f,
-      "{} <- {} -- {} {} {:?} -- {} -- {} \"{}\", \"{}\" \"{}\"",
-      if !self.host.is_empty() {
-        self.host.as_str()
-      } else {
-        self.uri_host.as_str()
-      },
+      "{} <- {} -- {} {} {:?} -- {} -- {} \"{}\", \"{}\"{} \"{}\"",
+      self.host,
       self.client_addr,
       self.method,
       self.p_and_q,
       self.version,
       self.status,
-      if !self.uri_scheme.is_empty() && !self.uri_host.is_empty() {
-        format!("{}://{}", self.uri_scheme, self.uri_host)
+      if !self.scheme.is_empty() && !self.host.is_empty() {
+        format!("{}://{}{}", self.scheme, self.host, self.path)
       } else {
-        "".to_string()
+        self.path.clone()
       },
       self.ua,
       self.xff,
+      forwarded_part,
       self.upstream
     )
   }
@@ -99,6 +107,59 @@ impl HttpMessageLog {
     info!(
       name: crate::constants::log_event_names::ACCESS_LOG,
       "{}", self
+    );
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use http::{Method, Version};
+
+  #[test]
+  fn test_log_format_without_forwarded() {
+    let log = HttpMessageLog {
+      client_addr: "192.168.1.1:8080".to_string(),
+      method: Method::GET.to_string(),
+      host: "example.com".to_string(),
+      p_and_q: "/path?query=value".to_string(),
+      version: Version::HTTP_11,
+      scheme: "https".to_string(),
+      path: "/path".to_string(),
+      ua: "Mozilla/5.0".to_string(),
+      xff: "10.0.0.1".to_string(),
+      forwarded: "".to_string(),
+      status: "200".to_string(),
+      upstream: "https://backend.example.com".to_string(),
+    };
+
+    let formatted = format!("{}", log);
+    assert!(!formatted.contains(" \"\""));
+    assert!(formatted.contains("\"Mozilla/5.0\", \"10.0.0.1\" \"https://backend.example.com\""));
+  }
+
+  #[test]
+  fn test_log_format_with_forwarded() {
+    let log = HttpMessageLog {
+      client_addr: "192.168.1.1:8080".to_string(),
+      method: Method::GET.to_string(),
+      host: "example.com".to_string(),
+      p_and_q: "/path?query=value".to_string(),
+      version: Version::HTTP_11,
+      scheme: "https".to_string(),
+      path: "/path".to_string(),
+      ua: "Mozilla/5.0".to_string(),
+      xff: "10.0.0.1".to_string(),
+      forwarded: "for=192.0.2.60;proto=http;by=203.0.113.43".to_string(),
+      status: "200".to_string(),
+      upstream: "https://backend.example.com".to_string(),
+    };
+
+    let formatted = format!("{}", log);
+    assert!(formatted.contains(" \"for=192.0.2.60;proto=http;by=203.0.113.43\""));
+    assert!(
+      formatted
+        .contains("\"Mozilla/5.0\", \"10.0.0.1\" \"for=192.0.2.60;proto=http;by=203.0.113.43\" \"https://backend.example.com\"")
     );
   }
 }
