@@ -12,6 +12,13 @@ use std::{borrow::Cow, net::SocketAddr};
 use crate::backend::{LoadBalanceContext, StickyCookie, StickyCookieValue};
 // use crate::backend::{UpstreamGroup, UpstreamOption};
 
+const X_FORWARDED_FOR: &str = "x-forwarded-for";
+const X_FORWARDED_PROTO: &str = "x-forwarded-proto";
+const X_FORWARDED_PORT: &str = "x-forwarded-port";
+const X_FORWARDED_SSL: &str = "x-forwarded-ssl";
+const X_ORIGINAL_URI: &str = "x-original-uri";
+const X_REAL_IP: &str = "x-real-ip";
+
 // ////////////////////////////////////////////////////
 // // Functions to manipulate headers
 #[cfg(feature = "sticky-cookie")]
@@ -126,7 +133,7 @@ pub(super) fn apply_upstream_options_to_header(
 
         match generate_forwarded_header(headers, tls, original_uri) {
           Ok(forwarded_value) => {
-            add_header_entry_overwrite_if_exist(headers, "forwarded", forwarded_value)?;
+            add_header_entry_overwrite_if_exist(headers, header::FORWARDED.as_str(), forwarded_value)?;
           }
           Err(e) => {
             // Log warning but don't fail the request if Forwarded generation fails
@@ -222,8 +229,8 @@ pub(super) fn add_forwarding_header(
   original_uri: &Uri,
 ) -> Result<()> {
   let canonical_client_addr = client_addr.to_canonical().ip().to_string();
-  let has_forwarded = headers.contains_key("forwarded");
-  let has_xff = headers.contains_key("x-forwarded-for");
+  let has_forwarded = headers.contains_key(header::FORWARDED);
+  let has_xff = headers.contains_key(X_FORWARDED_FOR);
 
   // Handle incoming Forwarded header (Case 2: only Forwarded exists)
   if has_forwarded && !has_xff {
@@ -234,7 +241,7 @@ pub(super) fn add_forwarding_header(
     // TODO: In future PR, implement proper RFC 7239 precedence
     // where Forwarded header should take priority over X-Forwarded-For
     // This requires careful testing to ensure no breaking changes
-    append_header_entry_with_comma(headers, "x-forwarded-for", &canonical_client_addr)?;
+    append_header_entry_with_comma(headers, X_FORWARDED_FOR, &canonical_client_addr)?;
   }
 
   // IMPORTANT: If Forwarded header exists, always update it for consistency
@@ -242,7 +249,7 @@ pub(super) fn add_forwarding_header(
   if has_forwarded {
     match generate_forwarded_header(headers, tls, original_uri) {
       Ok(forwarded_value) => {
-        add_header_entry_overwrite_if_exist(headers, "forwarded", forwarded_value)?;
+        add_header_entry_overwrite_if_exist(headers, header::FORWARDED.as_str(), forwarded_value)?;
       }
       Err(e) => {
         // Log warning but don't fail the request if Forwarded generation fails
@@ -258,18 +265,18 @@ pub(super) fn add_forwarding_header(
   /////////// As Nginx
   // If we receive X-Forwarded-Proto, pass it through; otherwise, pass along the
   // scheme used to connect to this server
-  add_header_entry_if_not_exist(headers, "x-forwarded-proto", if tls { "https" } else { "http" })?;
+  add_header_entry_if_not_exist(headers, X_FORWARDED_PROTO, if tls { "https" } else { "http" })?;
   // If we receive X-Forwarded-Port, pass it through; otherwise, pass along the
   // server port the client connected to
-  add_header_entry_if_not_exist(headers, "x-forwarded-port", listen_addr.port().to_string())?;
+  add_header_entry_if_not_exist(headers, X_FORWARDED_PORT, listen_addr.port().to_string())?;
 
   /////////// As Nginx-Proxy
   // x-real-ip
-  add_header_entry_overwrite_if_exist(headers, "x-real-ip", canonical_client_addr)?;
+  add_header_entry_overwrite_if_exist(headers, X_REAL_IP, canonical_client_addr)?;
   // x-forwarded-ssl
-  add_header_entry_overwrite_if_exist(headers, "x-forwarded-ssl", if tls { "on" } else { "off" })?;
+  add_header_entry_overwrite_if_exist(headers, X_FORWARDED_SSL, if tls { "on" } else { "off" })?;
   // x-original-uri
-  add_header_entry_overwrite_if_exist(headers, "x-original-uri", original_uri.to_string())?;
+  add_header_entry_overwrite_if_exist(headers, X_ORIGINAL_URI, original_uri.to_string())?;
   // proxy
   add_header_entry_overwrite_if_exist(headers, "proxy", "")?;
 
@@ -279,7 +286,7 @@ pub(super) fn add_forwarding_header(
 /// Extract proxy chain from existing Forwarded header
 fn extract_forwarded_chain(headers: &HeaderMap) -> Vec<String> {
   headers
-    .get("forwarded")
+    .get(header::FORWARDED)
     .and_then(|h| h.to_str().ok())
     .map(|forwarded_str| {
       // Parse Forwarded header entries (comma-separated)
@@ -307,15 +314,15 @@ fn update_xff_from_forwarded(headers: &mut HeaderMap, client_addr: &SocketAddr) 
 
   if !forwarded_chain.is_empty() {
     // Replace X-Forwarded-For with the chain from Forwarded header
-    headers.remove("x-forwarded-for");
+    headers.remove(X_FORWARDED_FOR);
     for ip in forwarded_chain {
-      append_header_entry_with_comma(headers, "x-forwarded-for", &ip)?;
+      append_header_entry_with_comma(headers, X_FORWARDED_FOR, &ip)?;
     }
   }
 
   // Append current client IP (standard behavior)
   let canonical_client_addr = client_addr.to_canonical().ip().to_string();
-  append_header_entry_with_comma(headers, "x-forwarded-for", &canonical_client_addr)?;
+  append_header_entry_with_comma(headers, X_FORWARDED_FOR, &canonical_client_addr)?;
 
   Ok(())
 }
@@ -324,7 +331,7 @@ fn update_xff_from_forwarded(headers: &mut HeaderMap, client_addr: &SocketAddr) 
 /// This function assumes that the X-Forwarded-For header is present and well-formed.
 fn generate_forwarded_header(headers: &HeaderMap, tls: bool, original_uri: &Uri) -> Result<String> {
   let for_values = headers
-    .get("x-forwarded-for")
+    .get(X_FORWARDED_FOR)
     .and_then(|h| h.to_str().ok())
     .map(|xff_str| {
       xff_str
