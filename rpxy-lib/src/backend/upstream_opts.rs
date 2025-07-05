@@ -13,6 +13,8 @@ pub enum UpstreamOption {
   ForceHttp11Upstream,
   /// Force HTTP/2 upstream
   ForceHttp2Upstream,
+  /// Add RFC 7239 Forwarded header
+  ForwardedHeader,
   // TODO: Adds more options for heder override
 }
 impl TryFrom<&str> for UpstreamOption {
@@ -24,6 +26,7 @@ impl TryFrom<&str> for UpstreamOption {
       "upgrade_insecure_requests" => Ok(Self::UpgradeInsecureRequests),
       "force_http11_upstream" => Ok(Self::ForceHttp11Upstream),
       "force_http2_upstream" => Ok(Self::ForceHttp2Upstream),
+      "forwarded_header" => Ok(Self::ForwardedHeader),
       _ => Err(RpxyError::UnsupportedUpstreamOption),
     }
   }

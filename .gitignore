@@ -1,5 +1,6 @@
 .vscode
 .private
+.tmp
 docker/log
 docker/cache
 docker/config
