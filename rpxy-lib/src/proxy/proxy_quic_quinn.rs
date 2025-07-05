@@ -102,7 +102,7 @@ where
             error!("Reloader is broken");
             break;
           }
-          let cert_keys_map = server_crypto_rx.borrow().clone().unwrap();
+          let cert_keys_map = server_crypto_rx.get().unwrap();
 
           server_crypto = (&cert_keys_map).try_into().ok();
           let Some(inner) = server_crypto.clone() else {

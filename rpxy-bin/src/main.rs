@@ -33,10 +33,9 @@ fn main() {
 
     init_logger(parsed_opts.log_dir_path.as_deref());
 
-    let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::new(
+    let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::with_delay(
       &parsed_opts.config_file_path,
       CONFIG_WATCH_DELAY_SECS,
-      false,
     )
     .await
     .unwrap();
@@ -71,6 +70,7 @@ struct RpxyService {
 }
 
 impl RpxyService {
+  /// Create a new RpxyService from config and runtime handle.
   async fn new(config_toml: &ConfigToml, runtime_handle: tokio::runtime::Handle) -> Result<Self, anyhow::Error> {
     let (proxy_conf, app_conf) = build_settings(config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
 
@@ -80,7 +80,7 @@ impl RpxyService {
       .map(|(s, r)| (Some(Arc::new(s)), Some(r)))
       .unwrap_or((None, None));
 
-    Ok(RpxyService {
+    Ok(Self {
       runtime_handle: runtime_handle.clone(),
       proxy_conf,
       app_conf,
@@ -255,7 +255,7 @@ async fn rpxy_service(
       }
       /* ---------- */
       _ = config_rx.changed() => {
-        let Some(new_config_toml) = config_rx.borrow().clone() else {
+        let Some(new_config_toml) = config_rx.get() else {
           error!("Something wrong in config reloader receiver");
           return Err(anyhow!("Something wrong in config reloader receiver"));
         };

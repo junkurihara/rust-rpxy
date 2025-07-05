@@ -180,9 +180,5 @@ pub async fn entrypoint(
     }
   });
   // returns the first error as the representative error
-  if let Some(e) = errs.next() {
-    return Err(e);
-  }
-
-  Ok(())
+  errs.next().map_or(Ok(()), |e| Err(e))
 }

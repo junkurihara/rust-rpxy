@@ -5,6 +5,9 @@ on:
   pull_request:
     types: [synchronize, opened]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 

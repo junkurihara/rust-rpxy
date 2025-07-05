@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.10.0"
+version = "0.10.1"
 authors = ["Jun Kurihara"]
 homepage = "https://github.com/junkurihara/rust-rpxy"
 repository = "https://github.com/junkurihara/rust-rpxy"

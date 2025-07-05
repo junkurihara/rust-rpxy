@@ -12,4 +12,7 @@ pub enum RpxyAcmeError {
   /// IO error
   #[error("IO error: {0}")]
   Io(#[from] std::io::Error),
+  /// TLS client configuration error
+  #[error("TLS client configuration error: {0}")]
+  TlsClientConfig(String),
 }

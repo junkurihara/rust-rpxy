@@ -4,12 +4,25 @@ use crate::{
   log::warn,
 };
 use ahash::HashMap;
-use rpxy_lib::{AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
+use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
 use serde::Deserialize;
 use std::{fs, net::SocketAddr};
 use tokio::time::Duration;
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
+/// Main configuration structure parsed from the TOML file.
+///
+/// # Fields
+/// - `listen_port`: Optional TCP port for HTTP.
+/// - `listen_port_tls`: Optional TCP port for HTTPS/TLS.
+/// - `listen_ipv6`: Enable IPv6 listening.
+/// - `https_redirection_port`: Optional port for HTTP to HTTPS redirection.
+/// - `tcp_listen_backlog`: Optional TCP backlog size.
+/// - `max_concurrent_streams`: Optional max concurrent streams.
+/// - `max_clients`: Optional max client connections.
+/// - `apps`: Optional application definitions.
+/// - `default_app`: Optional default application name.
+/// - `experimental`: Optional experimental features.
 pub struct ConfigToml {
   pub listen_port: Option<u16>,
   pub listen_port_tls: Option<u16>,
@@ -23,8 +36,75 @@ pub struct ConfigToml {
   pub experimental: Option<Experimental>,
 }
 
+/// Extension trait for config validation and building
+pub trait ConfigTomlExt {
+  fn validate_and_build_settings(&self) -> Result<(ProxyConfig, AppConfigList), anyhow::Error>;
+}
+
+impl ConfigTomlExt for ConfigToml {
+  fn validate_and_build_settings(&self) -> Result<(ProxyConfig, AppConfigList), anyhow::Error> {
+    let proxy_config: ProxyConfig = self.try_into()?;
+    let apps = self.apps.as_ref().ok_or(anyhow!("Missing application spec"))?;
+
+    // Ensure at least one app is defined
+    ensure!(!apps.0.is_empty(), "Wrong application spec.");
+
+    // Helper: all apps have TLS
+    let all_apps_have_tls = apps.0.values().all(|app| app.tls.is_some());
+
+    // Helper: all apps have https_redirection unset
+    let all_apps_no_https_redirection = apps.0.values().all(|app| {
+      if let Some(tls) = app.tls.as_ref() {
+        tls.https_redirection.is_none()
+      } else {
+        true
+      }
+    });
+
+    if proxy_config.http_port.is_none() {
+      ensure!(all_apps_have_tls, "Some apps serve only plaintext HTTP");
+    }
+    if proxy_config.https_redirection_port.is_some() {
+      ensure!(
+        proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
+        "https_redirection_port can be specified only when both http_port and https_port are specified"
+      );
+    }
+    if !(proxy_config.https_port.is_some() && proxy_config.http_port.is_some()) {
+      ensure!(
+        all_apps_no_https_redirection,
+        "https_redirection can be specified only when both http_port and https_port are specified"
+      );
+    }
+
+    // Build AppConfigList
+    let mut app_config_list_inner = Vec::<AppConfig>::new();
+    for (app_name, app) in apps.0.iter() {
+      let _server_name_string = app.server_name.as_ref().ok_or(anyhow!("No server name"))?;
+      let registered_app_name = app_name.to_ascii_lowercase();
+      let app_config = app.build_app_config(&registered_app_name)?;
+      app_config_list_inner.push(app_config);
+    }
+    let app_config_list = AppConfigList {
+      inner: app_config_list_inner,
+      default_app: self.default_app.clone().map(|v| v.to_ascii_lowercase()),
+    };
+
+    Ok((proxy_config, app_config_list))
+  }
+}
+
 #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
+/// HTTP/3 protocol options for server configuration.
+///
+/// # Fields
+/// - `alt_svc_max_age`: Optional max age for Alt-Svc header.
+/// - `request_max_body_size`: Optional maximum request body size.
+/// - `max_concurrent_connections`: Optional maximum concurrent connections.
+/// - `max_concurrent_bidistream`: Optional maximum concurrent bidirectional streams.
+/// - `max_concurrent_unistream`: Optional maximum concurrent unidirectional streams.
+/// - `max_idle_timeout`: Optional maximum idle timeout in milliseconds.
 pub struct Http3Option {
   pub alt_svc_max_age: Option<u32>,
   pub request_max_body_size: Option<usize>,

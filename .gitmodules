@@ -1,10 +1,10 @@
 [submodule "submodules/rusty-http-cache-semantics"]
-	path = submodules/rusty-http-cache-semantics
-	url = git@github.com:junkurihara/rusty-http-cache-semantics.git
+        path = submodules/rusty-http-cache-semantics
+        url = https://github.com/junkurihara/rusty-http-cache-semantics.git
 [submodule "submodules/rustls-acme"]
-	path = submodules/rustls-acme
-	url = git@github.com:junkurihara/rustls-acme.git
+        path = submodules/rustls-acme
+        url = https://github.com/junkurihara/rustls-acme.git
 [submodule "submodules/s2n-quic"]
-	path = submodules/s2n-quic
-	url = git@github.com:junkurihara/s2n-quic.git
-	branch = rustls-pq
+        path = submodules/s2n-quic
+        url = https://github.com/junkurihara/s2n-quic.git
+        branch = rustls-pq

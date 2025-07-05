@@ -27,8 +27,6 @@ pub use crate::{
 // Constants
 /// Default delay in seconds to watch certificates
 const DEFAULT_CERTS_WATCH_DELAY_SECS: u32 = 60;
-/// Load certificates only when updated
-const LOAD_CERTS_ONLY_WHEN_UPDATED: bool = true;
 
 /// Result type inner of certificate reloader service
 type ReloaderServiceResultInner = (
@@ -62,6 +60,7 @@ where
   let certs_watch_period = certs_watch_period.unwrap_or(DEFAULT_CERTS_WATCH_DELAY_SECS);
 
   let (cert_reloader_service, cert_reloader_rx) =
-    ReloaderService::<CryptoReloader, ServerCryptoBase>::new(&source, certs_watch_period, !LOAD_CERTS_ONLY_WHEN_UPDATED).await?;
+    ReloaderService::<CryptoReloader, ServerCryptoBase>::with_delay(&source, certs_watch_period).await?;
+
   Ok((cert_reloader_service, cert_reloader_rx))
 }

@@ -1,31 +1,8 @@
-# Basic dependabot.yml file with
-# minimum configuration for two package managers
-
 version: 2
 updates:
   # Enable version updates for cargo
   - package-ecosystem: "cargo"
     directory: "/"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "cargo"
-    directory: "/rpxy-bin"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "cargo"
-    directory: "/rpxy-lib"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "cargo"
-    directory: "/rpxy-certs"
-    schedule:
-      interval: "daily"
-
-  - package-ecosystem: "cargo"
-    directory: "/rpxy-acme"
     schedule:
       interval: "daily"
 

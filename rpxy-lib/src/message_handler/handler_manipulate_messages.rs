@@ -70,22 +70,24 @@ where
 
     // Add te: trailer if contained in original request
     let contains_te_trailers = {
-      if let Some(te) = req.headers().get(header::TE) {
-        te.as_bytes()
-          .split(|v| v == &b',' || v == &b' ')
-          .any(|x| x == "trailers".as_bytes())
-      } else {
-        false
-      }
+      req
+        .headers()
+        .get(header::TE)
+        .map(|te| {
+          te.as_bytes()
+            .split(|v| v == &b',' || v == &b' ')
+            .any(|x| x == "trailers".as_bytes())
+        })
+        .unwrap_or(false)
     };
 
-    let original_uri = req.uri().to_string();
+    let original_uri = req.uri().clone();
     let headers = req.headers_mut();
     // delete headers specified in header.connection
     remove_connection_header(headers);
     // delete hop headers including header.connection
     remove_hop_header(headers);
-    // X-Forwarded-For
+    // X-Forwarded-For (and Forwarded if exists)
     add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &original_uri)?;
 
     // Add te: trailer if te_trailer
@@ -124,8 +126,8 @@ where
 
     // apply upstream-specific headers given in upstream_option
     let headers = req.headers_mut();
-    // apply upstream options to header
-    apply_upstream_options_to_header(headers, &upstream_chosen.uri, upstream_candidates)?;
+    // apply upstream options to header, after X-Forwarded-For is added
+    apply_upstream_options_to_header(headers, &upstream_chosen.uri, upstream_candidates, &original_uri)?;
 
     // update uri in request
     ensure!(
@@ -136,11 +138,7 @@ where
     let new_uri = Uri::builder()
       .scheme(upstream_chosen.uri.scheme().unwrap().as_str())
       .authority(upstream_chosen.uri.authority().unwrap().as_str());
-    let org_pq = match req.uri().path_and_query() {
-      Some(pq) => pq.to_string(),
-      None => "/".to_string(),
-    }
-    .into_bytes();
+    let org_pq = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/").as_bytes();
 
     // replace some parts of path if opt_replace_path is enabled for chosen upstream
     let new_pq = match &upstream_candidates.replace_path {
@@ -155,7 +153,7 @@ where
         new_pq.extend_from_slice(&org_pq[matched_path.len()..]);
         new_pq
       }
-      None => org_pq,
+      None => org_pq.to_vec(),
     };
     *req.uri_mut() = new_uri.path_and_query(new_pq).build()?;
 

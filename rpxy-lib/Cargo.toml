@@ -37,11 +37,11 @@ post-quantum = [
 
 [dependencies]
 rand = "0.9.1"
-ahash = "0.8.11"
+ahash = "0.8.12"
 bytes = "1.10.1"
 derive_builder = "0.20.2"
 futures = { version = "0.3.31", features = ["alloc", "async-await"] }
-tokio = { version = "1.44.2", default-features = false, features = [
+tokio = { version = "1.46.1", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -61,7 +61,7 @@ thiserror = "2.0.12"
 http = "1.3.1"
 http-body-util = "0.1.3"
 hyper = { version = "1.6.0", default-features = false }
-hyper-util = { version = "0.1.11", features = ["full"] }
+hyper-util = { version = "0.1.14", features = ["full"] }
 futures-util = { version = "0.3.31", default-features = false }
 futures-channel = { version = "0.3.31", default-features = false }
 
@@ -70,7 +70,7 @@ hyper-tls = { version = "0.6.0", features = [
   "alpn",
   "vendored",
 ], optional = true }
-hyper-rustls = { version = "0.27.5", default-features = false, features = [
+hyper-rustls = { version = "0.27.7", default-features = false, features = [
   "aws-lc-rs",
   "http1",
   "http2",
@@ -79,8 +79,8 @@ hyper-rustls = { version = "0.27.5", default-features = false, features = [
 
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
-hot_reload = "0.1.9"
-rustls = { version = "0.23.26", default-features = false }
+hot_reload = "0.2.0"
+rustls = { version = "0.23.28", default-features = false }
 rustls-post-quantum = { version = "0.2.2", optional = true }
 tokio-rustls = { version = "0.26.2", features = ["early-data"] }
 
@@ -91,25 +91,25 @@ rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true 
 tracing = { version = "0.1.41" }
 
 # http/3
-quinn = { version = "0.11.7", optional = true }
-h3 = { version = "0.0.7", features = ["tracing"], optional = true }
-h3-quinn = { version = "0.0.9", optional = true }
-s2n-quic = { version = "1.57.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+quinn = { version = "0.11.8", optional = true }
+h3 = { version = "0.0.8", features = ["tracing"], optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
+s2n-quic = { version = "1.61.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.57.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.57.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.61.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.61.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
 ##########
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.5.9", features = ["all"], optional = true }
+socket2 = { version = "0.5.10", features = ["all"], optional = true }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
-lru = { version = "0.14.0", optional = true }
-sha2 = { version = "0.10.8", default-features = false, optional = true }
+lru = { version = "0.16.0", optional = true }
+sha2 = { version = "0.10.9", default-features = false, optional = true }
 
 # cookie handling for sticky cookie
 chrono = { version = "0.4.41", default-features = false, features = [

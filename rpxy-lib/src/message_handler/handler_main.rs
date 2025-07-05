@@ -24,10 +24,7 @@ use tokio::io::copy_bidirectional;
 #[derive(Debug)]
 /// Context object to handle sticky cookies at HTTP message handler
 pub(super) struct HandlerContext {
-  #[cfg(feature = "sticky-cookie")]
   pub(super) context_lb: Option<LoadBalanceContext>,
-  #[cfg(not(feature = "sticky-cookie"))]
-  pub(super) context_lb: Option<()>,
 }
 
 #[derive(Clone, Builder)]
@@ -107,9 +104,11 @@ where
     let backend_app = match self.app_manager.apps.get(&server_name) {
       Some(backend_app) => backend_app,
       None => {
-        let Some(default_server_name) = &self.app_manager.default_server_name else {
-          return Err(HttpError::NoMatchingBackendApp);
-        };
+        let default_server_name = self
+          .app_manager
+          .default_server_name
+          .as_ref()
+          .ok_or(HttpError::NoMatchingBackendApp)?;
         debug!("Serving by default app");
         self.app_manager.apps.get(default_server_name).unwrap()
       }
@@ -131,9 +130,7 @@ where
     // Find reverse proxy for given path and choose one of upstream host
     // Longest prefix match
     let path = req.uri().path();
-    let Some(upstream_candidates) = backend_app.path_manager.get(path) else {
-      return Err(HttpError::NoUpstreamCandidates);
-    };
+    let upstream_candidates = backend_app.path_manager.get(path).ok_or(HttpError::NoUpstreamCandidates)?;
 
     // Upgrade in request header
     let upgrade_in_request = extract_upgrade(req.headers());
@@ -147,19 +144,17 @@ where
     let req_on_upgrade = hyper::upgrade::on(&mut req);
 
     // Build request from destination information
-    let _context = match self.generate_request_forwarded(
-      &client_addr,
-      &listen_addr,
-      &mut req,
-      &upgrade_in_request,
-      upstream_candidates,
-      tls_enabled,
-    ) {
-      Err(e) => {
-        return Err(HttpError::FailedToGenerateUpstreamRequest(e.to_string()));
-      }
-      Ok(v) => v,
-    };
+    let _context = self
+      .generate_request_forwarded(
+        &client_addr,
+        &listen_addr,
+        &mut req,
+        &upgrade_in_request,
+        upstream_candidates,
+        tls_enabled,
+      )
+      .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
+
     debug!(
       "Request to be forwarded: [uri {}, method: {}, version {:?}, headers {:?}]",
       req.uri(),
@@ -173,12 +168,12 @@ where
 
     //////////////
     // Forward request to a chosen backend
-    let mut res_backend = match self.forwarder.request(req).await {
-      Ok(v) => v,
-      Err(e) => {
-        return Err(HttpError::FailedToGetResponseFromBackend(e.to_string()));
-      }
-    };
+    let mut res_backend = self
+      .forwarder
+      .request(req)
+      .await
+      .map_err(|e| HttpError::FailedToGetResponseFromBackend(e.to_string()))?;
+
     //////////////
     // Process reverse proxy context generated during the forwarding request generation.
     #[cfg(feature = "sticky-cookie")]
@@ -191,9 +186,9 @@ where
 
     if res_backend.status() != StatusCode::SWITCHING_PROTOCOLS {
       // Generate response to client
-      if let Err(e) = self.generate_response_forwarded(&mut res_backend, backend_app) {
-        return Err(HttpError::FailedToGenerateDownstreamResponse(e.to_string()));
-      }
+      self
+        .generate_response_forwarded(&mut res_backend, backend_app)
+        .map_err(|e| HttpError::FailedToGenerateDownstreamResponse(e.to_string()))?;
       return Ok(res_backend);
     }
 

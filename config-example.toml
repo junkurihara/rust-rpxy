@@ -83,7 +83,8 @@ load_balance = "random" # or "round_robin" or "sticky" (sticky session) or "none
 upstream_options = [
   "upgrade_insecure_requests",
   "force_http11_upstream",
-  "set_upstream_host",         # overwrite HOST value with upstream hostname (like www.yahoo.com)
+  "set_upstream_host",        # overwrite HOST value with upstream hostname (like www.yahoo.com)
+  "forwarded_header"          # add Forwarded header (by default, this is not added. However, if the incoming request has Forwarded header, it would be preserved and updated)
 ]
 ######################################################################
 

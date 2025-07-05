@@ -1,7 +1,7 @@
 #[cfg(feature = "sticky-cookie")]
 use super::load_balance::LoadBalanceStickyBuilder;
 use super::load_balance::{
-  load_balance_options as lb_opts, LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder,
+  LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder, load_balance_options as lb_opts,
 };
 // use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
 use super::upstream_opts::UpstreamOption;
@@ -13,7 +13,7 @@ use crate::{
 };
 use ahash::{HashMap, HashSet};
 #[cfg(feature = "sticky-cookie")]
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use derive_builder::Builder;
 #[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};
@@ -72,27 +72,22 @@ impl PathManager {
       .inner
       .iter()
       .filter(|(route_bytes, _)| {
-        match path_name.starts_with(route_bytes) {
-          true => {
-            route_bytes.len() == 1 // route = '/', i.e., default
-              || match path_name.get(route_bytes.len()) {
-                None => true, // exact case
-                Some(p) => p == &b'/', // sub-path case
-              }
-          }
-          _ => false,
+        path_name.starts_with(route_bytes) && {
+          route_bytes.len() == 1 // route = '/', i.e., default
+            || path_name.get(route_bytes.len()).map_or(
+              true, // exact case
+              |p| p == &b'/'
+            ) // sub-path case
         }
       })
       .max_by_key(|(route_bytes, _)| route_bytes.len());
-    if let Some((path, u)) = matched_upstream {
+    matched_upstream.map(|(path, u)| {
       debug!(
         "Found upstream: {:?}",
         path.try_into().unwrap_or_else(|_| "<none>".to_string())
       );
-      Some(u)
-    } else {
-      None
-    }
+      u
+    })
   }
 }
 
@@ -211,14 +206,15 @@ impl UpstreamCandidatesBuilder {
   }
   /// Set the activated upstream options defined in [[UpstreamOption]]
   pub fn options(&mut self, v: &Option<Vec<String>>) -> &mut Self {
-    let opts = if let Some(opts) = v {
-      opts
-        .iter()
-        .filter_map(|str| UpstreamOption::try_from(str.as_str()).ok())
-        .collect::<HashSet<UpstreamOption>>()
-    } else {
-      Default::default()
-    };
+    let opts = v.as_ref().map_or_else(
+      || Default::default(),
+      |opts| {
+        opts
+          .iter()
+          .filter_map(|str| UpstreamOption::try_from(str.as_str()).ok())
+          .collect::<HashSet<UpstreamOption>>()
+      },
+    );
     self.options = Some(opts);
     self
   }

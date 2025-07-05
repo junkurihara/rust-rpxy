@@ -1,7 +1,7 @@
 use super::watch;
 use crate::error::*;
 use futures_channel::{mpsc, oneshot};
-use futures_util::{stream::FusedStream, Future, Stream};
+use futures_util::{Future, Stream, stream::FusedStream};
 use http::HeaderMap;
 use hyper::body::{Body, Bytes, Frame, SizeHint};
 use std::{

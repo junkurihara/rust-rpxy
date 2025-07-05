@@ -13,8 +13,22 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["http3-quinn", "cache", "rustls-backend", "acme", "post-quantum"]
-# default = ["http3-s2n", "cache", "rustls-backend", "acme", "post-quantum"]
+default = [
+  "http3-quinn",
+  "cache",
+  "rustls-backend",
+  "sticky-cookie",
+  "acme",
+  "post-quantum",
+]
+# default = [
+#   "http3-s2n",
+#   "cache",
+#   "rustls-backend",
+#   "sticky-cookie",
+#   "acme",
+#   "post-quantum",
+# ]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
@@ -23,19 +37,16 @@ webpki-roots = ["rpxy-lib/webpki-roots"]
 cache = ["rpxy-lib/cache"]
 acme = ["rpxy-lib/acme", "rpxy-acme"]
 post-quantum = ["rpxy-lib/post-quantum"]
+sticky-cookie = ["rpxy-lib/sticky-cookie"]
 
 [dependencies]
-rpxy-lib = { path = "../rpxy-lib/", default-features = false, features = [
-  "sticky-cookie",
-] }
+rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 
-# TODO: pin mimalloc due to compilation failure by musl
-mimalloc = { version = "=0.1.44", default-features = false }
-libmimalloc-sys = { version = "=0.1.40" }
+mimalloc = { version = "0.1.47", default-features = false }
 anyhow = "1.0.98"
-ahash = "0.8.11"
+ahash = "0.8.12"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
-tokio = { version = "1.44.2", default-features = false, features = [
+tokio = { version = "1.46.1", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -47,10 +58,10 @@ async-trait = "0.1.88"
 futures-util = { version = "0.3.31", default-features = false }
 
 # config
-clap = { version = "4.5.37", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.8.22", default-features = false, features = ["parse"] }
-hot_reload = "0.1.9"
-serde_ignored = "0.1.11"
+clap = { version = "4.5.40", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.8.23", default-features = false, features = ["parse"] }
+hot_reload = "0.2.0"
+serde_ignored = "0.1.12"
 
 # logging
 tracing = { version = "0.1.41" }

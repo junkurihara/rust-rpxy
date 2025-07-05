@@ -80,77 +80,70 @@ fn read_certs_and_keys(
 ) -> Result<SingleServerCertsKeys, RpxyCertError> {
   debug!("Read TLS server certificates and private key");
 
+  // ------------------------
   // certificates
-  let raw_certs = {
-    let mut reader = BufReader::new(File::open(cert_path).map_err(|e| {
+  let mut reader = BufReader::new(File::open(cert_path).map_err(|e| {
+    io::Error::new(
+      e.kind(),
+      format!("Unable to load the certificates [{}]: {e}", cert_path.display()),
+    )
+  })?);
+  let raw_certs = rustls_pemfile::certs(&mut reader)
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the certificates"))?;
+
+  // ------------------------
+  // private keys
+  let mut encoded_keys = vec![];
+  File::open(cert_key_path)
+    .map_err(|e| {
       io::Error::new(
         e.kind(),
-        format!("Unable to load the certificates [{}]: {e}", cert_path.display()),
+        format!("Unable to load the certificate keys [{}]: {e}", cert_key_path.display()),
       )
-    })?);
-    rustls_pemfile::certs(&mut reader)
-      .collect::<Result<Vec<_>, _>>()
-      .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the certificates"))?
-  };
-
-  // private keys
-  let raw_cert_keys = {
-    let encoded_keys = {
-      let mut encoded_keys = vec![];
-      File::open(cert_key_path)
-        .map_err(|e| {
-          io::Error::new(
-            e.kind(),
-            format!("Unable to load the certificate keys [{}]: {e}", cert_key_path.display()),
-          )
-        })?
-        .read_to_end(&mut encoded_keys)?;
-      encoded_keys
-    };
-    let mut reader = Cursor::new(encoded_keys);
-    let pkcs8_keys = rustls_pemfile::pkcs8_private_keys(&mut reader)
-      .map(|v| v.map(rustls::pki_types::PrivateKeyDer::Pkcs8))
-      .collect::<Result<Vec<_>, _>>()
-      .map_err(|_| {
-        io::Error::new(
-          io::ErrorKind::InvalidInput,
-          "Unable to parse the certificates private keys (PKCS8)",
-        )
-      })?;
-    reader.set_position(0);
-    let mut rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader)
-      .map(|v| v.map(rustls::pki_types::PrivateKeyDer::Pkcs1))
-      .collect::<Result<Vec<_>, _>>()?;
-    let mut keys = pkcs8_keys;
-    keys.append(&mut rsa_keys);
-    if keys.is_empty() {
-      return Err(RpxyCertError::IoError(io::Error::new(
+    })?
+    .read_to_end(&mut encoded_keys)?;
+  let mut reader = Cursor::new(encoded_keys);
+  let pkcs8_keys = rustls_pemfile::pkcs8_private_keys(&mut reader)
+    .map(|v| v.map(rustls::pki_types::PrivateKeyDer::Pkcs8))
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|_| {
+      io::Error::new(
         io::ErrorKind::InvalidInput,
-        "No private keys found - Make sure that they are in PKCS#8/PEM format",
-      )));
-    }
-    keys
-  };
+        "Unable to parse the certificates private keys (PKCS8)",
+      )
+    })?;
+  reader.set_position(0);
+  let mut rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader)
+    .map(|v| v.map(rustls::pki_types::PrivateKeyDer::Pkcs1))
+    .collect::<Result<Vec<_>, _>>()?;
+  let mut raw_cert_keys = pkcs8_keys;
+  raw_cert_keys.append(&mut rsa_keys);
+  if raw_cert_keys.is_empty() {
+    return Err(RpxyCertError::IoError(io::Error::new(
+      io::ErrorKind::InvalidInput,
+      "No private keys found - Make sure that they are in PKCS#8/PEM format",
+    )));
+  }
 
+  // ------------------------
   // client ca certificates
-  let client_ca_certs = if let Some(path) = client_ca_cert_path {
-    debug!("Read CA certificates for client authentication");
-    // Reads client certificate and returns client
-    let certs = {
-      let mut reader = BufReader::new(File::open(path).map_err(|e| {
+  let client_ca_certs = client_ca_cert_path
+    .map(|path| {
+      debug!("Read CA certificates for client authentication");
+      // Reads client certificate and returns client
+      let inner = File::open(path).map_err(|e| {
         io::Error::new(
           e.kind(),
           format!("Unable to load the client certificates [{}]: {e}", path.display()),
         )
-      })?);
+      })?;
+      let mut reader = BufReader::new(inner);
       rustls_pemfile::certs(&mut reader)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the client certificates"))?
-    };
-    Some(certs)
-  } else {
-    None
-  };
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the client certificates"))
+    })
+    .transpose()?;
 
   Ok(SingleServerCertsKeys::new(
     &raw_certs,
