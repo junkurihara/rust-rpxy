@@ -23,7 +23,7 @@ base64 = "0.22.1"
 aws-lc-rs = { version = "1.13.1", default-features = false, features = [
   "aws-lc-sys",
 ] }
-blocking = "1.6.1"
+blocking = "1.6.2"
 rustls = { version = "0.23.28", default-features = false, features = [
   "std",
   "aws_lc_rs",
