@@ -2115,7 +2115,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2138,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-acme"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2159,7 +2159,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-certs"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2177,7 +2177,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-lib"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "ahash",
  "anyhow",
