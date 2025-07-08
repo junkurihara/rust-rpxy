@@ -129,7 +129,7 @@ pub(super) fn apply_upstream_options_to_header(
       UpstreamOption::ForwardedHeader => {
         // This is called after X-Forwarded-For is added
         // Generate RFC 7239 Forwarded header
-        let tls = upstream_base_uri.scheme_str() == Some("https");
+        let tls = original_uri.scheme_str() == Some("https");
 
         match generate_forwarded_header(headers, tls, original_uri) {
           Ok(forwarded_value) => {
