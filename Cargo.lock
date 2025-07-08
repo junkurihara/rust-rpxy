@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "rustls-acme"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "async-io",
  "async-trait",
@@ -2310,7 +2310,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.12",
- "webpki-roots 0.26.11",
  "x509-parser",
 ]
 
