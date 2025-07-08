@@ -104,7 +104,7 @@ s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
 ], optional = true }
 ##########
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.5.10", features = ["all"], optional = true }
+socket2 = { version = "0.6.0", features = ["all"], optional = true }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
