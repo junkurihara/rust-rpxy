@@ -1,6 +1,12 @@
 # CHANGELOG
 
-## 0.10.2 or 0.11.0 (Unreleased)
+## 0.10.3 or 0.11.0 (Unreleased)
+
+## 0.10.2
+
+### Bugfix
+
+- Fix: Fix the bug that the `forwarded_header` option does not work properly (`proto` param)
 
 ## 0.10.1
 
