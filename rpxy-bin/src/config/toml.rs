@@ -311,7 +311,7 @@ impl ConfigToml {
     let config_str = fs::read_to_string(config_file)?;
 
     // Check unused fields during deserialization
-    let t = toml::de::Deserializer::new(&config_str);
+    let t = toml::Deserializer::parse(&config_str)?;
     let mut unused = ahash::HashSet::default();
 
     let res = serde_ignored::deserialize(t, |path| {
