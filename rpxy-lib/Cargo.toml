@@ -81,7 +81,7 @@ hyper-rustls = { version = "0.27.7", default-features = false, features = [
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.2.0"
 rustls = { version = "0.23.29", default-features = false }
-rustls-post-quantum = { version = "0.2.2", optional = true }
+rustls-post-quantum = { version = "0.2.3", optional = true }
 tokio-rustls = { version = "0.26.2", features = ["early-data"] }
 
 # acme

@@ -31,7 +31,7 @@ rustls-webpki = { version = "0.103.4", default-features = false, features = [
   "std",
   "aws-lc-rs",
 ] }
-rustls-post-quantum = { version = "0.2.2", optional = true }
+rustls-post-quantum = { version = "0.2.3", optional = true }
 x509-parser = { version = "0.17.0" }
 
 [dev-dependencies]
