@@ -22,7 +22,7 @@ derive_builder = { version = "0.20.2" }
 thiserror = { version = "2.0.12" }
 hot_reload = { version = "0.2.0" }
 async-trait = { version = "0.1.88" }
-rustls = { version = "0.23.29", default-features = false, features = [
+rustls = { version = "0.23.30", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
@@ -35,7 +35,7 @@ rustls-post-quantum = { version = "0.2.3", optional = true }
 x509-parser = { version = "0.17.0" }
 
 [dev-dependencies]
-tokio = { version = "1.46.1", default-features = false, features = [
+tokio = { version = "1.47.0", default-features = false, features = [
   "rt-multi-thread",
   "macros",
 ] }
