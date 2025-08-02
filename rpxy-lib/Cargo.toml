@@ -41,7 +41,7 @@ ahash = "0.8.12"
 bytes = "1.10.1"
 derive_builder = "0.20.2"
 futures = { version = "0.3.31", features = ["alloc", "async-await"] }
-tokio = { version = "1.47.0", default-features = false, features = [
+tokio = { version = "1.47.1", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -94,11 +94,11 @@ tracing = { version = "0.1.41" }
 quinn = { version = "0.11.8", optional = true }
 h3 = { version = "0.0.8", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-s2n-quic = { version = "1.62.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+s2n-quic = { version = "1.63.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.62.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.62.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.63.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.63.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }

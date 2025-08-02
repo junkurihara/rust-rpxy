@@ -411,9 +411,9 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "cc"
-version = "1.2.30"
+version = "1.2.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "deec109607ca693028562ed836a5f1c4b8bd77755c4e132fc5ce11b0b6211ae7"
+checksum = "c3a42d84bb6b69d3a8b3eaacf0d88f179e1929695e1ad012b6cf64d9caaa5fd2"
 dependencies = [
  "jobserver",
  "libc",
@@ -2428,7 +2428,7 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "s2n-codec"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -2437,7 +2437,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic"
-version = "1.62.0"
+version = "1.63.0"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -2460,7 +2460,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-core"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "atomic-waker",
  "byteorder",
@@ -2479,7 +2479,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-crypto"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "aws-lc-rs",
  "cfg-if",
@@ -2502,7 +2502,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-platform"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "cfg-if",
  "futures",
@@ -2515,7 +2515,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-rustls"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "bytes",
  "rustls",
@@ -2528,7 +2528,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "bytes",
  "errno",
@@ -2541,7 +2541,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls-default"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "s2n-quic-rustls",
  "s2n-quic-tls",
@@ -2549,7 +2549,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-transport"
-version = "0.62.0"
+version = "0.63.0"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2681,9 +2681,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.141"
+version = "1.0.142"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30b9eff21ebe718216c6ec64e1d9ac57087aad11efc64e32002bce4a0d4c03d3"
+checksum = "030fedb782600dcbd6f02d479bf0d817ac3bb40d644745b769d6a96bc3afc5a7"
 dependencies = [
  "itoa",
  "memchr",
@@ -2955,9 +2955,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.47.0"
+version = "1.47.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43864ed400b6043a4757a25c7a64a8efde741aed79a056a2fb348a406701bb35"
+checksum = "89e49afdadebb872d3145a5638b59eb0691ea23e46ca484037cfab3b76b95038"
 dependencies = [
  "backtrace",
  "bytes",
