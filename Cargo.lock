@@ -1184,7 +1184,7 @@ dependencies = [
  "hyper-util",
  "rustls",
  "rustls-pki-types",
- "rustls-platform-verifier 0.6.0",
+ "rustls-platform-verifier 0.6.1",
  "tokio",
  "tokio-rustls",
  "tower-service",
@@ -2146,7 +2146,7 @@ dependencies = [
  "blocking",
  "rustls",
  "rustls-acme",
- "rustls-platform-verifier 0.6.0",
+ "rustls-platform-verifier 0.6.1",
  "rustls-post-quantum",
  "thiserror 2.0.12",
  "tokio",
@@ -2367,9 +2367,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-platform-verifier"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eda84358ed17f1f354cf4b1909ad346e6c7bc2513e8c40eb08e0157aa13a9070"
+checksum = "be59af91596cac372a6942530653ad0c3a246cdd491aaa9dcaee47f88d67d5a0"
 dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
