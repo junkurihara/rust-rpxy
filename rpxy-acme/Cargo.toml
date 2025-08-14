@@ -18,7 +18,7 @@ url = { version = "2.5.4" }
 ahash = "0.8.12"
 thiserror = "2.0.14"
 tracing = "0.1.41"
-async-trait = "0.1.88"
+async-trait = "0.1.89"
 base64 = "0.22.1"
 aws-lc-rs = { version = "1.13.3", default-features = false, features = [
   "aws-lc-sys",
