@@ -16,7 +16,7 @@ post-quantum = ["rustls-post-quantum"]
 [dependencies]
 url = { version = "2.5.4" }
 ahash = "0.8.12"
-thiserror = "2.0.14"
+thiserror = "2.0.15"
 tracing = "0.1.41"
 async-trait = "0.1.89"
 base64 = "0.22.1"
