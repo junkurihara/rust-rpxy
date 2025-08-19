@@ -19,7 +19,7 @@ http3 = []
 ahash = { version = "0.8.12" }
 tracing = { version = "0.1.41" }
 derive_builder = { version = "0.20.2" }
-thiserror = { version = "2.0.14" }
+thiserror = { version = "2.0.15" }
 hot_reload = { version = "0.2.0" }
 async-trait = { version = "0.1.89" }
 rustls = { version = "0.23.31", default-features = false, features = [
