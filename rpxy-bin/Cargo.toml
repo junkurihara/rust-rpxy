@@ -42,7 +42,7 @@ sticky-cookie = ["rpxy-lib/sticky-cookie"]
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 
-mimalloc = { version = "0.1.47", default-features = false }
+mimalloc = { version = "0.1.48", default-features = false }
 anyhow = "1.0.99"
 ahash = "0.8.12"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
