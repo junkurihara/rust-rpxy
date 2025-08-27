@@ -42,7 +42,7 @@ sticky-cookie = ["rpxy-lib/sticky-cookie"]
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 
-mimalloc = { version = "0.1.47", default-features = false }
+mimalloc = { version = "0.1.48", default-features = false }
 anyhow = "1.0.99"
 ahash = "0.8.12"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
@@ -58,7 +58,7 @@ async-trait = "0.1.89"
 futures-util = { version = "0.3.31", default-features = false }
 
 # config
-clap = { version = "4.5.45", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.5.46", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "0.9.5", default-features = false, features = [
   "parse",
   "serde",
