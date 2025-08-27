@@ -40,7 +40,6 @@ RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS ${
   echo "Install toolchain" && \
   rustup target add $(cat /arch)-${TARGET_SUFFIX} && \
   echo "Building rpxy from source" && \
-  cargo update &&\
   cargo build --release --target=$(cat /arch)-${TARGET_SUFFIX} ${CARGO_FEATURES} && \
   strip --strip-all /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy &&\
   cp /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy /tmp/target/release/rpxy
