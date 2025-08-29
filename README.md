@@ -465,6 +465,9 @@ Please use [GitHub's Private vulnerability reporting](../../security/advisories/
 
 ## Contributing
 
-You can open issues for bugs you've found or features you think are missing. You can also submit pull requests to this repository.
+Contributions are welcome (issues, feature requests, bug reports, pull requests).
 
-Contributors are more than welcome!
+Please note that this project is maintained primarily based on the code owner’s personal interests, and not backed by any commercial agreement.
+Contributions are handled on a best-effort basis. Sponsorship is also welcome to help sustain the project.
+
+For more details on contribution guidelines and project scope, please see [CONTRIBUTING.md](./CONTRIBUTING.md).
