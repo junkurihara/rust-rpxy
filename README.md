@@ -458,6 +458,14 @@ todo!
 
 `rpxy` is free, open-source software licensed under MIT License.
 
+## Security
+
+If you discover a security vulnerability, **do not open a public Issue**.
+Please use [GitHub's Private vulnerability reporting](../../security/advisories/new) to notify the maintainers.
+Reports will be handled on a best-effort basis, as this project is maintained primarily based on the code owner's personal interests.
+
+## Contributing
+
 You can open issues for bugs you've found or features you think are missing. You can also submit pull requests to this repository.
 
 Contributors are more than welcome!
