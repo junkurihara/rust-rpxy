@@ -462,7 +462,6 @@ todo!
 
 If you discover a security vulnerability, **do not open a public Issue**.
 Please use [GitHub's Private vulnerability reporting](../../security/advisories/new) to notify the maintainers.
-Reports will be handled on a best-effort basis, as this project is maintained primarily based on the code owner's personal interests.
 
 ## Contributing
 
