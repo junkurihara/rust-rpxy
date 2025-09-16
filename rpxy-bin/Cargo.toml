@@ -64,7 +64,7 @@ toml = { version = "0.9.5", default-features = false, features = [
   "serde",
 ] }
 hot_reload = "0.2.0"
-serde_ignored = "0.1.12"
+serde_ignored = "0.1.14"
 
 # logging
 tracing = { version = "0.1.41" }
