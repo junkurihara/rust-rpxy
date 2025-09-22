@@ -153,7 +153,7 @@ Note that by specifying a `default_app` entry, *HTTP* requests will be served by
 The request message will be routed to the backend application specified with the domain name `app1.localdomain:8080` or IP address over cleartext HTTP. If the backend channel needs to serve TLS, like forwarding to `https://app1.localdomain:8080`, you need to enable the `tls` option for the location.
 
 ```toml
-revese_proxy = [
+reverse_proxy = [
   { location = 'app1.localdomain:8080', tls = true }
 ]
 ```
