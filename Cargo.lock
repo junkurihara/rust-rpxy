@@ -2310,10 +2310,11 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-post-quantum"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "953887a349c27f200ab6e672ebfeed24a1af50a14794536b53be5d0acc2d4f2c"
+checksum = "0da3cd9229bac4fae1f589c8f875b3c891a058ddaa26eb3bde16b5e43dc174ce"
 dependencies = [
+ "aws-lc-rs",
  "rustls",
  "rustls-webpki",
 ]
