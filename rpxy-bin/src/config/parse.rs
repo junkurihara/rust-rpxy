@@ -3,11 +3,13 @@ use crate::error::{anyhow, ensure};
 use ahash::HashMap;
 use clap::Arg;
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use rpxy_certs::{CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase, build_cert_reloader};
+use rpxy_certs::{build_cert_reloader, CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase};
 use rpxy_lib::{AppConfigList, ProxyConfig};
-
+use crate::{
+  constants::DEFAULT_CONFIG_WATCH_DELAY_SECS,
+};
 #[cfg(feature = "acme")]
-use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
+use rpxy_acme::{AcmeManager, ACME_DIR_URL, ACME_REGISTRY_PATH};
 
 /// Parsed options from CLI
 /// Options for configuring the application.
@@ -18,6 +20,7 @@ use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
 pub struct Opts {
   pub config_file_path: String,
   pub log_dir_path: Option<String>,
+  pub config_watch_delay_sec: u32,
 }
 
 /// Parses command-line arguments into an [`Opts`](rpxy-bin/src/config/parse.rs:13) struct.
@@ -41,15 +44,24 @@ pub fn parse_opts() -> Result<Opts, anyhow::Error> {
         .short('l')
         .value_name("LOG_DIR")
         .help("Directory for log files. If not specified, logs are printed to stdout."),
+    )
+    .arg(
+      Arg::new("config_watch_delay_sec")
+        .long("conf-delay")
+        .short('d')
+        .value_name("CONFIG_WATCH_DELAY_SECS")
+        .help("This sets the delay in seconds between the configuration file being changed and the changes being applied. (default: 15s)"),
     );
   let matches = options.get_matches();
 
   let config_file_path = matches.get_one::<String>("config_file").unwrap().to_owned();
   let log_dir_path = matches.get_one::<String>("log_dir").map(|v| v.to_owned());
+  let config_watch_delay_sec = matches.get_one::<String>("config_watch_delay_sec").and_then(|v| v.parse::<u32>().ok()).unwrap_or(DEFAULT_CONFIG_WATCH_DELAY_SECS);
 
   Ok(Opts {
     config_file_path,
     log_dir_path,
+    config_watch_delay_sec,
   })
 }
 

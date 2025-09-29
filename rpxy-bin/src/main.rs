@@ -10,7 +10,6 @@ mod log;
 use crate::config::build_acme_manager;
 use crate::{
   config::{ConfigToml, ConfigTomlReloader, build_cert_manager, build_settings, parse_opts},
-  constants::CONFIG_WATCH_DELAY_SECS,
   error::*,
   log::*,
 };
@@ -35,7 +34,7 @@ fn main() {
 
     let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::with_delay(
       &parsed_opts.config_file_path,
-      CONFIG_WATCH_DELAY_SECS,
+      parsed_opts.config_watch_delay_sec,
     )
     .await
     .unwrap();
