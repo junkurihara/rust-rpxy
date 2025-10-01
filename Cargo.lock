@@ -2022,7 +2022,7 @@ dependencies = [
  "pem",
  "rustls-pki-types",
  "time",
- "x509-parser 0.18.0",
+ "x509-parser",
  "yasna",
 ]
 
@@ -2128,7 +2128,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
- "x509-parser 0.18.0",
+ "x509-parser",
 ]
 
 [[package]]
@@ -2229,7 +2229,7 @@ dependencies = [
 
 [[package]]
 name = "rustls-acme"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "async-io",
  "async-trait",
@@ -2248,7 +2248,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.17",
  "webpki-roots 1.0.2",
- "x509-parser 0.17.0",
+ "x509-parser",
 ]
 
 [[package]]
@@ -3617,23 +3617,6 @@ name = "writeable"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea2f10b9bb0928dfb1b42b65e1f9e36f7f54dbdf08457afefb38afcdec4fa2bb"
-
-[[package]]
-name = "x509-parser"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4569f339c0c402346d4a75a9e39cf8dad310e287eef1ff56d4c68e5067f53460"
-dependencies = [
- "asn1-rs",
- "data-encoding",
- "der-parser",
- "lazy_static",
- "nom",
- "oid-registry",
- "rusticata-macros",
- "thiserror 2.0.17",
- "time",
-]
 
 [[package]]
 name = "x509-parser"
