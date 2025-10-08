@@ -26,7 +26,6 @@ rustls = { version = "0.23.32", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
-rustls-pemfile = { version = "2.2.0" }
 rustls-webpki = { version = "0.103.6", default-features = false, features = [
   "std",
   "aws-lc-rs",

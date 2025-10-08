@@ -2122,7 +2122,6 @@ dependencies = [
  "derive_builder",
  "hot_reload",
  "rustls",
- "rustls-pemfile",
  "rustls-post-quantum",
  "rustls-webpki",
  "thiserror 2.0.16",
