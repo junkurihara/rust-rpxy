@@ -1022,9 +1022,9 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hot_reload"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "469bdabdc9436358811cd8fa2d35b3a0fc60534aca57979b931b9f5f9551ce16"
+checksum = "0a3acd5eaed44a130a20e9239e6f870f11f3ed6097c94485e10c49f25319a956"
 dependencies = [
  "anyhow",
  "async-trait",
