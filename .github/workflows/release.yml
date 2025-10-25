@@ -96,7 +96,7 @@ jobs:
           docker cp ${CONTAINER_ID}:/rpxy/bin/rpxy /tmp/${{ steps.set-env.outputs.target_name }}
 
       - name: "upload artifacts"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.set-env.outputs.target_name }}
           path: "/tmp/${{ steps.set-env.outputs.target_name }}"
