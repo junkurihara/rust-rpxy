@@ -27,7 +27,7 @@ sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
 rustls-backend = ["hyper-rustls"]
 webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
-acme = ["dep:rpxy-acme"]
+acme = ["rpxy-acme"]
 post-quantum = [
   "rustls-post-quantum",
   "rpxy-acme/post-quantum",
