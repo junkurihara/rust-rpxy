@@ -43,8 +43,8 @@ sticky-cookie = ["rpxy-lib/sticky-cookie"]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 
 mimalloc = { version = "0.1.48", default-features = false }
-anyhow = "1.0.100"
-ahash = "0.8.12"
+anyhow = { version = "1.0.100" }
+ahash = { version = "0.8.12" }
 serde = { version = "1.0.228", default-features = false, features = ["derive"] }
 tokio = { version = "1.48.0", default-features = false, features = [
   "net",
@@ -54,7 +54,7 @@ tokio = { version = "1.48.0", default-features = false, features = [
   "macros",
 ] }
 tokio-util = { version = "0.7.16", default-features = false }
-async-trait = "0.1.89"
+async-trait = { version = "0.1.89" }
 futures-util = { version = "0.3.31", default-features = false }
 
 # config
@@ -63,8 +63,9 @@ toml = { version = "0.9.8", default-features = false, features = [
   "parse",
   "serde",
 ] }
-hot_reload = "0.3.0"
-serde_ignored = "0.1.14"
+hot_reload = { version = "0.3.0" }
+notify = { version = "8.2.0" }
+serde_ignored = { version = "0.1.14" }
 
 # logging
 tracing = { version = "0.1.41" }
