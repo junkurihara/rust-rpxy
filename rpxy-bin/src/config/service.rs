@@ -177,7 +177,7 @@ impl RealtimeWatch<ConfigToml, String> for ConfigTomlReloader {
           };
 
           if let Some(event) = event {
-            queue_debounced_event(event, debounce_counter, latest_event, tx, PathBuf::from(config_path)).await;
+            queue_debounced_event(event, debounce_counter, latest_event, tx, config_path).await;
           }
         });
       })
