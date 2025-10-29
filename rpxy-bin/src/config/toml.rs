@@ -307,8 +307,8 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 }
 
 impl ConfigToml {
-  pub fn new(config_file: &str) -> std::result::Result<Self, anyhow::Error> {
-    let config_str = fs::read_to_string(config_file)?;
+  pub fn new(config_path: &std::path::PathBuf) -> std::result::Result<Self, anyhow::Error> {
+    let config_str = fs::read_to_string(config_path)?;
 
     // Check unused fields during deserialization
     let t = toml::Deserializer::parse(&config_str)?;

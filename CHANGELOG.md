@@ -2,6 +2,11 @@
 
 ## 0.10.3 or 0.11.0 (Unreleased)
 
+### Improvement
+
+- Feat: Update the reloading strategy for config toml from polling to realtime.
+- Deps
+
 ## 0.10.2
 
 ### Bugfix
