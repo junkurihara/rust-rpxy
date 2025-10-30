@@ -63,8 +63,8 @@ toml = { version = "0.9.8", default-features = false, features = [
   "parse",
   "serde",
 ] }
-hot_reload = { version = "0.3.0" }
-notify = { version = "8.2.0" }
+hot_reload = { version = "0.3.1", features = ["file-reloader"] }
+# notify = { version = "8.2.0" }
 serde_ignored = { version = "0.1.14" }
 
 # logging
