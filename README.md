@@ -80,9 +80,7 @@ You can run `rpxy` with a configuration file like
 % ./target/release/rpxy --config config.toml
 ```
 
-`rpxy` tracks changes to `config.toml` in real-time and applies changes immediately without restarting the process. [^hot_reload]
-
-[^hot_reload]: Note that if `config.toml` is removed by `rm` command when `rpxy` is running, `rpxy` stops itself (inode is gone). On the other hand, if `config.toml` is renamed or moved (including moving to trash), `rpxy` continues running with the last valid configuration until a new file named `config.toml` is created in the same directory. So be careful when you remove or rename the configuration file.
+`rpxy` tracks changes to `config.toml` in real-time and applies changes immediately without restarting the process. Note that if `config.toml` is removed, renamed or moved (including moving to trash), `rpxy` continues running with the last valid configuration until a new file named `config.toml` is created in the same directory.
 
 The full help message is as follows.
 

@@ -256,10 +256,8 @@ async fn rpxy_service(
       /* ---------- */
       _ = config_rx.changed() => {
         let Some(new_config_toml) = config_rx.get() else {
-          // If None, the configuration file has been deleted.
-          // Note that on docker volume, modification may be interpreted as deletion temporarily. So, be careful.
-          error!("Configuration file has been deleted.");
-          return Err(anyhow!("Configuration file has been deleted."));
+          error!("Something wrong in config reloader receiver");
+          return Err(anyhow!("Something wrong in config reloader receiver"));
         };
         match RpxyService::new(&new_config_toml, runtime_handle.clone()).await {
           Ok(new_service) => {
