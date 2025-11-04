@@ -49,7 +49,7 @@ tokio = { version = "1.48.0", default-features = false, features = [
   "macros",
   "fs",
 ] }
-tokio-util = { version = "0.7.16", default-features = false }
+tokio-util = { version = "0.7.17", default-features = false }
 pin-project-lite = "0.2.16"
 async-trait = "0.1.89"
 
@@ -79,7 +79,7 @@ hyper-rustls = { version = "0.27.7", default-features = false, features = [
 
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
-hot_reload = "0.3.4"
+hot_reload = "0.3.5"
 rustls = { version = "0.23.34", default-features = false }
 rustls-post-quantum = { version = "0.2.4", optional = true }
 tokio-rustls = { version = "0.26.4", features = ["early-data"] }

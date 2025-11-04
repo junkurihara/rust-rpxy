@@ -20,7 +20,7 @@ ahash = { version = "0.8.12" }
 tracing = { version = "0.1.41" }
 derive_builder = { version = "0.20.2" }
 thiserror = { version = "2.0.17" }
-hot_reload = { version = "0.3.4" }
+hot_reload = { version = "0.3.5" }
 async-trait = { version = "0.1.89" }
 rustls = { version = "0.23.34", default-features = false, features = [
   "std",
