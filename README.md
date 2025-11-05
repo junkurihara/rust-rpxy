@@ -192,13 +192,13 @@ Note that the private key specified by `tls_cert_key_path` must be *in PKCS8 for
 
 #### Redirecting Cleartext HTTP Requests to HTTPS
 
-In the current Web, it is common to serve everything through HTTPS rather than HTTP, and hence *HTTPS redirection* is often used for HTTP requests. When you specify both `listen_port` and `listen_port_tls`, you can enable such redirection by setting `https_redirection` to true.
+In the current Web, it is common to serve everything through HTTPS rather than HTTP, and hence *HTTPS redirection* is often used for HTTP requests. When you specify both `listen_port` and `listen_port_tls`, such redirection is automatically enabled for all applications by default. You can explicitly control this behavior for each application by setting `https_redirection` option in the `tls` entry like
 
 ```toml
 tls = { https_redirection = true, tls_cert_path = 'server.crt', tls_cert_key_path = 'server.key' }
 ```
 
-If it is true, `rpxy` returns status code `301` to the cleartext request with the new location `https://<requested_host>/<requested_query_and_path>` served over TLS.
+If it is true, `rpxy` returns status code `301` to the cleartext request with the new location `https://<requested_host>/<requested_query_and_path>` served over TLS. Note tht `https_redirection` can be set only when both `listen_port` and `listen_port_tls` are specified in the global section.
 
 ### Third Step: More Flexible Routing Based on URL Path
 

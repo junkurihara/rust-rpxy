@@ -45,6 +45,8 @@ default_app = 'another_localhost'
 server_name = 'localhost' # Domain name
 
 # Optional: TLS setting. if https_port is specified and tls is true above, this must be given.
+# https_redirection can be specified only when both http_port and https_port are specified. If not explicitly specified, it is true by default.
+# if only https_port is given, https_redirection must not be specified.
 tls = { https_redirection = true, tls_cert_path = '/certs/server.crt', tls_cert_key_path = '/certs/server.key' } # for docker volume mounted certs
 #tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_path = './server.key' }          # for local
 #tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_path = './server.key', client_ca_cert_path = './client_cert.ca.crt' }          # for local with client_cert
