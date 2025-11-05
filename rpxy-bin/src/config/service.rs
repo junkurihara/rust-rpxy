@@ -1,38 +1,23 @@
 use super::toml::ConfigToml;
 use async_trait::async_trait;
-use hot_reload::AsyncFileLoad;
-use std::path::{Path, PathBuf};
+use hot_reload::{Reload, ReloaderError};
 
-pub type ConfigTomlReloader = hot_reload::file_reloader::FileReloader<ConfigToml>;
-
-impl TryFrom<&PathBuf> for ConfigToml {
-  type Error = String;
-
-  fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
-    let config_str = std::fs::read_to_string(path).map_err(|e| format!("Failed to read config file: {}", e))?;
-    let config_toml: ConfigToml = toml::from_str(&config_str).map_err(|e| format!("Failed to parse toml config: {}", e))?;
-    Ok(config_toml)
-  }
+#[derive(Clone)]
+pub struct ConfigTomlReloader {
+  pub config_path: String,
 }
 
 #[async_trait]
-impl AsyncFileLoad for ConfigToml {
-  type Error = String;
+impl Reload<ConfigToml, String> for ConfigTomlReloader {
+  type Source = String;
+  async fn new(source: &Self::Source) -> Result<Self, ReloaderError<ConfigToml, String>> {
+    Ok(Self {
+      config_path: source.clone(),
+    })
+  }
 
-  async fn async_load_from<T>(path: T) -> Result<Self, Self::Error>
-  where
-    T: AsRef<Path> + Send,
-  {
-    let config_str = tokio::fs::read_to_string(path)
-      .await
-      .map_err(|e| format!("Failed to read config file: {}", e))?;
-    let config_toml: ConfigToml = toml::from_str(&config_str).map_err(|e| format!("Failed to parse toml config: {}", e))?;
-    Ok(config_toml)
+  async fn reload(&self) -> Result<Option<ConfigToml>, ReloaderError<ConfigToml, String>> {
+    let conf = ConfigToml::new(&self.config_path).map_err(|e| ReloaderError::<ConfigToml, String>::Reload(e.to_string()))?;
+    Ok(Some(conf))
   }
 }
-
-// impl From<ConfigToml> for ConfigToml {
-//   fn from(val: ConfigToml) -> Self {
-//     val
-//   }
-// }

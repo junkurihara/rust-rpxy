@@ -42,34 +42,30 @@ sticky-cookie = ["rpxy-lib/sticky-cookie"]
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 
-mimalloc = { version = "0.1.48", default-features = false }
-anyhow = { version = "1.0.100" }
-ahash = { version = "0.8.12" }
-serde = { version = "1.0.228", default-features = false, features = ["derive"] }
-tokio = { version = "1.48.0", default-features = false, features = [
+mimalloc = { version = "0.1.47", default-features = false }
+anyhow = "1.0.98"
+ahash = "0.8.12"
+serde = { version = "1.0.219", default-features = false, features = ["derive"] }
+tokio = { version = "1.46.1", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
 ] }
-tokio-util = { version = "0.7.17", default-features = false }
-async-trait = { version = "0.1.89" }
+tokio-util = { version = "0.7.15", default-features = false }
+async-trait = "0.1.88"
 futures-util = { version = "0.3.31", default-features = false }
 
 # config
-clap = { version = "4.5.51", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.9.8", default-features = false, features = [
-  "parse",
-  "serde",
-] }
-hot_reload = { version = "0.3.5", features = ["file-reloader"] }
-# notify = { version = "8.2.0" }
-serde_ignored = { version = "0.1.14" }
+clap = { version = "4.5.40", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "0.8.23", default-features = false, features = ["parse"] }
+hot_reload = "0.2.0"
+serde_ignored = "0.1.12"
 
 # logging
 tracing = { version = "0.1.41" }
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 ################################
 # cert management

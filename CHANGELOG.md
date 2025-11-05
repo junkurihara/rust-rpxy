@@ -1,17 +1,6 @@
 # CHANGELOG
 
-## 0.10.4 or 0.11.0 (Unreleased)
-
-## 0.10.3
-
-### Improvement
-
-- Feat: Update the reloading strategy for config toml from polling to realtime.
-- Deps
-
-### Bugfix
-
-- Fix: Fix the bug that when only https_port is specified, rpxy does not start properly.
+## 0.10.3 or 0.11.0 (Unreleased)
 
 ## 0.10.2
 

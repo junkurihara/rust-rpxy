@@ -38,7 +38,7 @@ where
   C: Send + Sync + Connect + Clone + 'static,
   B1: Body + Send + Sync + Unpin + 'static,
   <B1 as Body>::Data: Send,
-  <B1 as Body>::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+  <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
 {
   type Error = RpxyError;
 
@@ -100,7 +100,7 @@ where
   C: Send + Sync + Connect + Clone + 'static,
   B1: Body + Send + Unpin + 'static,
   <B1 as Body>::Data: Send,
-  <B1 as Body>::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+  <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
 {
   async fn request_directly(&self, req: Request<B1>) -> RpxyResult<Response<Incoming>> {
     // TODO: This 'match' condition is always evaluated at every 'request' invocation. So, it is inefficient.
@@ -119,7 +119,7 @@ impl<B> Forwarder<HttpConnector, B>
 where
   B: Body + Send + Unpin + 'static,
   <B as Body>::Data: Send,
-  <B as Body>::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+  <B as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
 {
   /// Build inner client with http
   pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
@@ -154,7 +154,7 @@ impl<B1> Forwarder<hyper_tls::HttpsConnector<HttpConnector>, B1>
 where
   B1: Body + Send + Unpin + 'static,
   <B1 as Body>::Data: Send,
-  <B1 as Body>::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+  <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
 {
   /// Build forwarder
   pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {
@@ -199,7 +199,7 @@ impl<B1> Forwarder<hyper_rustls::HttpsConnector<HttpConnector>, B1>
 where
   B1: Body + Send + Unpin + 'static,
   <B1 as Body>::Data: Send,
-  <B1 as Body>::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+  <B1 as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
 {
   /// Build forwarder
   pub async fn try_new(_globals: &Arc<Globals>) -> RpxyResult<Self> {

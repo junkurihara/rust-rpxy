@@ -1,5 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Security reports
-    url: ../../security/advisories/new
-    about: Please report security vulnerabilities via GitHub's private vulnerability reporting. Do not open public issues for security problems.

@@ -1,7 +1,6 @@
 use crate::{certs::SingleServerCertsKeys, error::*, log::*};
 use async_trait::async_trait;
 use derive_builder::Builder;
-use rustls::pki_types::{self, pem::PemObject};
 use std::{
   fs::File,
   io::{self, BufReader, Cursor, Read},
@@ -89,7 +88,7 @@ fn read_certs_and_keys(
       format!("Unable to load the certificates [{}]: {e}", cert_path.display()),
     )
   })?);
-  let raw_certs = pki_types::CertificateDer::pem_reader_iter(&mut reader)
+  let raw_certs = rustls_pemfile::certs(&mut reader)
     .collect::<Result<Vec<_>, _>>()
     .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the certificates"))?;
 
@@ -105,8 +104,8 @@ fn read_certs_and_keys(
     })?
     .read_to_end(&mut encoded_keys)?;
   let mut reader = Cursor::new(encoded_keys);
-  let pkcs8_keys = pki_types::PrivatePkcs8KeyDer::pem_reader_iter(&mut reader)
-    .map(|v| v.map(pki_types::PrivateKeyDer::Pkcs8))
+  let pkcs8_keys = rustls_pemfile::pkcs8_private_keys(&mut reader)
+    .map(|v| v.map(rustls::pki_types::PrivateKeyDer::Pkcs8))
     .collect::<Result<Vec<_>, _>>()
     .map_err(|_| {
       io::Error::new(
@@ -115,15 +114,9 @@ fn read_certs_and_keys(
       )
     })?;
   reader.set_position(0);
-  let mut rsa_keys = pki_types::PrivatePkcs1KeyDer::pem_reader_iter(&mut reader)
-    .map(|v| v.map(pki_types::PrivateKeyDer::Pkcs1))
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|_| {
-      io::Error::new(
-        io::ErrorKind::InvalidInput,
-        "Unable to parse the certificates private keys (RSA)",
-      )
-    })?;
+  let mut rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader)
+    .map(|v| v.map(rustls::pki_types::PrivateKeyDer::Pkcs1))
+    .collect::<Result<Vec<_>, _>>()?;
   let mut raw_cert_keys = pkcs8_keys;
   raw_cert_keys.append(&mut rsa_keys);
   if raw_cert_keys.is_empty() {
@@ -146,7 +139,7 @@ fn read_certs_and_keys(
         )
       })?;
       let mut reader = BufReader::new(inner);
-      pki_types::CertificateDer::pem_reader_iter(&mut reader)
+      rustls_pemfile::certs(&mut reader)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Unable to parse the client certificates"))
     })
