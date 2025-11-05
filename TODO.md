@@ -1,5 +1,11 @@
 # TODO List
 
+- [ ] Realtime hot reload of configuration file with `hot_reload` crate v0.3.0 or higher
+- [ ] Better documentation (incl. rpxy.io)
+- [ ] Add more tests
+
+## Planned (but pending) features
+
 - We need more sophistication on `Forwarder` struct to handle `h2c`.
 - Cache using `lru` crate might be inefficient in terms of the speed.
   - Consider more sophisticated architecture for cache
@@ -16,10 +22,8 @@
     - upstream/upstream group: information on targeted destinations for each set of (a domain + a path)
     - load-balance: load balancing mod for a domain + path
 
-- Unit tests
 - Options to serve custom http_error page.
 - Traces and metrics using opentelemetry (`tracing-opentelemetry` crate)
-- Documentation
 - Client certificate
   - support intermediate certificate. Currently, only supports client certificates directly signed by root CA.
   - Currently, we took the following approach (caveats)

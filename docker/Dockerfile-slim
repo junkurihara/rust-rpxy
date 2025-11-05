@@ -25,7 +25,12 @@ COPY . /tmp/
 ENV RUSTFLAGS="-C link-arg=-s"
 
 RUN echo "Building rpxy from source" && \
-  cargo update && \
+  # force to reinstall rustup to get the latest version
+  rm -rf ~/.rustup && \
+  curl https://sh.rustup.rs -sqSf | sh -s -- -y --profile minimal --default-toolchain stable --default-host $(uname -m)-unknown-linux-gnu && \
+  rustup target add $(cat /arch)-unknown-linux-musl || rustup component add --toolchain stable rust-src && \
+  rustup component add --toolchain stable rustfmt clippy && \
+  # build rpxy
   cargo build --release --target $(cat /arch)-unknown-linux-musl ${CARGO_FEATURES} && \
   musl-strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy && \
   cp /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy /tmp/target/release/rpxy

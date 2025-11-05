@@ -14,7 +14,7 @@ use crate::{
   error::*,
   log::*,
 };
-use hot_reload::{ReloaderReceiver, ReloaderService};
+use hot_reload::{ReloaderConfig, ReloaderReceiver, ReloaderService};
 use rpxy_lib::{RpxyOptions, RpxyOptionsBuilder, entrypoint};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -33,15 +33,15 @@ fn main() {
 
     init_logger(parsed_opts.log_dir_path.as_deref());
 
-    let (config_service, config_rx) = ReloaderService::<ConfigTomlReloader, ConfigToml, String>::with_delay(
-      &parsed_opts.config_file_path,
-      CONFIG_WATCH_DELAY_SECS,
-    )
-    .await
-    .unwrap();
+    let reloader_config = ReloaderConfig::hybrid(CONFIG_WATCH_DELAY_SECS);
+
+    let (config_service, config_rx) =
+      ReloaderService::<ConfigTomlReloader, ConfigToml, String>::new(&parsed_opts.config_file_path, reloader_config)
+        .await
+        .unwrap();
 
     tokio::select! {
-      config_res = config_service.start() => {
+      config_res = config_service.start_with_realtime() => {
         if let Err(e) = config_res {
           error!("config reloader service exited: {e}");
           std::process::exit(1);
