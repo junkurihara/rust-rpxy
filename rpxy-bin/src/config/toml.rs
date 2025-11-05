@@ -65,15 +65,17 @@ impl ConfigTomlExt for ConfigToml {
       ensure!(all_apps_have_tls, "Some apps serve only plaintext HTTP");
     }
     if proxy_config.https_redirection_port.is_some() {
+      // When https_redirection_port is specified, at least TLS is enabled globally.
+      // This includes a case that plaintext HTTP listener is not enabled.
       ensure!(
-        proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
-        "https_redirection_port can be specified only when both http_port and https_port are specified"
+        proxy_config.https_port.is_some(),
+        "https_redirection_port must be some only when https_port is specified"
       );
     }
     if !(proxy_config.https_port.is_some() && proxy_config.http_port.is_some()) {
       ensure!(
         all_apps_no_https_redirection,
-        "https_redirection can be specified only when both http_port and https_port are specified"
+        "https_redirection can be specified only when both http_port and https_port are specified. Just remove https_redirection settings in each app."
       );
     }
 
@@ -204,6 +206,12 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       ensure!(
         proxy_config.http_port.unwrap() != proxy_config.https_port.unwrap(),
         anyhow!("http_port and https_port must be different")
+      );
+    }
+    if self.https_redirection_port.is_some() {
+      ensure!(
+        proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
+        "https_redirection_port can be explicitly specified only when both http_port and https_port are specified"
       );
     }
 
