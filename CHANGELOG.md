@@ -7,6 +7,10 @@
 - Feat: Update the reloading strategy for config toml from polling to realtime.
 - Deps
 
+### Bugfix
+
+- Fix: Fix the bug that when only https_port is specified, rpxy does not start properly.
+
 ## 0.10.2
 
 ### Bugfix
