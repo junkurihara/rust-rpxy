@@ -65,15 +65,17 @@ impl ConfigTomlExt for ConfigToml {
       ensure!(all_apps_have_tls, "Some apps serve only plaintext HTTP");
     }
     if proxy_config.https_redirection_port.is_some() {
+      // When https_redirection_port is specified, at least TLS is enabled globally.
+      // This includes a case that plaintext HTTP listener is not enabled.
       ensure!(
-        proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
-        "https_redirection_port can be specified only when both http_port and https_port are specified"
+        proxy_config.https_port.is_some(),
+        "https_redirection_port must be some only when https_port is specified"
       );
     }
     if !(proxy_config.https_port.is_some() && proxy_config.http_port.is_some()) {
       ensure!(
         all_apps_no_https_redirection,
-        "https_redirection can be specified only when both http_port and https_port are specified"
+        "https_redirection can be specified only when both http_port and https_port are specified. Just remove https_redirection settings in each app."
       );
     }
 
@@ -206,6 +208,12 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         anyhow!("http_port and https_port must be different")
       );
     }
+    if self.https_redirection_port.is_some() {
+      ensure!(
+        proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
+        "https_redirection_port can be explicitly specified only when both http_port and https_port are specified"
+      );
+    }
 
     // NOTE: when [::]:xx is bound, both v4 and v6 listeners are enabled.
     let listen_addresses: Vec<&str> = if let Some(true) = self.listen_ipv6 {
@@ -307,11 +315,11 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 }
 
 impl ConfigToml {
-  pub fn new(config_file: &str) -> std::result::Result<Self, anyhow::Error> {
-    let config_str = fs::read_to_string(config_file)?;
+  pub fn new(config_path: &std::path::PathBuf) -> std::result::Result<Self, anyhow::Error> {
+    let config_str = fs::read_to_string(config_path)?;
 
     // Check unused fields during deserialization
-    let t = toml::de::Deserializer::new(&config_str);
+    let t = toml::Deserializer::parse(&config_str)?;
     let mut unused = ahash::HashSet::default();
 
     let res = serde_ignored::deserialize(t, |path| {

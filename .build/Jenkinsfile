@@ -85,57 +85,128 @@ pipeline {
             }
         }
 
-        stage('Build RPM Package') {
-            agent {
-                kubernetes {
-                    inheritFrom 'default'
-                    yaml """
-                    apiVersion: v1
-                    kind: Pod
-                    spec:
-                      containers:
-                      - name: rpm-build
-                        image: rockylinux:9
-                        command:
-                        - cat
-                        tty: true
-                    """
+        stage('Build RPM Packages') {
+            parallel {
+                stage('Build EL9 RPM Package') {
+                    agent {
+                        kubernetes {
+                            inheritFrom 'default'
+                            yaml """
+                            apiVersion: v1
+                            kind: Pod
+                            spec:
+                              containers:
+                              - name: rpm-build-el9
+                                image: rockylinux/rockylinux:9
+                                command:
+                                - cat
+                                tty: true
+                            """
+                        }
+                    }
+                    steps {
+                        container('rpm-build-el9') {
+                            // Prepare the RPM build environment
+                            unstash 'binary'
+                            unstash 'rpm-files'
+                            unstash 'service-file'
+                            unstash 'docs'
+
+                            // Install necessary tools for RPM building
+                            sh 'dnf update -y && dnf install -y rpmdevtools tar'
+
+                            // Set EL version for EL9
+                            script {
+                                env.EL_VERSION = "el9"
+                                echo "Building for Rocky Linux 9 (EL9)"
+                            }
+
+                            // Create the RPM package
+                            sh """
+                                # Create RPM build directory structure
+                                mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+                                mkdir -p ${BINARY_NAME}-${BUILD_VERSION}
+
+                                # Move files to the appropriate locations
+                                mv ${BINARY_NAME} ${BINARY_NAME}.service LICENSE README.md config.toml ${BINARY_NAME}-${BUILD_VERSION}/
+                                tar -czf rpmbuild/SOURCES/${BINARY_NAME}-${BUILD_VERSION}.tar.gz ${BINARY_NAME}-${BUILD_VERSION}/
+                                mv ${BINARY_NAME}.spec rpmbuild/SPECS/
+
+                                # Update spec file with correct version and source
+                                sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/; s/@Source0@/${BINARY_NAME}-${BUILD_VERSION}.tar.gz/' rpmbuild/SPECS/${BINARY_NAME}.spec
+
+                                # Build the RPM package
+                                rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
+
+                                # Move RPM to root for archiving
+                                mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.${EL_VERSION}.x86_64.rpm .
+                            """
+
+                            // Archive the EL9 RPM package
+                            archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.${env.EL_VERSION}.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
+                        }
+                    }
                 }
-            }
-            steps {
-                container('rpm-build') {
-                    // Prepare the RPM build environment
-                    unstash 'binary'
-                    unstash 'rpm-files'
-                    unstash 'service-file'
-                    unstash 'docs'
 
-                    // Install necessary tools for RPM building
-                    sh 'dnf update -y && dnf install -y rpmdevtools tar'
+                stage('Build EL10 RPM Package') {
+                    agent {
+                        kubernetes {
+                            inheritFrom 'default'
+                            yaml """
+                            apiVersion: v1
+                            kind: Pod
+                            spec:
+                              containers:
+                              - name: rpm-build-el10
+                                image: rockylinux/rockylinux:10
+                                command:
+                                - cat
+                                tty: true
+                            """
+                        }
+                    }
+                    steps {
+                        container('rpm-build-el10') {
+                            // Prepare the RPM build environment
+                            unstash 'binary'
+                            unstash 'rpm-files'
+                            unstash 'service-file'
+                            unstash 'docs'
 
-                    // Create the RPM package
-                    sh """
-                        # Create RPM build directory structure
-                        mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-                        mkdir -p ${BINARY_NAME}-${BUILD_VERSION}
+                            // Install necessary tools for RPM building
+                            sh 'dnf update -y && dnf install -y rpmdevtools tar'
 
-                        # Move files to the appropriate locations
-                        mv ${BINARY_NAME} ${BINARY_NAME}.service LICENSE README.md config.toml ${BINARY_NAME}-${BUILD_VERSION}/
-                        tar -czf rpmbuild/SOURCES/${BINARY_NAME}-${BUILD_VERSION}.tar.gz ${BINARY_NAME}-${BUILD_VERSION}/
-                        mv ${BINARY_NAME}.spec rpmbuild/SPECS/
+                            // Set EL version for EL10
+                            script {
+                                env.EL_VERSION = "el10"
+                                echo "Building for Rocky Linux 10 (EL10)"
+                            }
 
-                        # Update spec file with correct version and source
-                        sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/; s/@Source0@/${BINARY_NAME}-${BUILD_VERSION}.tar.gz/' rpmbuild/SPECS/${BINARY_NAME}.spec
+                            // Create the RPM package
+                            sh """
+                                # Create RPM build directory structure
+                                mkdir -p rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+                                mkdir -p ${BINARY_NAME}-${BUILD_VERSION}
 
-                        # Build the RPM package
-                        rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
+                                # Move files to the appropriate locations
+                                mv ${BINARY_NAME} ${BINARY_NAME}.service LICENSE README.md config.toml ${BINARY_NAME}-${BUILD_VERSION}/
+                                tar -czf rpmbuild/SOURCES/${BINARY_NAME}-${BUILD_VERSION}.tar.gz ${BINARY_NAME}-${BUILD_VERSION}/
+                                mv ${BINARY_NAME}.spec rpmbuild/SPECS/
 
-                        # Move RPM to root for archiving
-                        mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm .
-                    """
+                                # Update spec file with correct version and source
+                                sed -i 's/@BUILD_VERSION@/${BUILD_VERSION}/; s/@Source0@/${BINARY_NAME}-${BUILD_VERSION}.tar.gz/' rpmbuild/SPECS/${BINARY_NAME}.spec
 
-                    // Archive the RPM package
-                    archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
+                                # Build the RPM package
+                                rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
+
+                                # Move RPM to root for archiving
+                                mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.${EL_VERSION}.x86_64.rpm .
+                            """
+
+                            // Archive the EL10 RPM package
+                            archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.${env.EL_VERSION}.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
+                        }
+                    }
                 }
             }
         }

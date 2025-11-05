@@ -80,7 +80,7 @@ You can run `rpxy` with a configuration file like
 % ./target/release/rpxy --config config.toml
 ```
 
-`rpxy` tracks changes to `config.toml` in real-time and applies changes immediately without restarting the process.
+`rpxy` tracks changes to `config.toml` in real-time and applies changes immediately without restarting the process. Note that if `config.toml` is removed, renamed or moved (including moving to trash), `rpxy` continues running with the last valid configuration until a new file named `config.toml` is created in the same directory.
 
 The full help message is as follows.
 
@@ -153,7 +153,7 @@ Note that by specifying a `default_app` entry, *HTTP* requests will be served by
 The request message will be routed to the backend application specified with the domain name `app1.localdomain:8080` or IP address over cleartext HTTP. If the backend channel needs to serve TLS, like forwarding to `https://app1.localdomain:8080`, you need to enable the `tls` option for the location.
 
 ```toml
-revese_proxy = [
+reverse_proxy = [
   { location = 'app1.localdomain:8080', tls = true }
 ]
 ```
@@ -192,13 +192,13 @@ Note that the private key specified by `tls_cert_key_path` must be *in PKCS8 for
 
 #### Redirecting Cleartext HTTP Requests to HTTPS
 
-In the current Web, it is common to serve everything through HTTPS rather than HTTP, and hence *HTTPS redirection* is often used for HTTP requests. When you specify both `listen_port` and `listen_port_tls`, you can enable such redirection by setting `https_redirection` to true.
+In the current Web, it is common to serve everything through HTTPS rather than HTTP, and hence *HTTPS redirection* is often used for HTTP requests. When you specify both `listen_port` and `listen_port_tls`, such redirection is automatically enabled for all applications by default. You can explicitly control this behavior for each application by setting `https_redirection` option in the `tls` entry like
 
 ```toml
 tls = { https_redirection = true, tls_cert_path = 'server.crt', tls_cert_key_path = 'server.key' }
 ```
 
-If it is true, `rpxy` returns status code `301` to the cleartext request with the new location `https://<requested_host>/<requested_query_and_path>` served over TLS.
+If it is true, `rpxy` returns status code `301` to the cleartext request with the new location `https://<requested_host>/<requested_query_and_path>` served over TLS. Note tht `https_redirection` can be set only when both `listen_port` and `listen_port_tls` are specified in the global section.
 
 ### Third Step: More Flexible Routing Based on URL Path
 
@@ -458,6 +458,16 @@ todo!
 
 `rpxy` is free, open-source software licensed under MIT License.
 
-You can open issues for bugs you've found or features you think are missing. You can also submit pull requests to this repository.
+## Security
 
-Contributors are more than welcome!
+If you discover a security vulnerability, **do not open a public Issue**.
+Please use [GitHub's Private vulnerability reporting](../../security/advisories/new) to notify the maintainers.
+
+## Contributing
+
+Contributions are welcome (issues, feature requests, bug reports, pull requests).
+
+Please note that this project is maintained primarily based on the code owner’s personal interests, and not backed by any commercial agreement.
+Contributions are handled on a best-effort basis. Sponsorship is also welcome to help sustain the project.
+
+For more details on contribution guidelines and project scope, please see [CONTRIBUTING.md](./CONTRIBUTING.md).
