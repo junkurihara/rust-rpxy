@@ -119,7 +119,7 @@ jobs:
     needs: on-success
     steps:
       - name: check pull_request title
-        uses: kaisugi/action-regex-match@v1.0.1
+        uses: kaisugi/action-regex-match@v1.0.2
         id: regex-match
         with:
           text: ${{ github.event.client_payload.pull_request.title }}
