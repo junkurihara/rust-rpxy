@@ -10,6 +10,8 @@ pub(crate) type HttpResult<T> = std::result::Result<T, HttpError>;
 pub enum HttpError {
   // #[error("No host is give in request header")]
   // NoHostInRequestHeader,
+  #[error("Unsupported method")]
+  UnsupportedMethod,
   #[error("Invalid host in request header")]
   InvalidHostInRequestHeader,
   #[error("SNI and Host header mismatch")]
@@ -44,6 +46,7 @@ impl From<HttpError> for StatusCode {
   fn from(e: HttpError) -> StatusCode {
     match e {
       // HttpError::NoHostInRequestHeader => StatusCode::BAD_REQUEST,
+      HttpError::UnsupportedMethod => StatusCode::METHOD_NOT_ALLOWED,
       HttpError::InvalidHostInRequestHeader => StatusCode::BAD_REQUEST,
       HttpError::SniHostInconsistency => StatusCode::MISDIRECTED_REQUEST,
       HttpError::NoMatchingBackendApp => StatusCode::SERVICE_UNAVAILABLE,
