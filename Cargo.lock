@@ -2229,7 +2229,7 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "s2n-codec"
-version = "0.69.0"
+version = "0.70.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -2238,7 +2238,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic"
-version = "1.69.0"
+version = "1.70.0"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -2261,7 +2261,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-core"
-version = "0.69.0"
+version = "0.70.0"
 dependencies = [
  "atomic-waker",
  "byteorder",
@@ -2280,7 +2280,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-crypto"
-version = "0.69.0"
+version = "0.70.0"
 dependencies = [
  "aws-lc-rs",
  "cfg-if",
@@ -2303,7 +2303,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-platform"
-version = "0.69.0"
+version = "0.70.0"
 dependencies = [
  "cfg-if",
  "futures",
@@ -2316,7 +2316,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-rustls"
-version = "0.69.0"
+version = "0.70.0"
 dependencies = [
  "bytes",
  "rustls",
@@ -2329,7 +2329,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls"
-version = "0.69.0"
+version = "0.70.0"
 dependencies = [
  "bytes",
  "errno",
@@ -2342,7 +2342,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls-default"
-version = "0.69.0"
+version = "0.70.0"
 dependencies = [
  "s2n-quic-rustls",
  "s2n-quic-tls",
@@ -2350,7 +2350,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-transport"
-version = "0.69.0"
+version = "0.70.0"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2366,9 +2366,9 @@ dependencies = [
 
 [[package]]
 name = "s2n-tls"
-version = "0.3.30"
+version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ced2da710b81dc0ed84e4c594980a294b3a483ec69baf889565db3a5132f11d"
+checksum = "cd013ab79f09fbac0f3726cb06d303e7d8c394690cf7d896efab5e8a9d4ec96f"
 dependencies = [
  "errno",
  "hex",
@@ -2379,9 +2379,9 @@ dependencies = [
 
 [[package]]
 name = "s2n-tls-sys"
-version = "0.3.30"
+version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2651d134d749a6ae41441762a6b82d7ed12ffd1d3fccc90bd635104c75b44892"
+checksum = "dcd872bece22c51f3b649f1640b964e30218f25c3f74c5fff6f28ea1b81353b8"
 dependencies = [
  "aws-lc-rs",
  "cc",
