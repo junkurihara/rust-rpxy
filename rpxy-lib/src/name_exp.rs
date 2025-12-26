@@ -40,7 +40,8 @@ pub struct PathName {
 }
 impl From<&str> for PathName {
   fn from(s: &str) -> Self {
-    let name = s.bytes().collect::<Vec<u8>>().to_ascii_lowercase();
+    //let name = s.bytes().collect::<Vec<u8>>().to_ascii_lowercase();
+    let name = s.bytes().collect::<Vec<u8>>();
     Self { inner: name }
   }
 }
@@ -111,7 +112,7 @@ mod tests {
     let bn = s.to_path_name();
     let bn_lc = s.to_server_name();
 
-    assert_eq!("ok_string".as_bytes(), bn.as_ref());
+    assert_eq!("OK_string".as_bytes(), bn.as_ref());
     assert_eq!("ok_string".as_bytes(), bn_lc.as_ref());
   }
 
@@ -128,9 +129,9 @@ mod tests {
   fn get_works() {
     let s = "OK_str".to_path_name();
     let i = s.get(0);
-    assert_eq!(Some(&"o".as_bytes()[0]), i);
+    assert_eq!(Some(&"O".as_bytes()[0]), i);
     let i = s.get(1);
-    assert_eq!(Some(&"k".as_bytes()[0]), i);
+    assert_eq!(Some(&"K".as_bytes()[0]), i);
     let i = s.get(2);
     assert_eq!(Some(&"_".as_bytes()[0]), i);
     let i = s.get(3);
@@ -155,6 +156,6 @@ mod tests {
   #[test]
   fn as_ref_works() {
     let s = "OK_str".to_path_name();
-    assert_eq!(s.as_ref(), "ok_str".as_bytes());
+    assert_eq!(s.as_ref(), "OK_str".as_bytes());
   }
 }
