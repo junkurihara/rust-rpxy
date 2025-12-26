@@ -96,7 +96,7 @@ jobs:
           docker cp ${CONTAINER_ID}:/rpxy/bin/rpxy /tmp/${{ steps.set-env.outputs.target_name }}
 
       - name: "upload artifacts"
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.set-env.outputs.target_name }}
           path: "/tmp/${{ steps.set-env.outputs.target_name }}"
@@ -119,7 +119,7 @@ jobs:
     needs: on-success
     steps:
       - name: check pull_request title
-        uses: kaisugi/action-regex-match@v1.0.1
+        uses: kaisugi/action-regex-match@v1.0.2
         id: regex-match
         with:
           text: ${{ github.event.client_payload.pull_request.title }}
@@ -127,11 +127,11 @@ jobs:
 
       - name: checkout
         if: ${{ steps.regex-match.outputs.match != '' }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: download artifacts
         if: ${{ steps.regex-match.outputs.match != ''}}
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/rpxy
 

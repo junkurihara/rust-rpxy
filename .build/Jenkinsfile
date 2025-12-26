@@ -74,9 +74,9 @@ pipeline {
 
                     // Stash files for use in later stages
                     stash includes: "${BINARY_NAME}", name: "binary"
-                    stash includes: "control, postinst, prerm, postrm, rpxy-start.sh", name: "deb-files"
+                    stash includes: "control, postinst, prerm, postrm", name: "deb-files"
                     stash includes: "${BINARY_NAME}.spec", name: "rpm-files"
-                    stash includes: "rpxy.service, config.toml", name: "service-file"
+                    stash includes: "${BINARY_NAME}.service, config.toml, ${BINARY_NAME}-start.sh", name: "service-file"
                     stash includes: "LICENSE, README.md", name: "docs"
 
                     // Archive the binary as an artifact
@@ -117,7 +117,6 @@ pipeline {
 
                             // Set EL version for EL9
                             script {
-                                env.EL_VERSION = "el9"
                                 echo "Building for Rocky Linux 9 (EL9)"
                             }
 
@@ -139,11 +138,11 @@ pipeline {
                                 rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
 
                                 # Move RPM to root for archiving
-                                mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.${EL_VERSION}.x86_64.rpm .
+                                mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm .
                             """
 
                             // Archive the EL9 RPM package
-                            archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.${env.EL_VERSION}.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
+                            archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.el9.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
                         }
                     }
                 }
@@ -178,7 +177,6 @@ pipeline {
 
                             // Set EL version for EL10
                             script {
-                                env.EL_VERSION = "el10"
                                 echo "Building for Rocky Linux 10 (EL10)"
                             }
 
@@ -200,11 +198,11 @@ pipeline {
                                 rpmbuild --define "_topdir ${WORKSPACE}/rpmbuild" --define "_version ${BUILD_VERSION}" -bb rpmbuild/SPECS/${BINARY_NAME}.spec
 
                                 # Move RPM to root for archiving
-                                mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.${EL_VERSION}.x86_64.rpm .
+                                mv rpmbuild/RPMS/x86_64/${BINARY_NAME}-${BUILD_VERSION}-1.el10.x86_64.rpm .
                             """
 
                             // Archive the EL10 RPM package
-                            archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.${env.EL_VERSION}.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
+                            archiveArtifacts artifacts: "${BINARY_NAME}-${BUILD_VERSION}-1.el10.x86_64.rpm", allowEmptyArchive: false, fingerprint: true
                         }
                     }
                 }
