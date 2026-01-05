@@ -121,4 +121,4 @@ base64 = { version = "0.22.1", optional = true }
 
 
 [dev-dependencies]
-tokio-test = "0.4.4"
+tokio-test = "0.4.5"
