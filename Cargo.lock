@@ -1912,12 +1912,13 @@ dependencies = [
 
 [[package]]
 name = "rcgen"
-version = "0.14.7"
+version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10b99e0098aa4082912d4c649628623db6aba77335e4f4569ff5083a6448b32e"
+checksum = "3ec0a99f2de91c3cddc84b37e7db80e4d96b743e05607f647eb236fc0455907f"
 dependencies = [
  "aws-lc-rs",
  "pem",
+ "ring",
  "rustls-pki-types",
  "time",
  "x509-parser",
@@ -1987,6 +1988,7 @@ dependencies = [
  "aws-lc-rs",
  "base64",
  "blocking",
+ "rcgen",
  "rustls",
  "rustls-acme",
  "rustls-platform-verifier",
@@ -2108,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "rustls-acme"
-version = "0.14.1"
+version = "0.15.1"
 dependencies = [
  "async-io",
  "async-trait",
@@ -3440,6 +3442,7 @@ dependencies = [
  "lazy_static",
  "nom",
  "oid-registry",
+ "ring",
  "rusticata-macros",
  "thiserror 2.0.18",
  "time",
