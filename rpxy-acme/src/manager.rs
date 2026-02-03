@@ -64,6 +64,18 @@ impl AcmeManager {
       })
       .collect::<HashMap<_, _>>();
 
+    // Verify write permissions for all domains before starting ACME
+    // This prevents silent failures when certs are obtained but can't be saved
+    for (domain, dir_cache) in &inner {
+      dir_cache.verify_write_permissions().map_err(|e| {
+        RpxyAcmeError::WritePermissionDenied {
+          domain: domain.clone(),
+          path: format!("{}", acme_registry_dir.display()),
+          source: e,
+        }
+      })?;
+    }
+
     Ok(Self {
       acme_dir_url,
       // acme_registry_dir,

@@ -315,14 +315,16 @@ where
           }
           let server_crypto_base = server_crypto_rx.get().unwrap();
           let Some(server_config): Option<Arc<ServerCrypto>> = (&server_crypto_base).try_into().ok() else {
-            error!("Failed to update server crypto");
-            break;
+            // Don't break the loop - certs might become available later (e.g., ACME provisioning)
+            warn!("No valid certificates loaded yet, waiting for next reload cycle");
+            continue;
           };
           let map = server_config.individual_config_map.clone().iter().map(|(k,v)| {
             let server_name = ServerName::from(k.as_slice());
             (server_name, v.clone())
           }).collect::<std::collections::HashMap<_,_,ahash::RandomState>>();
           server_crypto_map = Some(Arc::new(map));
+          info!("TLS certificates updated successfully");
         }
       }
     }

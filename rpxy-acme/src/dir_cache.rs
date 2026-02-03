@@ -77,6 +77,29 @@ impl DirCache {
     let hash = BASE64_URL_SAFE_NO_PAD.encode(ctx.finish());
     format!("cached_cert_{}", hash)
   }
+
+  /// Verify that we have write permissions to both account and cert directories.
+  /// This should be called at startup to fail fast if permissions are incorrect.
+  pub fn verify_write_permissions(&self) -> Result<(), std::io::Error> {
+    // Test write to account directory
+    Self::verify_dir_writable(&self.account_dir)?;
+    // Test write to cert directory
+    Self::verify_dir_writable(&self.cert_dir)?;
+    Ok(())
+  }
+
+  /// Verify that a directory is writable by creating it and writing a test file
+  fn verify_dir_writable(dir: &Path) -> Result<(), std::io::Error> {
+    // Create directory if it doesn't exist
+    std::fs::create_dir_all(dir)?;
+
+    // Try to write and remove a test file
+    let test_file = dir.join(".write_test");
+    std::fs::write(&test_file, b"test")?;
+    std::fs::remove_file(&test_file)?;
+
+    Ok(())
+  }
 }
 
 #[async_trait]
