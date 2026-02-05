@@ -93,8 +93,11 @@ impl DirCache {
     // Create directory if it doesn't exist
     std::fs::create_dir_all(dir)?;
 
-    // Try to write and remove a test file
-    let test_file = dir.join(".write_test");
+    // Try to write and remove a test file. Use a process-specific filename to avoid
+    // collisions when multiple rpxy processes operate on the same directory.
+    let pid = std::process::id();
+    let test_file_name = format!(".write_test_{}", pid);
+    let test_file = dir.join(test_file_name);
     std::fs::write(&test_file, b"test")?;
     std::fs::remove_file(&test_file)?;
 
