@@ -30,7 +30,7 @@ pub struct AcmeManager {
 impl AcmeManager {
   /// Create a new instance. Note that for each domain, a new AcmeConfig is created.
   /// This means that for each domain, a distinct operation will be dispatched and separated certificates will be generated.
-  pub fn try_new(
+  pub async fn try_new(
     acme_dir_url: Option<&str>,
     acme_registry_dir: Option<&str>,
     contacts: &[String],
@@ -67,13 +67,14 @@ impl AcmeManager {
     // Verify write permissions for all domains before starting ACME
     // This prevents silent failures when certs are obtained but can't be saved
     for (domain, dir_cache) in &inner {
-      dir_cache.verify_write_permissions().map_err(|e| {
-        RpxyAcmeError::WritePermissionDenied {
+      dir_cache
+        .verify_write_permissions()
+        .await
+        .map_err(|e| RpxyAcmeError::WritePermissionDenied {
           domain: domain.clone(),
           path: format!("{}", acme_registry_dir.display()),
           source: e,
-        }
-      })?;
+        })?;
     }
 
     Ok(Self {
@@ -176,6 +177,7 @@ mod tests {
       &["example.com".to_string(), "example.org".to_string()],
       handle,
     )
+    .await
     .unwrap();
     assert_eq!(acme_contexts.inner.len(), 2);
     assert_eq!(acme_contexts.contacts, vec!["mailto:test@example.com".to_string()]);

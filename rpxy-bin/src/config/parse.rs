@@ -3,11 +3,11 @@ use crate::error::{anyhow, ensure};
 use ahash::HashMap;
 use clap::Arg;
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use rpxy_certs::{CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase, build_cert_reloader};
+use rpxy_certs::{build_cert_reloader, CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase};
 use rpxy_lib::{AppConfigList, ProxyConfig};
 
 #[cfg(feature = "acme")]
-use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
+use rpxy_acme::{AcmeManager, ACME_DIR_URL, ACME_REGISTRY_PATH};
 
 /// Parsed options from CLI
 /// Options for configuring the application.
@@ -189,7 +189,8 @@ pub async fn build_acme_manager(
     &[acme_option.email],
     domains.as_slice(),
     runtime_handle,
-  )?;
+  )
+  .await?;
 
   Ok(Some(acme_manager))
 }

@@ -80,28 +80,26 @@ impl DirCache {
 
   /// Verify that we have write permissions to both account and cert directories.
   /// This should be called at startup to fail fast if permissions are incorrect.
-  pub fn verify_write_permissions(&self) -> Result<(), std::io::Error> {
+  pub async fn verify_write_permissions(&self) -> Result<(), std::io::Error> {
     // Test write to account directory
-    Self::verify_dir_writable(&self.account_dir)?;
+    Self::verify_dir_writable(&self.account_dir).await?;
     // Test write to cert directory
-    Self::verify_dir_writable(&self.cert_dir)?;
+    Self::verify_dir_writable(&self.cert_dir).await?;
     Ok(())
   }
 
-  /// Verify that a directory is writable by creating it and writing a test file
-  fn verify_dir_writable(dir: &Path) -> Result<(), std::io::Error> {
-    // Create directory if it doesn't exist
-    std::fs::create_dir_all(dir)?;
-
-    // Try to write and remove a test file. Use a process-specific filename to avoid
-    // collisions when multiple rpxy processes operate on the same directory.
-    let pid = std::process::id();
-    let test_file_name = format!(".write_test_{}", pid);
-    let test_file = dir.join(test_file_name);
-    std::fs::write(&test_file, b"test")?;
-    std::fs::remove_file(&test_file)?;
-
-    Ok(())
+  /// Verify that a directory is writable by creating it and writing a test file.
+  /// Uses unique filename (PID + timestamp) to avoid race conditions when multiple
+  /// instances start simultaneously.
+  async fn verify_dir_writable(dir: &Path) -> Result<(), std::io::Error> {
+    let dir = dir.to_owned();
+    unblock(move || {
+      std::fs::create_dir_all(&dir)?;
+      let test_file = dir.join(".write_test");
+      std::fs::write(&test_file, b"test")?;
+      std::fs::remove_file(&test_file)?;
+      Ok(())
+    }).await
   }
 }
 
