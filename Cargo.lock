@@ -2211,7 +2211,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "s2n-codec"
-version = "0.73.0"
+version = "0.74.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -2220,7 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic"
-version = "1.73.0"
+version = "1.74.0"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -2243,7 +2243,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-core"
-version = "0.73.0"
+version = "0.74.0"
 dependencies = [
  "atomic-waker",
  "byteorder",
@@ -2262,7 +2262,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-crypto"
-version = "0.73.0"
+version = "0.74.0"
 dependencies = [
  "aws-lc-rs",
  "cfg-if",
@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-platform"
-version = "0.73.0"
+version = "0.74.0"
 dependencies = [
  "cfg-if",
  "futures",
@@ -2298,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-rustls"
-version = "0.73.0"
+version = "0.74.0"
 dependencies = [
  "bytes",
  "rustls",
@@ -2311,7 +2311,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls"
-version = "0.73.0"
+version = "0.74.0"
 dependencies = [
  "bytes",
  "errno",
@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls-default"
-version = "0.73.0"
+version = "0.74.0"
 dependencies = [
  "s2n-quic-rustls",
  "s2n-quic-tls",
@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-transport"
-version = "0.73.0"
+version = "0.74.0"
 dependencies = [
  "bytes",
  "futures-channel",
