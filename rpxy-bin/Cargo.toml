@@ -58,8 +58,8 @@ async-trait = { version = "0.1.89" }
 futures-util = { version = "0.3.31", default-features = false }
 
 # config
-clap = { version = "4.5.57", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "0.9.12", default-features = false, features = [
+clap = { version = "4.5.58", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "1.0.0", default-features = false, features = [
   "parse",
   "serde",
 ] }
