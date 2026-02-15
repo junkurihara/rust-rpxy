@@ -5,9 +5,9 @@ use crate::{
   log::*,
 };
 use ahash::HashMap;
+use futures_util::future::try_join_all;
 use rustls::ServerConfig;
 use rustls_acme::AcmeConfig;
-use futures_util::future::try_join_all;
 use std::{path::PathBuf, sync::Arc};
 use tokio::runtime::Handle;
 use tokio_stream::StreamExt;
@@ -67,9 +67,10 @@ impl AcmeManager {
 
     // Verify write permissions for all domains concurrently before starting ACME
     // This prevents silent failures when certs are obtained but can't be saved
+    let path = acme_registry_dir.display().to_string();
     try_join_all(inner.iter().map(|(domain, dir_cache)| {
       let domain = domain.clone();
-      let path = format!("{}", acme_registry_dir.display());
+      let path = path.clone();
       async move {
         dir_cache
           .verify_write_permissions()
