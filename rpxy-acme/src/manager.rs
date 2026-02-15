@@ -5,6 +5,7 @@ use crate::{
   log::*,
 };
 use ahash::HashMap;
+use futures_util::future::try_join_all;
 use rustls::ServerConfig;
 use rustls_acme::AcmeConfig;
 use std::{path::PathBuf, sync::Arc};
@@ -30,7 +31,7 @@ pub struct AcmeManager {
 impl AcmeManager {
   /// Create a new instance. Note that for each domain, a new AcmeConfig is created.
   /// This means that for each domain, a distinct operation will be dispatched and separated certificates will be generated.
-  pub fn try_new(
+  pub async fn try_new(
     acme_dir_url: Option<&str>,
     acme_registry_dir: Option<&str>,
     contacts: &[String],
@@ -63,6 +64,21 @@ impl AcmeManager {
         (domain, dir_cache)
       })
       .collect::<HashMap<_, _>>();
+
+    // Verify write permissions for all domains concurrently before starting ACME
+    // This prevents silent failures when certs are obtained but can't be saved
+    let path = acme_registry_dir.display().to_string();
+    try_join_all(inner.iter().map(|(domain, dir_cache)| {
+      let domain = domain.clone();
+      let path = path.clone();
+      async move {
+        dir_cache
+          .verify_write_permissions()
+          .await
+          .map_err(|e| RpxyAcmeError::WritePermissionDenied { domain, path, source: e })
+      }
+    }))
+    .await?;
 
     Ok(Self {
       acme_dir_url,
@@ -164,6 +180,7 @@ mod tests {
       &["example.com".to_string(), "example.org".to_string()],
       handle,
     )
+    .await
     .unwrap();
     assert_eq!(acme_contexts.inner.len(), 2);
     assert_eq!(acme_contexts.contacts, vec!["mailto:test@example.com".to_string()]);
