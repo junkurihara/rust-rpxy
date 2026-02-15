@@ -1,6 +1,26 @@
 # CHANGELOG
 
-## 0.10.4 or 0.11.0 (Unreleased)
+## 0.10.5 or 0.11.0 (Unreleased)
+
+### Improvement
+
+- Deps and refactor
+
+
+### Bugfix
+
+- Fix: TLS listener hot-reload fix: Changed break to continue when certificate reload fails, allowing the listener to wait for ACME to provision certificates instead of stopping entirely (#454)
+- Fix: Write permission preflight check: Added startup verification for ACME certificate directories to fail fast with clear error messages, preventing silent failures that waste ACME rate limits (#454)
+
+## 0.10.4
+
+### Improvement
+
+- Deps and refactor
+
+### Bugfix
+
+- Fix: RFC compliance issue for the URL path string (#425)
 
 ## 0.10.3
 
