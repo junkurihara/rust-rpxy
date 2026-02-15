@@ -95,11 +95,19 @@ impl DirCache {
     let dir = dir.to_owned();
     unblock(move || {
       std::fs::create_dir_all(&dir)?;
-      let test_file = dir.join(".write_test");
+      let test_file = dir.join(format!(
+        ".write_test_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+          .duration_since(std::time::UNIX_EPOCH)
+          .map(|d| d.as_nanos())
+          .unwrap_or(0)
+      ));
       std::fs::write(&test_file, b"test")?;
       std::fs::remove_file(&test_file)?;
       Ok(())
-    }).await
+    })
+    .await
   }
 }
 
