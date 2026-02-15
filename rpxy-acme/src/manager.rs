@@ -7,6 +7,7 @@ use crate::{
 use ahash::HashMap;
 use rustls::ServerConfig;
 use rustls_acme::AcmeConfig;
+use futures_util::future::try_join_all;
 use std::{path::PathBuf, sync::Arc};
 use tokio::runtime::Handle;
 use tokio_stream::StreamExt;
@@ -64,18 +65,19 @@ impl AcmeManager {
       })
       .collect::<HashMap<_, _>>();
 
-    // Verify write permissions for all domains before starting ACME
+    // Verify write permissions for all domains concurrently before starting ACME
     // This prevents silent failures when certs are obtained but can't be saved
-    for (domain, dir_cache) in &inner {
-      dir_cache
-        .verify_write_permissions()
-        .await
-        .map_err(|e| RpxyAcmeError::WritePermissionDenied {
-          domain: domain.clone(),
-          path: format!("{}", acme_registry_dir.display()),
-          source: e,
-        })?;
-    }
+    try_join_all(inner.iter().map(|(domain, dir_cache)| {
+      let domain = domain.clone();
+      let path = format!("{}", acme_registry_dir.display());
+      async move {
+        dir_cache
+          .verify_write_permissions()
+          .await
+          .map_err(|e| RpxyAcmeError::WritePermissionDenied { domain, path, source: e })
+      }
+    }))
+    .await?;
 
     Ok(Self {
       acme_dir_url,
