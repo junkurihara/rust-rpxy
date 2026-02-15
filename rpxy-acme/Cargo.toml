@@ -45,4 +45,4 @@ futures-util = { version = "0.3.31", default-features = false, features = [
 ] }
 
 # Workaround
-rcgen = { version = "=0.14.6" }
+rcgen = { version = "=0.14.7" }
