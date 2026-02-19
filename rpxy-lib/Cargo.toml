@@ -63,7 +63,7 @@ http-body-util = "0.1.3"
 hyper = { version = "1.8.1", default-features = false }
 hyper-util = { version = "0.1.20", features = ["full"] }
 futures-util = { version = "0.3.32", default-features = false }
-futures-channel = { version = "0.3.31", default-features = false }
+futures-channel = { version = "0.3.32", default-features = false }
 
 # http client for upstream
 hyper-tls = { version = "0.6.0", features = [
@@ -94,11 +94,11 @@ tracing = { version = "0.1.44" }
 quinn = { version = "0.11.9", optional = true }
 h3 = { version = "0.0.8", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-s2n-quic = { version = "1.74.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+s2n-quic = { version = "1.75.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.74.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.74.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.75.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.75.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
