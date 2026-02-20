@@ -43,6 +43,3 @@ tokio-stream = { version = "0.1.18", default-features = false }
 futures-util = { version = "0.3.32", default-features = false, features = [
   "alloc",
 ] }
-
-# Workaround
-rcgen = { version = "=0.14.6" }
