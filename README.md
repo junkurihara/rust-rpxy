@@ -62,6 +62,9 @@ You can build an executable binary yourself by checking out this Git repository.
 
 Then you have an executable binary `rust-rpxy/target/release/rpxy`.
 
+> [!NOTE]
+> At this point, it can be built only on Linux and macOS (Issue [#150](https://github.com/junkurihara/rust-rpxy/issues/150)). If you want to use `rpxy` on Windows, please consider using the docker image (see below) as a workaround.
+
 ### Package Installation for Linux (RPM/DEB)
 
 You can find the Jenkins CI/CD build scripts for `rpxy` in the [./.build](./.build) directory.
