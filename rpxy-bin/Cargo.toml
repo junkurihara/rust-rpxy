@@ -42,7 +42,7 @@ sticky-cookie = ["rpxy-lib/sticky-cookie"]
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 
-mimalloc = { version = "0.1.48", default-features = false }
+
 anyhow = { version = "1.0.102" }
 ahash = { version = "0.8.12" }
 serde = { version = "1.0.228", default-features = false, features = ["derive"] }
@@ -77,5 +77,8 @@ rpxy-certs = { path = "../rpxy-certs/", default-features = false, features = [
 ] }
 
 rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true }
+
+[target.'cfg(not(target_os = "illumos"))'.dependencies]
+mimalloc = { version = "0.1.48", default-features = false }
 
 [dev-dependencies]
