@@ -63,7 +63,7 @@ You can build an executable binary yourself by checking out this Git repository.
 Then you have an executable binary `rust-rpxy/target/release/rpxy`.
 
 > [!NOTE]
-> At this point, it can be built only on Linux, macOS and some Unix-like OSes (Issue [#150](https://github.com/junkurihara/rust-rpxy/issues/150)). If you want to use `rpxy` on Windows, please consider using the docker image (see below) as a workaround.
+> At this point, it can be built only on Linux, macOS and some Unix-like OSes ([#150](https://github.com/junkurihara/rust-rpxy/issues/150), [#478](https://github.com/junkurihara/rust-rpxy/pull/478)). If you want to use `rpxy` on Windows, please consider using the docker image (see below) as a workaround.
 
 ### Package Installation for Linux (RPM/DEB)
 
