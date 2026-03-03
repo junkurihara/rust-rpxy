@@ -16,7 +16,7 @@ CONFIG_FILE_IN_DIR=${CONFIG_FILENAME:-rpxy.toml}
 
 #######################################
 # Setup logrotate
-function setup_logrotate () {
+setup_logrotate() {
   if [ $LOGROTATE_NUM ]; then
     LOG_NUM=${LOGROTATE_NUM}
   fi
@@ -78,7 +78,7 @@ EOF
 }
 
 #######################################
-function setup_ubuntu () {
+setup_ubuntu() {
   id ${USER} > /dev/null
   # Check the existence of the user, if not exist, create it.
   if [ $? -eq 1 ]; then
@@ -102,7 +102,7 @@ function setup_ubuntu () {
 }
 
 #######################################
-function setup_alpine () {
+setup_alpine() {
   id ${USER} > /dev/null
   # Check the existence of the user, if not exist, create it.
   if [ $? -eq 1 ]; then
@@ -150,7 +150,7 @@ fi
 update-ca-certificates
 
 # Check the given user and its uid:gid
-if [ $(id -u ${USER}) -ne ${USER_ID} -a $(id -g ${USER}) -ne ${GROUP_ID} ]; then
+if [ $(id -u ${USER}) -ne ${USER_ID} -o $(id -g ${USER}) -ne ${GROUP_ID} ]; then
   echo "${USER} exists or was previously created. However, its uid and gid are inconsistent. Please recreate your container."
   exit 1
 fi
@@ -160,8 +160,8 @@ fi
 find /rpxy -path ${CONFIG_DIR} -prune -o -exec chown ${USER_ID}:${USER_ID} {} +
 
 # Check the config file existence
-if [[ ! -f ${CONFIG_FILE} ]]; then
-  if [[ ! -f ${CONFIG_DIR}/${CONFIG_FILE_IN_DIR} ]]; then
+if [ ! -f "${CONFIG_FILE}" ]; then
+  if [ ! -f "${CONFIG_DIR}/${CONFIG_FILE_IN_DIR}" ]; then
     echo "No config file is given. Mount a config dir or file."
     exit 1
   fi

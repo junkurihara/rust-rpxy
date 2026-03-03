@@ -81,6 +81,6 @@ RUN chmod +x /rpxy/run.sh && \
 
 EXPOSE 80 443
 
-CMD ["/usr/bin/bash" "/rpxy/entrypoint.sh"]
+CMD ["/usr/bin/bash", "/rpxy/entrypoint.sh"]
 
 ENTRYPOINT ["/usr/bin/bash", "/rpxy/entrypoint.sh"]
