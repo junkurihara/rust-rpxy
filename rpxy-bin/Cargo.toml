@@ -46,7 +46,7 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 anyhow = { version = "1.0.102" }
 ahash = { version = "0.8.12" }
 serde = { version = "1.0.228", default-features = false, features = ["derive"] }
-tokio = { version = "1.49.0", default-features = false, features = [
+tokio = { version = "1.50.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
