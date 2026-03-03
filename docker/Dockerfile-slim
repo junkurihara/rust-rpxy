@@ -1,3 +1,6 @@
+# Shared arguments for both builder and runner stages
+ARG BUILD_ARTIFACTS=/tmp/target
+
 ########################################
 FROM --platform=$BUILDPLATFORM messense/rust-musl-cross:${TARGETARCH}-musl AS builder
 
@@ -5,7 +8,10 @@ LABEL maintainer="Jun Kurihara"
 
 ARG TARGETARCH
 ARG CARGO_FEATURES
-ENV CARGO_FEATURES=${CARGO_FEATURES}
+ARG BUILD_ARTIFACTS
+
+ARG CFLAGS=-Ofast
+ARG RUSTFLAGS="-C link-arg=-s"
 
 RUN if [ $TARGETARCH = "amd64" ]; then \
   echo "x86_64" > /arch; \
@@ -16,30 +22,27 @@ RUN if [ $TARGETARCH = "amd64" ]; then \
   exit 1; \
   fi
 
-ENV CFLAGS=-Ofast
+WORKDIR /build
 
-WORKDIR /tmp
-
-COPY . /tmp/
-
-ENV RUSTFLAGS="-C link-arg=-s"
-
-RUN echo "Building rpxy from source" && \
+RUN --mount=type=bind,target=. \
+  echo "Building rpxy from source" && \
   # force to reinstall rustup to get the latest version
   rm -rf ~/.rustup && \
   curl https://sh.rustup.rs -sqSf | sh -s -- -y --profile minimal --default-toolchain stable --default-host $(uname -m)-unknown-linux-gnu && \
   rustup target add $(cat /arch)-unknown-linux-musl || rustup component add --toolchain stable rust-src && \
   rustup component add --toolchain stable rustfmt clippy && \
   # build rpxy
-  cargo build --release --target $(cat /arch)-unknown-linux-musl ${CARGO_FEATURES} && \
-  musl-strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy && \
-  cp /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy /tmp/target/release/rpxy
+  cargo build --release --target $(cat /arch)-unknown-linux-musl --target-dir ${BUILD_ARTIFACTS} ${CARGO_FEATURES} && \
+  musl-strip --strip-all ${BUILD_ARTIFACTS}/$(cat /arch)-unknown-linux-musl/release/rpxy && \
+  cp ${BUILD_ARTIFACTS}/$(cat /arch)-unknown-linux-musl/release/rpxy ${BUILD_ARTIFACTS}/release/rpxy
 
 ########################################
 FROM --platform=$TARGETPLATFORM alpine:latest AS runner
+
 LABEL maintainer="Jun Kurihara"
 
-ENV RUNTIME_DEPS="logrotate ca-certificates su-exec"
+ARG BUILD_ARTIFACTS
+ARG RUNTIME_DEPS="logrotate ca-certificates su-exec"
 
 RUN apk add --no-cache ${RUNTIME_DEPS} && \
   update-ca-certificates && \
@@ -50,13 +53,14 @@ RUN apk add --no-cache ${RUNTIME_DEPS} && \
   mkdir -p /rpxy/cache &&\
   mkdir -p /rpxy/config
 
-COPY --from=builder /tmp/target/release/rpxy /rpxy/bin/rpxy
+COPY --from=builder ${BUILD_ARTIFACTS}/release/rpxy /rpxy/bin/rpxy
 COPY ./docker/run.sh /rpxy
 COPY ./docker/entrypoint.sh /rpxy
 
 RUN chmod +x /rpxy/run.sh && \
   chmod +x /rpxy/entrypoint.sh
 
+# Set environment variables for SSL certificates used in runtime
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
