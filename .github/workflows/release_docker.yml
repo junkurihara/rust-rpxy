@@ -118,7 +118,7 @@ jobs:
 
       - name: Restore BuildKit cache mounts
         id: buildkit-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/buildkit-cache/${{ matrix.target }}
           key: ${{ runner.os }}-buildkit-cache-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'docker/Dockerfile', 'docker/Dockerfile-slim') }}
