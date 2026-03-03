@@ -11,6 +11,7 @@ LABEL maintainer="Jun Kurihara"
 ARG TARGETARCH
 ARG CARGO_FEATURES
 ARG BUILD_ARTIFACTS
+ARG CARGO_TARGET_CACHE=/tmp/cargo-target-cache
 
 ARG CFLAGS=-Ofast
 ARG RUSTFLAGS="-C link-arg=-s"
@@ -26,17 +27,23 @@ RUN if [ $TARGETARCH = "amd64" ]; then \
 
 WORKDIR /build
 
-RUN --mount=type=bind,target=. \
-  echo "Building rpxy from source" && \
+RUN echo "Install toolchain" && \
   # force to reinstall rustup to get the latest version
   rm -rf ~/.rustup && \
   curl https://sh.rustup.rs -sqSf | sh -s -- -y --profile minimal --default-toolchain stable --default-host $(uname -m)-unknown-linux-gnu && \
   rustup target add $(cat /arch)-unknown-linux-musl || rustup component add --toolchain stable rust-src && \
-  rustup component add --toolchain stable rustfmt clippy && \
+  rustup component add --toolchain stable rustfmt clippy
+
+RUN --mount=type=bind,target=. \
+  --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
+  --mount=type=cache,target=/root/.cargo/git,sharing=locked \
+  --mount=type=cache,target=${CARGO_TARGET_CACHE},sharing=locked \
+  echo "Building rpxy from source" && \
   # build rpxy
-  cargo build --release --target $(cat /arch)-unknown-linux-musl --target-dir ${BUILD_ARTIFACTS} ${CARGO_FEATURES} && \
-  musl-strip --strip-all ${BUILD_ARTIFACTS}/$(cat /arch)-unknown-linux-musl/release/rpxy && \
-  cp ${BUILD_ARTIFACTS}/$(cat /arch)-unknown-linux-musl/release/rpxy ${BUILD_ARTIFACTS}/release/rpxy
+  cargo build --release --target $(cat /arch)-unknown-linux-musl --target-dir ${CARGO_TARGET_CACHE} ${CARGO_FEATURES} && \
+  mkdir -p ${BUILD_ARTIFACTS}/release && \
+  cp ${CARGO_TARGET_CACHE}/$(cat /arch)-unknown-linux-musl/release/rpxy ${BUILD_ARTIFACTS}/release/rpxy && \
+  musl-strip --strip-all ${BUILD_ARTIFACTS}/release/rpxy
 
 ########################################
 FROM --platform=$TARGETPLATFORM alpine:latest AS runner

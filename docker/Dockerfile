@@ -15,6 +15,7 @@ ARG CFLAGS=-Ofast
 ARG RUSTFLAGS="-C link-arg=-s"
 ARG BUILD_DEPS="curl make ca-certificates build-essential"
 ARG TARGET_SUFFIX=unknown-linux-gnu
+ARG CARGO_TARGET_CACHE=/tmp/cargo-target-cache
 
 ARG TARGETARCH
 ARG CARGO_FEATURES
@@ -33,16 +34,26 @@ RUN if [ $TARGETARCH = "amd64" ]; then \
 
 RUN update-ca-certificates 2> /dev/null || true
 
-RUN --mount=type=bind,target=. \
-  apt update && apt install -qy --no-install-recommends $BUILD_DEPS ${ADDITIONAL_DEPS} && \
-  curl -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain stable && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && \
+  apt-get install -qy --no-install-recommends $BUILD_DEPS ${ADDITIONAL_DEPS}
+
+RUN curl -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal --default-toolchain stable && \
   export PATH="$HOME/.cargo/bin:$PATH" && \
   echo "Install toolchain" && \
-  rustup target add $(cat /arch)-${TARGET_SUFFIX} && \
+  rustup target add $(cat /arch)-${TARGET_SUFFIX}
+
+RUN --mount=type=bind,target=. \
+  --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
+  --mount=type=cache,target=/root/.cargo/git,sharing=locked \
+  --mount=type=cache,target=${CARGO_TARGET_CACHE},sharing=locked \
+  export PATH="$HOME/.cargo/bin:$PATH" && \
   echo "Building rpxy from source" && \
-  cargo build --release --target=$(cat /arch)-${TARGET_SUFFIX} --target-dir ${BUILD_ARTIFACTS} ${CARGO_FEATURES} && \
-  strip --strip-all ${BUILD_ARTIFACTS}/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy &&\
-  cp ${BUILD_ARTIFACTS}/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy ${BUILD_ARTIFACTS}/release/rpxy
+  cargo build --release --target=$(cat /arch)-${TARGET_SUFFIX} --target-dir ${CARGO_TARGET_CACHE} ${CARGO_FEATURES} && \
+  mkdir -p ${BUILD_ARTIFACTS}/release && \
+  cp ${CARGO_TARGET_CACHE}/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy ${BUILD_ARTIFACTS}/release/rpxy && \
+  strip --strip-all ${BUILD_ARTIFACTS}/release/rpxy
 
 ########################################
 FROM --platform=$TARGETPLATFORM base AS runner
