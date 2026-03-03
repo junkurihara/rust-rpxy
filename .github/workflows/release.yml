@@ -19,7 +19,7 @@ jobs:
       packages: read
 
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }} || ${{ github.event_name == 'repositry_dispatch' }}
+    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'repository_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
