@@ -209,8 +209,14 @@ jobs:
           text: ${{ github.event.pull_request.title }}
           regex: "^(\\d+\\.\\d+\\.\\d+)$"
 
+      - name: validate release version
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true && steps.regex-match.outputs.match == '' }}
+        run: |
+          echo "Release pull request title must match x.y.z"
+          exit 1
+
       - name: Release build and push from main branch
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true && steps.regex-match.outputs.match != '' }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -220,8 +226,8 @@ jobs:
             ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ env.DH_REGISTRY_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ matrix.aliases }}
-            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:${{ github.event.pull_request.title }}${{ matrix.tags-suffix }}
-            ${{ env.DH_REGISTRY_NAME }}:${{ github.event.pull_request.title }}${{ matrix.tags-suffix }}
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:${{ steps.regex-match.outputs.match }}${{ matrix.tags-suffix }}
+            ${{ env.DH_REGISTRY_NAME }}:${{ steps.regex-match.outputs.match }}${{ matrix.tags-suffix }}
           build-contexts: ${{ matrix.build-contexts }}
           file: ${{ matrix.dockerfile }}
           cache-from: type=gha,scope=${{ env.CACHE_SCOPE }}
@@ -238,8 +244,21 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
     needs: build_and_push
     steps:
+      - name: check pull_request title
+        uses: kaisugi/action-regex-match@v1.0.2
+        id: regex-match
+        with:
+          text: ${{ github.event.pull_request.title }}
+          regex: "^(\\d+\\.\\d+\\.\\d+)$"
+
+      - name: validate release version
+        if: ${{ steps.regex-match.outputs.match == '' }}
+        run: |
+          echo "Release pull request title must match x.y.z"
+          exit 1
+
       - name: Repository dispatch for release
         uses: peter-evans/repository-dispatch@v4
         with:
           event-type: release-event
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "pull_request": { "title": "${{ github.event.pull_request.title }}", "body": ${{ toJson(github.event.pull_request.body) }}, "number": "${{ github.event.pull_request.number }}", "head": "${{ github.event.pull_request.head.ref }}", "base": "${{ github.event.pull_request.base.ref}}"}}'
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "pull_request": { "title": "${{ steps.regex-match.outputs.match }}", "body": ${{ toJson(github.event.pull_request.body) }}, "number": "${{ github.event.pull_request.number }}", "head": "${{ github.event.pull_request.head.ref }}", "base": "${{ github.event.pull_request.base.ref}}"}}'
