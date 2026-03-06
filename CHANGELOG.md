@@ -1,6 +1,6 @@
 # CHANGELOG
 
-##  0.11.1 or 0.12.0 (Unreleased)
+## 0.11.1 or 0.12.0 (Unreleased)
 
 ## 0.11.0
 

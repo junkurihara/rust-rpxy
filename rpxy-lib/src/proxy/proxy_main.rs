@@ -130,7 +130,7 @@ const PROXY_PROTOCOL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg(feature = "proxy-protocol")]
 /// Extracts and parses the PROXY protocol header from the given TCP stream, returning the real client address.
 async fn extract_parse_result_from_proxy_protocol_header(
-  mut stream: &mut TcpStream,
+  stream: &mut TcpStream,
   peer_addr: SocketAddr,
   pp_config: TcpRecvProxyProtocolConfig,
 ) -> Result<SocketAddr, std::io::Error> {
@@ -141,7 +141,7 @@ async fn extract_parse_result_from_proxy_protocol_header(
   };
   let parse_result = match timeout(
     effective_timeout,
-    super::proxy_protocol::parse_inbound_proxy_header(&mut stream, &peer_addr, &pp_config),
+    super::proxy_protocol::parse_inbound_proxy_header(stream, &peer_addr, &pp_config),
   )
   .await
   {
