@@ -435,6 +435,55 @@ mod tests {
     assert_eq!(&remaining, app_data);
   }
 
+  // --- v2 DoS protection tests ---
+
+  #[tokio::test]
+  async fn test_v2_oversized_addr_len_rejected() {
+    // Craft a v2 header with addr_len = V2_MAX_ADDR_LEN + 1 to verify the allocation guard.
+    // The check fires before read_exact, so only the 16-byte fixed header is needed in the stream.
+    let mut header = [0u8; V2_HEADER_FIXED_SIZE];
+    header[..12].copy_from_slice(V2_SIGNATURE);
+    header[12] = 0x21; // version 2, PROXY command
+    header[13] = 0x11; // IPv4 family, stream protocol
+    let oversized: u16 = (V2_MAX_ADDR_LEN as u16) + 1;
+    header[14] = (oversized >> 8) as u8;
+    header[15] = (oversized & 0xff) as u8;
+
+    let (mut server, _client) = setup_stream_with_data(&header).await;
+    let peer: SocketAddr = "10.0.0.2:9999".parse().unwrap();
+    let config = trusted_config(&["10.0.0.0/8"]);
+
+    let err = parse_inbound_proxy_header(&mut server, &peer, &config).await.unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+  }
+
+  #[tokio::test]
+  async fn test_v2_maximum_valid_addr_len_accepted() {
+    // Verify that addr_len == V2_MAX_ADDR_LEN passes the allocation guard (the bound is inclusive).
+    // A zero-filled addr payload happens to be accepted by the ppp crate as an IPv4 PROXY header
+    // with 0.0.0.0 addresses; the important thing is that no allocation-cap error is returned.
+    let mut header = vec![0u8; V2_HEADER_FIXED_SIZE + V2_MAX_ADDR_LEN];
+    header[..12].copy_from_slice(V2_SIGNATURE);
+    header[12] = 0x21; // version 2, PROXY command
+    header[13] = 0x11; // IPv4 family, stream protocol
+    let max_len: u16 = V2_MAX_ADDR_LEN as u16;
+    header[14] = (max_len >> 8) as u8;
+    header[15] = (max_len & 0xff) as u8;
+
+    let (mut server, _client) = setup_stream_with_data(&header).await;
+    let peer: SocketAddr = "10.0.0.2:9999".parse().unwrap();
+    let config = trusted_config(&["10.0.0.0/8"]);
+
+    // The addr_len guard must NOT reject this — confirming the bound is V2_MAX_ADDR_LEN (inclusive).
+    let result = parse_inbound_proxy_header(&mut server, &peer, &config).await;
+    if let Err(ref e) = result {
+      assert!(
+        !e.to_string().contains("addr_len"),
+        "addr_len guard must not fire for addr_len == V2_MAX_ADDR_LEN; got: {e}"
+      );
+    }
+  }
+
   // --- Error cases ---
 
   #[tokio::test]
