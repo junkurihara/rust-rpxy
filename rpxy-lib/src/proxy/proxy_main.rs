@@ -219,10 +219,12 @@ where
       info!("Start TCP proxy serving with HTTP request for configured host names");
       #[cfg(not(feature = "proxy-protocol"))]
       while let Ok((stream, client_addr)) = tcp_listener.accept().await {
+        trace!("Accepted TCP connection from {client_addr}");
         self.serve_connection(TokioIo::new(stream), client_addr, None);
       }
       #[cfg(feature = "proxy-protocol")]
       while let Ok((mut stream, client_addr)) = tcp_listener.accept().await {
+        trace!("Accepted TCP connection from {client_addr}");
         // [PROXY-PROTOCOL] Parse PROXY header before serving connection
         if self.globals.proxy_config.tcp_recv_proxy_protocol.is_some() {
           let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone().unwrap();
@@ -328,6 +330,7 @@ where
           let (mut raw_stream, client_addr) = tcp_cnx.unwrap();
           #[cfg(not(feature = "proxy-protocol"))]
           let (raw_stream, client_addr) = tcp_cnx.unwrap();
+          trace!("Accepted TCP connection from {client_addr} at TLS listener");
 
           let sc_map_inner = server_crypto_map.clone();
           let self_inner = self.clone();
