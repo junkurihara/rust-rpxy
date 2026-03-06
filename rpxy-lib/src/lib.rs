@@ -28,9 +28,13 @@ use tokio_util::sync::CancellationToken;
 
 /* ------------------------------------------------ */
 pub use crate::constants::log_event_names;
+#[cfg(feature = "proxy-protocol")]
+pub use crate::globals::TcpRecvProxyProtocolConfig;
 pub use crate::globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
 pub mod reexports {
   pub use hyper::Uri;
+  #[cfg(feature = "proxy-protocol")]
+  pub use ipnet::IpNet;
 }
 
 #[derive(derive_builder::Builder)]
@@ -98,6 +102,22 @@ pub async fn entrypoint(
     info!("Cache is enabled: cache dir = {:?}", proxy_config.cache_dir.as_ref().unwrap());
   } else {
     info!("Cache is disabled")
+  }
+  #[cfg(feature = "proxy-protocol")]
+  if let Some(ref pp_config) = proxy_config.tcp_recv_proxy_protocol {
+    info!(
+      "PROXY Protocol is enabled for trusted proxies: {:?}",
+      pp_config.trusted_proxies
+    );
+    warn!(
+      "PROXY Protocol is enabled. Ensure that ALL TCP connections originate from a listed trusted proxy, as PROXY headers are not authenticated."
+    );
+    warn!(
+      "All incoming TCP (i.e., HTTP/1.1 and HTTP/2) connections are expected to include a valid PROXY header. Connections without a valid PROXY header will be rejected. Configure your upstream L4 proxy (e.g., rpxy-l4) to send PROXY headers accordingly."
+    );
+    warn!(
+      "Note that even if PROXY Protocol is enabled, HTTP/3 connections are not affected and will work without PROXY headers, as PROXY Protocol is only for TCP-based protocols. HTTP/3 connections will still be accepted without PROXY headers regardless of this setting."
+    );
   }
 
   #[cfg(not(feature = "post-quantum"))]

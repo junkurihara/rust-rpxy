@@ -3,11 +3,11 @@ use crate::error::{anyhow, ensure};
 use ahash::HashMap;
 use clap::Arg;
 use hot_reload::{ReloaderReceiver, ReloaderService};
-use rpxy_certs::{build_cert_reloader, CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase};
+use rpxy_certs::{CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase, build_cert_reloader};
 use rpxy_lib::{AppConfigList, ProxyConfig};
 
 #[cfg(feature = "acme")]
-use rpxy_acme::{AcmeManager, ACME_DIR_URL, ACME_REGISTRY_PATH};
+use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
 
 /// Parsed options from CLI
 /// Options for configuring the application.
