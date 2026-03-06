@@ -376,7 +376,7 @@ where
 
           // spawns async handshake to avoid blocking thread by sequential handshake.
           self.globals.runtime_handle.spawn(async move {
-            // Hold the semaphore permit for the entire task lifetime (PROXY parse + TLS handshake + serve)
+            // Hold the semaphore permit for the PROXY-parse + TLS-handshake task; active connections are bounded separately (e.g. via `request_count`)
             #[cfg(feature = "proxy-protocol")]
             let _permit = pp_permit;
 
