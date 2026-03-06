@@ -523,18 +523,21 @@ mod tests {
     let peer: SocketAddr = "10.0.0.2:9999".parse().unwrap();
     let config = trusted_config(&["10.0.0.0/8"]);
 
-    // Wrap with a short timeout to avoid waiting for the full PEEK_NO_PROGRESS_TIMEOUT (5s)
+    // parse_inbound_proxy_header has no internal deadline: it loops on peek retries until the
+    // caller's timeout fires. Wrap with a short timeout so the test doesn't block for the full
+    // production-level timeout that proxy_main.rs applies.
     let result = tokio::time::timeout(
       std::time::Duration::from_millis(200),
       parse_inbound_proxy_header(&mut server, &peer, &config),
     )
     .await;
 
-    // Either the outer timeout fires or the inner no-progress detection fires — both are acceptable
+    // The test timeout fires (peek keeps looping on the partial bytes) or UnexpectedEof is
+    // returned if the connection FIN is detected after the partial data is exhausted.
     match result {
-      Err(_elapsed) => {} // outer timeout fired
+      Err(_elapsed) => {} // test timeout fired — expected for stuck partial data
       Ok(Err(e)) => assert!(
-        e.kind() == std::io::ErrorKind::TimedOut || e.kind() == std::io::ErrorKind::UnexpectedEof,
+        e.kind() == std::io::ErrorKind::UnexpectedEof,
         "Unexpected error kind: {e:?}"
       ),
       Ok(Ok(_)) => panic!("Expected error for partial PROXY header, got success"),
