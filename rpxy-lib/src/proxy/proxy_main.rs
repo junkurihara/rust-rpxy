@@ -230,6 +230,11 @@ where
         trace!("Accepted TCP connection from {client_addr}");
         // [PROXY-PROTOCOL] Parse PROXY header before serving connection
         if self.globals.proxy_config.tcp_recv_proxy_protocol.is_some() {
+          // Early max_clients check to prevent unbounded PROXY parsing tasks
+          if self.globals.request_count.current() >= self.globals.proxy_config.max_clients {
+            debug!("Max clients reached, dropping connection from {client_addr} before PROXY header parsing");
+            continue;
+          }
           let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone().unwrap();
           let self_inner = self.clone();
           self.globals.runtime_handle.spawn(async move {
@@ -340,6 +345,13 @@ where
 
           #[cfg(feature = "proxy-protocol")]
           let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone();
+
+          // Early max_clients check to prevent unbounded PROXY parsing / TLS handshake tasks
+          #[cfg(feature = "proxy-protocol")]
+          if pp_config.is_some() && self.globals.request_count.current() >= self.globals.proxy_config.max_clients {
+            debug!("Max clients reached, dropping connection from {client_addr} before PROXY header parsing (TLS)");
+            continue;
+          }
 
           // spawns async handshake to avoid blocking thread by sequential handshake.
           self.globals.runtime_handle.spawn(async move {

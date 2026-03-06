@@ -13,8 +13,11 @@ const V1_PREFIX: &[u8; 6] = b"PROXY ";
 const V1_MAX_LENGTH: usize = 107;
 /// Interval between peek retries when waiting for enough bytes
 const PEEK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
-/// Maximum number of peek retries without progress before giving up
-const PEEK_MAX_RETRIES: u32 = 20;
+/// Maximum duration to wait without receiving additional bytes before giving up.
+/// This acts as a safety net for detecting stalled connections (e.g., partial data
+/// followed by peer silence). For timeout > 0, the outer `tokio::time::timeout`
+/// fires first; for timeout = 0, this prevents indefinite hangs.
+const PEEK_NO_PROGRESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Normalize an IPv4-mapped IPv6 address to plain IPv4.
 ///
@@ -60,9 +63,16 @@ pub(crate) async fn parse_inbound_proxy_header(
   let mut peek_buf = [0u8; V2_HEADER_FIXED_SIZE];
   let peeked = {
     let mut last_n = 0usize;
-    let mut retries = 0u32;
+    let mut last_progress_at = tokio::time::Instant::now();
     loop {
       let n = stream.peek(&mut peek_buf).await?;
+      // EOF: peer closed the connection with no data in buffer
+      if n == 0 {
+        return Err(std::io::Error::new(
+          std::io::ErrorKind::UnexpectedEof,
+          "Connection closed before PROXY header could be read",
+        ));
+      }
       if n >= V2_HEADER_FIXED_SIZE {
         break n;
       }
@@ -71,20 +81,18 @@ pub(crate) async fn parse_inbound_proxy_header(
       if n >= 6 && peek_buf[..6] == *V1_PREFIX {
         break n;
       }
-      // No progress and exceeded retry limit
-      if n <= last_n {
-        retries += 1;
-        if retries >= PEEK_MAX_RETRIES {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("Too few bytes to detect PROXY header version (got {n} bytes after {retries} retries)"),
-          ));
-        }
-      } else {
-        // Made progress, reset retry counter
-        retries = 0;
+      if n > last_n {
+        last_n = n;
+        last_progress_at = tokio::time::Instant::now();
+      } else if last_progress_at.elapsed() >= PEEK_NO_PROGRESS_TIMEOUT {
+        return Err(std::io::Error::new(
+          std::io::ErrorKind::TimedOut,
+          format!(
+            "No progress receiving PROXY header for {}s (got {n} bytes, need at least {V2_HEADER_FIXED_SIZE})",
+            PEEK_NO_PROGRESS_TIMEOUT.as_secs()
+          ),
+        ));
       }
-      last_n = n;
       tokio::time::sleep(PEEK_RETRY_INTERVAL).await;
     }
   };
@@ -449,16 +457,44 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_too_few_bytes() {
-    let data = b"PRO";
-    let (mut server, mut client) = setup_stream_with_data(data).await;
-    // Close client so peek returns only 3 bytes and makes no further progress
+  async fn test_eof_no_data() {
+    // Peer closes immediately without sending any data
+    let (mut server, mut client) = setup_stream_with_data(b"").await;
     client.shutdown().await.unwrap();
+    // Small delay to allow the FIN to propagate
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     let peer: SocketAddr = "10.0.0.2:9999".parse().unwrap();
     let config = trusted_config(&["10.0.0.0/8"]);
 
     let err = parse_inbound_proxy_header(&mut server, &peer, &config).await.unwrap_err();
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    assert!(err.to_string().contains("Too few bytes"));
+    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+  }
+
+  #[tokio::test]
+  async fn test_partial_data_then_close() {
+    // Peer sends partial data then closes — the outer timeout (in proxy_main.rs)
+    // handles this case. Here we verify the parse doesn't complete successfully.
+    let data = b"PRO";
+    let (mut server, mut client) = setup_stream_with_data(data).await;
+    client.shutdown().await.unwrap();
+    let peer: SocketAddr = "10.0.0.2:9999".parse().unwrap();
+    let config = trusted_config(&["10.0.0.0/8"]);
+
+    // Wrap with a short timeout to avoid waiting for the full PEEK_NO_PROGRESS_TIMEOUT (5s)
+    let result = tokio::time::timeout(
+      std::time::Duration::from_millis(200),
+      parse_inbound_proxy_header(&mut server, &peer, &config),
+    )
+    .await;
+
+    // Either the outer timeout fires or the inner no-progress detection fires — both are acceptable
+    match result {
+      Err(_elapsed) => {} // outer timeout fired
+      Ok(Err(e)) => assert!(
+        e.kind() == std::io::ErrorKind::TimedOut || e.kind() == std::io::ErrorKind::UnexpectedEof,
+        "Unexpected error kind: {e:?}"
+      ),
+      Ok(Ok(_)) => panic!("Expected error for partial PROXY header, got success"),
+    }
   }
 }

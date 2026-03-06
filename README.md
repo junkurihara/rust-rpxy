@@ -362,11 +362,11 @@ To enable this feature, add `[experimental.tcp_recv_proxy_protocol]` to your `co
 ```toml
 [experimental.tcp_recv_proxy_protocol]
 trusted_proxies = ["127.0.0.1/32", "::1/128"]  # required, non-empty CIDR list (IPv4 and/or IPv6)
-timeout = 50  # optional, milliseconds (default: 50ms). 0 = no timeout (not recommended).
+timeout = 50  # optional, milliseconds (default: 50ms). 0 = no explicit timeout (not recommended).
 ```
 
 - `trusted_proxies` (required): A list of CIDR ranges. Only connections from these source IPs are allowed to send PROXY headers. Connections from other IPs are immediately closed.
-- `timeout` (optional): Maximum time in milliseconds to wait for the PROXY header after TCP accept. Defaults to 50ms. Setting `0` disables the timeout (not recommended in production).
+- `timeout` (optional): Maximum time in milliseconds to wait for the PROXY header after TCP accept. Defaults to 50ms. Setting `0` disables the explicit timeout, though an internal no-progress safety net (~5s) still prevents indefinite hangs if the peer stops sending mid-header. Not recommended in production.
 
 This feature is built by default. To disable it at compile time, build with `--no-default-features` and omit the `proxy-protocol` feature.
 
