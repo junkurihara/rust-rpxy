@@ -61,7 +61,10 @@ struct TlsHandshakeResult {
 }
 
 /// TLS handshake and certificate management for TLS listener service
-async fn serve_tls_handshake(raw_stream: TcpStream, server_configs_acme_challenge: Arc<HashMap<String, Arc<rustls::ServerConfig>>>, server_crypto_map: Option<Arc<HashMap<ServerName, Arc<rustls::ServerConfig>>>>) -> RpxyResult<TlsHandshakeResult> {
+async fn serve_tls_handshake(
+  raw_stream: TcpStream,
+  #[cfg(feature = "acme")] server_configs_acme_challenge: Arc<HashMap<String, Arc<rustls::ServerConfig>>>,
+  server_crypto_map: Option<Arc<HashMap<ServerName, Arc<rustls::ServerConfig>>>>) -> RpxyResult<TlsHandshakeResult> {
   let acceptor = tokio_rustls::LazyConfigAcceptor::new(tokio_rustls::rustls::server::Acceptor::default(), raw_stream).await;
   if let Err(e) = acceptor {
     return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
@@ -358,7 +361,10 @@ where
               }
             };
 
+            #[cfg(feature = "acme")]
             let tls_handshake_fut = serve_tls_handshake(raw_stream, server_configs_acme_challenge, sc_map_inner);
+            #[cfg(not(feature = "acme"))]
+            let tls_handshake_fut = serve_tls_handshake(raw_stream, sc_map_inner);
 
             // timeout is introduced to avoid get stuck here.
             let Ok(tls_handshake_result) = timeout(
@@ -389,7 +395,7 @@ where
             #[cfg(not(feature = "acme"))]
             {
               match tls_handshake_result {
-                Ok(TlsHandshakeResult { mut stream, server_name, is_handshake_acme }) => {
+                Ok(TlsHandshakeResult { stream, server_name }) => {
                   self_inner.serve_connection(stream, client_addr, Some(server_name));
                 }
                 Err(e) => {
