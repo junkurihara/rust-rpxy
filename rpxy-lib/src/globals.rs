@@ -62,7 +62,7 @@ pub struct ProxyConfig {
 
   #[cfg(feature = "proxy-protocol")]
   /// TCP inbound PROXY protocol receive configuration
-  pub tcp_recv_proxy_protocol: Option<TcpRecvProxyProtocolConfig>,
+  pub tcp_recv_proxy_protocol: Option<std::sync::Arc<TcpRecvProxyProtocolConfig>>,
 
   /// Connection handling timeout
   /// timeout to handle a connection, total time of receive request, serve, and send response. this might limits the max length of response.

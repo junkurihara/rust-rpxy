@@ -64,7 +64,7 @@ struct TlsHandshakeResult {
 async fn serve_tls_handshake(
   raw_stream: TcpStream,
   #[cfg(feature = "acme")] server_configs_acme_challenge: Arc<HashMap<String, Arc<rustls::ServerConfig>>>,
-  server_crypto_map: Option<Arc<HashMap<ServerName, Arc<rustls::ServerConfig>>>>) -> RpxyResult<TlsHandshakeResult> {
+  server_crypto_map: Arc<HashMap<ServerName, Arc<rustls::ServerConfig>>>) -> RpxyResult<TlsHandshakeResult> {
   let acceptor = tokio_rustls::LazyConfigAcceptor::new(tokio_rustls::rustls::server::Acceptor::default(), raw_stream).await;
   if let Err(e) = acceptor {
     return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
@@ -91,7 +91,7 @@ async fn serve_tls_handshake(
       is_handshake_acme = true;
       server_crypto_acme
     } else {
-      let server_crypto = server_crypto_map.as_ref().unwrap().get(server_name.as_ref().unwrap());
+      let server_crypto = server_crypto_map.as_ref().get(server_name.as_ref().unwrap());
       let Some(server_crypto) = server_crypto else {
         return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
       };
@@ -101,7 +101,7 @@ async fn serve_tls_handshake(
   /* ------------------ */
   #[cfg(not(feature = "acme"))]
   let server_crypto = {
-    let server_crypto = server_crypto_map.as_ref().unwrap().get(server_name.as_ref().unwrap());
+    let server_crypto = server_crypto_map.get(server_name.as_ref().unwrap());
     let Some(server_crypto) = server_crypto else {
       return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
     };
@@ -349,15 +349,14 @@ where
           if tcp_cnx.is_err() || server_crypto_map.is_none() {
             continue;
           }
+          let sc_map_inner = server_crypto_map.clone().unwrap();
+          let self_inner = self.clone();
 
           #[cfg(feature = "proxy-protocol")]
           let (mut raw_stream, client_addr) = tcp_cnx.unwrap();
           #[cfg(not(feature = "proxy-protocol"))]
           let (raw_stream, client_addr) = tcp_cnx.unwrap();
           trace!("Accepted TCP connection from {client_addr} at TLS listener");
-
-          let sc_map_inner = server_crypto_map.clone();
-          let self_inner = self.clone();
 
           #[cfg(feature = "proxy-protocol")]
           let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone();

@@ -14,8 +14,10 @@ const V1_MAX_LENGTH: usize = 107;
 /// Interval between peek retries when waiting for enough bytes
 const PEEK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
 /// Maximum allowed v2 addr_len to prevent oversized allocation from a malicious header.
-/// IPv6 addresses + TLVs should never exceed this. (HAProxy spec: max ~232 bytes for addresses + TLVs)
-const V2_MAX_ADDR_LEN: usize = 512;
+/// Addresses are at most 216 bytes (Unix), but TLVs (e.g., PP2_TYPE_SSL) can be large.
+/// 2048 bytes is generous enough for real-world PROXY v2 emitters while still guarding
+/// against pathological allocations (addr_len is u16, max 65535).
+const V2_MAX_ADDR_LEN: usize = 2048;
 
 /// Normalize an IPv4-mapped IPv6 address to plain IPv4.
 ///

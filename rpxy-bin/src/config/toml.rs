@@ -340,10 +340,10 @@ impl TryInto<ProxyConfig> for &ConfigToml {
           Some(0) => Duration::ZERO,
           Some(ms) => Duration::from_millis(ms),
         };
-        proxy_config.tcp_recv_proxy_protocol = Some(TcpRecvProxyProtocolConfig {
+        proxy_config.tcp_recv_proxy_protocol = Some(std::sync::Arc::new(TcpRecvProxyProtocolConfig {
           trusted_proxies,
           timeout,
-        });
+        }));
       }
     }
 
