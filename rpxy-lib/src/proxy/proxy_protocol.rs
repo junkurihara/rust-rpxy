@@ -13,11 +13,6 @@ const V1_PREFIX: &[u8; 6] = b"PROXY ";
 const V1_MAX_LENGTH: usize = 107;
 /// Interval between peek retries when waiting for enough bytes
 const PEEK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
-/// Maximum duration to wait without receiving additional bytes before giving up.
-/// This acts as a safety net for detecting stalled connections (e.g., partial data
-/// followed by peer silence). For timeout > 0, the outer `tokio::time::timeout`
-/// fires first; for timeout = 0, this prevents indefinite hangs.
-const PEEK_NO_PROGRESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Normalize an IPv4-mapped IPv6 address to plain IPv4.
 ///
@@ -62,8 +57,6 @@ pub(crate) async fn parse_inbound_proxy_header(
   //    so retry with a short sleep until we have enough bytes for version detection.
   let mut peek_buf = [0u8; V2_HEADER_FIXED_SIZE];
   let peeked = {
-    let mut last_n = 0usize;
-    let mut last_progress_at = tokio::time::Instant::now();
     loop {
       let n = stream.peek(&mut peek_buf).await?;
       // EOF: peer closed the connection with no data in buffer
@@ -81,18 +74,8 @@ pub(crate) async fn parse_inbound_proxy_header(
       if n >= 6 && peek_buf[..6] == *V1_PREFIX {
         break n;
       }
-      if n > last_n {
-        last_n = n;
-        last_progress_at = tokio::time::Instant::now();
-      } else if last_progress_at.elapsed() >= PEEK_NO_PROGRESS_TIMEOUT {
-        return Err(std::io::Error::new(
-          std::io::ErrorKind::TimedOut,
-          format!(
-            "No progress receiving PROXY header for {}s (got {n} bytes, need at least {V2_HEADER_FIXED_SIZE})",
-            PEEK_NO_PROGRESS_TIMEOUT.as_secs()
-          ),
-        ));
-      }
+      // Deadline enforcement is handled by the outer tokio::time::timeout
+      // in extract_parse_result_from_proxy_protocol_header().
       tokio::time::sleep(PEEK_RETRY_INTERVAL).await;
     }
   };

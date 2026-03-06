@@ -123,27 +123,33 @@ async fn serve_tls_handshake(
 }
 
 #[cfg(feature = "proxy-protocol")]
+/// Fallback timeout when user sets `timeout = 0`. Covers the entire parse
+/// (peek loop, read_exact, etc.) so no phase can hang indefinitely.
+const PROXY_PROTOCOL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[cfg(feature = "proxy-protocol")]
 /// Extracts and parses the PROXY protocol header from the given TCP stream, returning the real client address.
 async fn extract_parse_result_from_proxy_protocol_header(
   mut stream: &mut TcpStream,
   peer_addr: SocketAddr,
   pp_config: TcpRecvProxyProtocolConfig,
 ) -> Result<SocketAddr, std::io::Error> {
-  let parse_result = if pp_config.timeout.is_zero() {
-    super::proxy_protocol::parse_inbound_proxy_header(&mut stream, &peer_addr, &pp_config).await
+  let effective_timeout = if pp_config.timeout.is_zero() {
+    PROXY_PROTOCOL_FALLBACK_TIMEOUT
   } else {
-    match timeout(
-      pp_config.timeout,
-      super::proxy_protocol::parse_inbound_proxy_header(&mut stream, &peer_addr, &pp_config),
-    )
-    .await
-    {
-      Ok(result) => result,
-      Err(_) => Err(std::io::Error::new(
-        std::io::ErrorKind::TimedOut,
-        format!("PROXY header read timed out after {}ms", pp_config.timeout.as_millis()),
-      )),
-    }
+    pp_config.timeout
+  };
+  let parse_result = match timeout(
+    effective_timeout,
+    super::proxy_protocol::parse_inbound_proxy_header(&mut stream, &peer_addr, &pp_config),
+  )
+  .await
+  {
+    Ok(result) => result,
+    Err(_) => Err(std::io::Error::new(
+      std::io::ErrorKind::TimedOut,
+      format!("PROXY header read timed out after {}ms", effective_timeout.as_millis()),
+    )),
   };
   parse_result.map(|opt_addr| opt_addr.unwrap_or(peer_addr))
 }
@@ -226,32 +232,39 @@ where
         self.serve_connection(TokioIo::new(stream), client_addr, None);
       }
       #[cfg(feature = "proxy-protocol")]
-      while let Ok((mut stream, client_addr)) = tcp_listener.accept().await {
-        trace!("Accepted TCP connection from {client_addr}");
-        // [PROXY-PROTOCOL] Parse PROXY header before serving connection
-        if self.globals.proxy_config.tcp_recv_proxy_protocol.is_some() {
-          // Early max_clients check to prevent unbounded PROXY parsing tasks
-          if self.globals.request_count.current() >= self.globals.proxy_config.max_clients {
-            debug!("Max clients reached, dropping connection from {client_addr} before PROXY header parsing");
-            continue;
-          }
-          let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone().unwrap();
-          let self_inner = self.clone();
-          self.globals.runtime_handle.spawn(async move {
-            let parse_result = extract_parse_result_from_proxy_protocol_header(&mut stream, client_addr, pp_config).await;
-            let real_addr = match parse_result {
-              Ok(addr) => addr,
-              Err(e) => {
-                warn!("Failed to parse PROXY header: {e}. Closing connection from {client_addr}");
-                return;
+      {
+        // Semaphore to bound concurrent PROXY parsing tasks (reuses max_clients as the limit)
+        let pp_semaphore = Arc::new(tokio::sync::Semaphore::new(self.globals.proxy_config.max_clients));
+        while let Ok((mut stream, client_addr)) = tcp_listener.accept().await {
+          trace!("Accepted TCP connection from {client_addr}");
+          // [PROXY-PROTOCOL] Parse PROXY header before serving connection
+          if self.globals.proxy_config.tcp_recv_proxy_protocol.is_some() {
+            let permit = match pp_semaphore.clone().try_acquire_owned() {
+              Ok(permit) => permit,
+              Err(_) => {
+                debug!("PROXY parsing task limit reached, dropping connection from {client_addr}");
+                continue;
               }
             };
-            self_inner.serve_connection(TokioIo::new(stream), real_addr, None);
-          });
-          continue;
+            let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone().unwrap();
+            let self_inner = self.clone();
+            self.globals.runtime_handle.spawn(async move {
+              let _permit = permit; // held until task completes
+              let parse_result = extract_parse_result_from_proxy_protocol_header(&mut stream, client_addr, pp_config).await;
+              let real_addr = match parse_result {
+                Ok(addr) => addr,
+                Err(e) => {
+                  warn!("Failed to parse PROXY header: {e}. Closing connection from {client_addr}");
+                  return;
+                }
+              };
+              self_inner.serve_connection(TokioIo::new(stream), real_addr, None);
+            });
+            continue;
+          }
+          // If inbound PROXY protocol is not enabled, serve connection directly with peer address from TCP accept
+          self.serve_connection(TokioIo::new(stream), client_addr, None);
         }
-        // If inbound PROXY protocol is not enabled, serve connection directly with peer address from TCP accept
-        self.serve_connection(TokioIo::new(stream), client_addr, None);
       }
 
       Ok(()) as RpxyResult<()>
@@ -324,6 +337,9 @@ where
     info!("Start TCP proxy serving with HTTPS request for configured host names");
 
     let mut server_crypto_map: Option<Arc<super::SniServerCryptoMap>> = None;
+    // Semaphore to bound concurrent PROXY parsing tasks in TLS path (reuses max_clients as the limit)
+    #[cfg(feature = "proxy-protocol")]
+    let pp_semaphore = Arc::new(tokio::sync::Semaphore::new(self.globals.proxy_config.max_clients));
     loop {
       #[cfg(feature = "acme")]
       let server_configs_acme_challenge = self.globals.server_configs_acme_challenge.clone();
@@ -346,20 +362,26 @@ where
           #[cfg(feature = "proxy-protocol")]
           let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone();
 
-          // Early max_clients check to prevent unbounded PROXY parsing / TLS handshake tasks
           #[cfg(feature = "proxy-protocol")]
-          if pp_config.is_some() && self.globals.request_count.current() >= self.globals.proxy_config.max_clients {
-            debug!("Max clients reached, dropping connection from {client_addr} before PROXY header parsing (TLS)");
-            continue;
-          }
+          let pp_permit = if pp_config.is_some() {
+            match pp_semaphore.clone().try_acquire_owned() {
+              Ok(permit) => Some(permit),
+              Err(_) => {
+                debug!("PROXY parsing task limit reached, dropping connection from {client_addr} (TLS)");
+                continue;
+              }
+            }
+          } else {
+            None
+          };
 
           // spawns async handshake to avoid blocking thread by sequential handshake.
           self.globals.runtime_handle.spawn(async move {
             #[cfg(feature = "proxy-protocol")]
             // [PROXY-PROTOCOL] Parse PROXY header before TLS handshake, and obtain the real client address
-            // Before TLS handshake, the PROXY protocol header is expected to be present if the inbound PROXY protocol is enabled. If parsing fails, the connection will be closed. After this step, client_addr will be the real client address to be used for TLS handshake and further processing.
             let client_addr = {
               if let Some(ref pp_config) = pp_config {
+                let _permit = pp_permit; // held until task completes
                 let parse_result = extract_parse_result_from_proxy_protocol_header(&mut raw_stream, client_addr, pp_config.to_owned()).await;
                 match parse_result {
                   Ok(addr) => addr,
