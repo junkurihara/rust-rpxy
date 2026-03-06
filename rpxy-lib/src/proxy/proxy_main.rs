@@ -182,7 +182,7 @@ where
     I: Read + Write + Send + Unpin + 'static,
   {
     let request_count = self.globals.request_count.clone();
-    if request_count.increment() > self.globals.proxy_config.max_clients {
+    if request_count.increment() >= self.globals.proxy_config.max_clients {
       request_count.decrement();
       return;
     }
