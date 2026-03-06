@@ -1,11 +1,14 @@
 # CHANGELOG
 
-## 0.10.5 or 0.11.0 (Unreleased)
+##  0.11.1 or 0.12.0 (Unreleased)
+
+## 0.11.0
 
 ### Improvement
 
-- Deps and refactor
+- Feat: Support PROXY protocol for incoming TCP connections, i.e., HTTP/1.1 and HTTP/2. This is to support the use case where rpxy is used behind another load balancer or reverse proxy that supports PROXY protocol, e.g., rpxy-l4, AWS ELB, HAProxy, Nginx, etc. To enable this feature, the `proxy-protocol` feature has to be enabled and the `experimental.tcp_recv_proxy_protocol` option in the config file has to be specified. Note that this feature is only for incoming connections and does not affect outgoing connections towards backend applications. Also note that HTTP/3 (QUIC) is not supported for PROXY protocol since its underlying UDP is connectionless and does not fit the layer-4 connection-oriented nature of PROXY protocol.
 
+- Deps and refactor
 
 ### Bugfix
 

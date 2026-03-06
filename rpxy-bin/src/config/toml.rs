@@ -336,7 +336,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
           })
           .collect::<std::result::Result<Vec<_>, _>>()?;
         let timeout = match pp_option.timeout {
-          None => Duration::from_millis(50),
+          None => Duration::from_millis(crate::constants::PROXY_PROTOCOL_TIMEOUT_MSEC),
           Some(0) => Duration::ZERO,
           Some(ms) => Duration::from_millis(ms),
         };

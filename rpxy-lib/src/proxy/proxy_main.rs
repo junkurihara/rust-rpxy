@@ -21,13 +21,12 @@ use hyper::{
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo, server::conn::auto::Builder as ConnectionBuilder};
 use rpxy_certs::ServerCrypto;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
-use tokio::time::timeout;
+use tokio::{net::TcpStream, time::timeout};
 use tokio_util::sync::CancellationToken;
+use ahash::HashMap;
 
 #[cfg(feature = "proxy-protocol")]
 use crate::globals::TcpRecvProxyProtocolConfig;
-#[cfg(feature = "proxy-protocol")]
-use tokio::net::TcpStream;
 
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
@@ -51,6 +50,73 @@ where
       tls_server_name,
     )
     .await
+}
+
+/// Result of TLS handshake, including the TLS stream, server name from SNI, and whether it's an ACME TLS ALPN challenge handshake (for conditional shutdown after handshake)
+struct TlsHandshakeResult {
+  stream: TokioIo<tokio_rustls::server::TlsStream<TcpStream>>,
+  server_name: ServerName,
+  #[cfg(feature = "acme")]
+  is_handshake_acme: bool, // for shutdown just after TLS handshake
+}
+
+/// TLS handshake and certificate management for TLS listener service
+async fn serve_tls_handshake(raw_stream: TcpStream, server_configs_acme_challenge: Arc<HashMap<String, Arc<rustls::ServerConfig>>>, server_crypto_map: Option<Arc<HashMap<ServerName, Arc<rustls::ServerConfig>>>>) -> RpxyResult<TlsHandshakeResult> {
+  let acceptor = tokio_rustls::LazyConfigAcceptor::new(tokio_rustls::rustls::server::Acceptor::default(), raw_stream).await;
+  if let Err(e) = acceptor {
+    return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
+  }
+  let start = acceptor.unwrap();
+  let client_hello = start.client_hello();
+  let sni = client_hello.server_name();
+  debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", sni.unwrap_or("None"));
+  let server_name = sni.map(ServerName::from);
+  if server_name.is_none() {
+    return Err(RpxyError::NoServerNameInClientHello);
+  }
+  #[cfg(feature = "acme")]
+  let mut is_handshake_acme = false; // for shutdown just after TLS handshake
+  /* ------------------ */
+  // Check for ACME TLS ALPN challenge
+  #[cfg(feature = "acme")]
+  let server_crypto = {
+    if rpxy_acme::reexports::is_tls_alpn_challenge(&client_hello) {
+      info!("ACME TLS ALPN challenge received");
+      let Some(server_crypto_acme) = server_configs_acme_challenge.get(&sni.unwrap().to_ascii_lowercase()) else {
+        return Err(RpxyError::NoAcmeServerConfig);
+      };
+      is_handshake_acme = true;
+      server_crypto_acme
+    } else {
+      let server_crypto = server_crypto_map.as_ref().unwrap().get(server_name.as_ref().unwrap());
+      let Some(server_crypto) = server_crypto else {
+        return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
+      };
+      server_crypto
+    }
+  };
+  /* ------------------ */
+  #[cfg(not(feature = "acme"))]
+  let server_crypto = {
+    let server_crypto = server_crypto_map.as_ref().unwrap().get(server_name.as_ref().unwrap());
+    let Some(server_crypto) = server_crypto else {
+      return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
+    };
+    server_crypto
+  };
+  /* ------------------ */
+  let stream = match start.into_stream(server_crypto.clone()).await {
+    Ok(s) => TokioIo::new(s),
+    Err(e) => {
+      return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
+    }
+  };
+  Ok(TlsHandshakeResult {
+    stream,
+    server_name: server_name.unwrap(),
+    #[cfg(feature = "acme")]
+    is_handshake_acme,
+  })
 }
 
 #[cfg(feature = "proxy-protocol")]
@@ -151,8 +217,12 @@ where
       let tcp_socket = bind_tcp_socket(&self.listening_on)?;
       let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
       info!("Start TCP proxy serving with HTTP request for configured host names");
+      #[cfg(not(feature = "proxy-protocol"))]
+      while let Ok((stream, client_addr)) = tcp_listener.accept().await {
+        self.serve_connection(TokioIo::new(stream), client_addr, None);
+      }
+      #[cfg(feature = "proxy-protocol")]
       while let Ok((mut stream, client_addr)) = tcp_listener.accept().await {
-        #[cfg(feature = "proxy-protocol")]
         // [PROXY-PROTOCOL] Parse PROXY header before serving connection
         if self.globals.proxy_config.tcp_recv_proxy_protocol.is_some() {
           let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone().unwrap();
@@ -170,10 +240,10 @@ where
           });
           continue;
         }
-
         // If inbound PROXY protocol is not enabled, serve connection directly with peer address from TCP accept
         self.serve_connection(TokioIo::new(stream), client_addr, None);
       }
+
       Ok(()) as RpxyResult<()>
     };
     listener_service.await?;
@@ -253,16 +323,23 @@ where
           if tcp_cnx.is_err() || server_crypto_map.is_none() {
             continue;
           }
+
+          #[cfg(feature = "proxy-protocol")]
           let (mut raw_stream, client_addr) = tcp_cnx.unwrap();
+          #[cfg(not(feature = "proxy-protocol"))]
+          let (raw_stream, client_addr) = tcp_cnx.unwrap();
+
           let sc_map_inner = server_crypto_map.clone();
           let self_inner = self.clone();
+
           #[cfg(feature = "proxy-protocol")]
           let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone();
 
+          // spawns async handshake to avoid blocking thread by sequential handshake.
           self.globals.runtime_handle.spawn(async move {
-
             #[cfg(feature = "proxy-protocol")]
             // [PROXY-PROTOCOL] Parse PROXY header before TLS handshake, and obtain the real client address
+            // Before TLS handshake, the PROXY protocol header is expected to be present if the inbound PROXY protocol is enabled. If parsing fails, the connection will be closed. After this step, client_addr will be the real client address to be used for TLS handshake and further processing.
             let client_addr = {
               if let Some(ref pp_config) = pp_config {
                 let parse_result = extract_parse_result_from_proxy_protocol_header(&mut raw_stream, client_addr, pp_config.to_owned()).await;
@@ -278,71 +355,12 @@ where
               }
             };
 
-            // spawns async handshake to avoid blocking thread by sequential handshake.
-            let handshake_fut = async move {
-              let acceptor = tokio_rustls::LazyConfigAcceptor::new(tokio_rustls::rustls::server::Acceptor::default(), raw_stream).await;
-              if let Err(e) = acceptor {
-                return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
-              }
-              let start = acceptor.unwrap();
-              let client_hello = start.client_hello();
-              let sni = client_hello.server_name();
-              debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", sni.unwrap_or("None"));
-              let server_name = sni.map(ServerName::from);
-              if server_name.is_none(){
-                return Err(RpxyError::NoServerNameInClientHello);
-              }
-              #[cfg(feature = "acme")]
-              let mut is_handshake_acme = false; // for shutdown just after TLS handshake
-              /* ------------------ */
-              // Check for ACME TLS ALPN challenge
-              #[cfg(feature = "acme")]
-              let server_crypto = {
-                if rpxy_acme::reexports::is_tls_alpn_challenge(&client_hello) {
-                  info!("ACME TLS ALPN challenge received");
-                  let Some(server_crypto_acme) = server_configs_acme_challenge.get(&sni.unwrap().to_ascii_lowercase()) else {
-                    return Err(RpxyError::NoAcmeServerConfig);
-                  };
-                  is_handshake_acme = true;
-                  server_crypto_acme
-                } else {
-                  let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
-                  let Some(server_crypto) = server_crypto else {
-                    return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
-                  };
-                  server_crypto
-                }
-              };
-              /* ------------------ */
-              #[cfg(not(feature = "acme"))]
-              let server_crypto = {
-                let server_crypto = sc_map_inner.as_ref().unwrap().get(server_name.as_ref().unwrap());
-                let Some(server_crypto) = server_crypto else {
-                  return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
-                };
-                server_crypto
-              };
-              /* ------------------ */
-              let stream = match start.into_stream(server_crypto.clone()).await {
-                Ok(s) => TokioIo::new(s),
-                Err(e) => {
-                  return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
-                }
-              };
-              #[cfg(feature = "acme")]
-              {
-                Ok((stream, client_addr, server_name, is_handshake_acme))
-              }
-              #[cfg(not(feature="acme"))]
-              {
-                Ok((stream, client_addr, server_name))
-              }
-            };
+            let tls_handshake_fut = serve_tls_handshake(raw_stream, server_configs_acme_challenge, sc_map_inner);
 
             // timeout is introduced to avoid get stuck here.
-            let Ok(v) = timeout(
+            let Ok(tls_handshake_result) = timeout(
               Duration::from_secs(TLS_HANDSHAKE_TIMEOUT_SEC),
-              handshake_fut
+              tls_handshake_fut
             ).await else {
               error!("Timeout to handshake TLS");
               return;
@@ -350,14 +368,14 @@ where
             /* ------------------ */
             #[cfg(feature = "acme")]
             {
-              match v {
-                Ok((mut stream, client_addr, server_name, is_handshake_acme)) => {
+              match tls_handshake_result {
+                Ok(TlsHandshakeResult { mut stream, server_name, is_handshake_acme }) => {
                   if is_handshake_acme {
                     debug!("Shutdown TLS connection after ACME TLS ALPN challenge");
                     use tokio::io::AsyncWriteExt;
                     stream.inner_mut().shutdown().await.ok();
                   }
-                  self_inner.serve_connection(stream, client_addr, server_name);
+                  self_inner.serve_connection(stream, client_addr, Some(server_name));
                 }
                 Err(e) => {
                   error!("{}", e);
@@ -367,9 +385,9 @@ where
             /* ------------------ */
             #[cfg(not(feature = "acme"))]
             {
-              match v {
-                Ok((stream, client_addr, server_name)) => {
-                  self_inner.serve_connection(stream, client_addr, server_name);
+              match tls_handshake_result {
+                Ok(TlsHandshakeResult { mut stream, server_name, is_handshake_acme }) => {
+                  self_inner.serve_connection(stream, client_addr, Some(server_name));
                 }
                 Err(e) => {
                   error!("{}", e);
