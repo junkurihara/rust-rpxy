@@ -132,7 +132,7 @@ const PROXY_PROTOCOL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(5);
 async fn extract_parse_result_from_proxy_protocol_header(
   stream: &mut TcpStream,
   peer_addr: SocketAddr,
-  pp_config: TcpRecvProxyProtocolConfig,
+  pp_config: &TcpRecvProxyProtocolConfig,
 ) -> Result<SocketAddr, std::io::Error> {
   let effective_timeout = if pp_config.timeout.is_zero() {
     PROXY_PROTOCOL_FALLBACK_TIMEOUT
@@ -141,7 +141,7 @@ async fn extract_parse_result_from_proxy_protocol_header(
   };
   let parse_result = match timeout(
     effective_timeout,
-    super::proxy_protocol::parse_inbound_proxy_header(stream, &peer_addr, &pp_config),
+    super::proxy_protocol::parse_inbound_proxy_header(stream, &peer_addr, pp_config),
   )
   .await
   {
@@ -250,7 +250,7 @@ where
             let self_inner = self.clone();
             self.globals.runtime_handle.spawn(async move {
               let _permit = permit; // held until task completes
-              let parse_result = extract_parse_result_from_proxy_protocol_header(&mut stream, client_addr, pp_config).await;
+              let parse_result = extract_parse_result_from_proxy_protocol_header(&mut stream, client_addr, &pp_config).await;
               let real_addr = match parse_result {
                 Ok(addr) => addr,
                 Err(e) => {
@@ -377,12 +377,15 @@ where
 
           // spawns async handshake to avoid blocking thread by sequential handshake.
           self.globals.runtime_handle.spawn(async move {
+            // Hold the semaphore permit for the entire task lifetime (PROXY parse + TLS handshake + serve)
+            #[cfg(feature = "proxy-protocol")]
+            let _permit = pp_permit;
+
             #[cfg(feature = "proxy-protocol")]
             // [PROXY-PROTOCOL] Parse PROXY header before TLS handshake, and obtain the real client address
             let client_addr = {
               if let Some(ref pp_config) = pp_config {
-                let _permit = pp_permit; // held until task completes
-                let parse_result = extract_parse_result_from_proxy_protocol_header(&mut raw_stream, client_addr, pp_config.to_owned()).await;
+                let parse_result = extract_parse_result_from_proxy_protocol_header(&mut raw_stream, client_addr, pp_config).await;
                 match parse_result {
                   Ok(addr) => addr,
                   Err(e) => {

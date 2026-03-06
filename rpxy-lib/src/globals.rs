@@ -9,7 +9,8 @@ use std::{net::SocketAddr, time::Duration};
 pub struct TcpRecvProxyProtocolConfig {
   /// Trusted source IPs/CIDRs allowed to send PROXY headers. Must not be empty.
   pub trusted_proxies: Vec<ipnet::IpNet>,
-  /// Timeout for reading the PROXY header after TCP accept. Zero means no timeout.
+  /// Timeout for reading the PROXY header after TCP accept.
+  /// Zero triggers an internal fallback timeout of 5 seconds (not recommended in production).
   pub timeout: Duration,
 }
 

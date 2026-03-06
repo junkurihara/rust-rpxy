@@ -13,6 +13,9 @@ const V1_PREFIX: &[u8; 6] = b"PROXY ";
 const V1_MAX_LENGTH: usize = 107;
 /// Interval between peek retries when waiting for enough bytes
 const PEEK_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
+/// Maximum allowed v2 addr_len to prevent oversized allocation from a malicious header.
+/// IPv6 addresses + TLVs should never exceed this. (HAProxy spec: max ~232 bytes for addresses + TLVs)
+const V2_MAX_ADDR_LEN: usize = 512;
 
 /// Normalize an IPv4-mapped IPv6 address to plain IPv4.
 ///
@@ -101,6 +104,12 @@ async fn parse_v2_inbound(
 ) -> Result<Option<SocketAddr>, std::io::Error> {
   // Extract addr_len from bytes 14-15
   let addr_len = u16::from_be_bytes([peek_buf[14], peek_buf[15]]) as usize;
+  if addr_len > V2_MAX_ADDR_LEN {
+    return Err(std::io::Error::new(
+      std::io::ErrorKind::InvalidData,
+      format!("PROXY v2 addr_len {addr_len} exceeds maximum allowed {V2_MAX_ADDR_LEN}"),
+    ));
+  }
   let total_len = V2_HEADER_FIXED_SIZE + addr_len;
 
   // Read exactly the full header

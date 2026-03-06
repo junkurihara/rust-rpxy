@@ -150,4 +150,4 @@ registry_path = "./acme_registry"       # optional. default is "./acme_registry"
 # PROXY headers are not authenticated — restrict access with firewall rules.
 # [experimental.tcp_recv_proxy_protocol]
 # trusted_proxies = ["127.0.0.1/32", "10.0.0.0/8"]  # required, non-empty CIDR list. IPv4 and/or IPv6. Example: ["127.0.0.1/32", "::1/128"]
-# timeout = 50  # optional, milliseconds. Default 50ms. 0 means no timeout (not recommended).
+# timeout = 50  # optional, milliseconds. Default 50ms. 0 = fallback to 5s (not recommended).
