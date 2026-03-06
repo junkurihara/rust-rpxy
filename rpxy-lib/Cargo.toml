@@ -80,7 +80,7 @@ hyper-rustls = { version = "0.27.7", default-features = false, features = [
 
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
-hot_reload = "0.3.5"
+hot_reload = "0.3.6"
 rustls = { version = "0.23.37", default-features = false }
 rustls-post-quantum = { version = "0.2.4", optional = true }
 tokio-rustls = { version = "0.26.4", features = ["early-data"] }
@@ -105,7 +105,7 @@ s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
 ], optional = true }
 ##########
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.6.2", features = ["all"], optional = true }
+socket2 = { version = "0.6.3", features = ["all"], optional = true }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
