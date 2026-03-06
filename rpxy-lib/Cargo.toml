@@ -22,6 +22,7 @@ http3-s2n = [
   "rpxy-certs/http3",
   "h3",
 ]
+proxy-protocol = ["dep:ppp", "dep:ipnet"]
 cache = ["http-cache-semantics", "lru", "sha2", "base64"]
 sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
@@ -79,7 +80,7 @@ hyper-rustls = { version = "0.27.7", default-features = false, features = [
 
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
-hot_reload = "0.3.5"
+hot_reload = "0.3.6"
 rustls = { version = "0.23.37", default-features = false }
 rustls-post-quantum = { version = "0.2.4", optional = true }
 tokio-rustls = { version = "0.26.4", features = ["early-data"] }
@@ -104,12 +105,16 @@ s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
 ], optional = true }
 ##########
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.6.2", features = ["all"], optional = true }
+socket2 = { version = "0.6.3", features = ["all"], optional = true }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
 lru = { version = "0.16.3", optional = true }
 sha2 = { version = "0.10.9", default-features = false, optional = true }
+
+# proxy protocol (optional)
+ppp = { version = "2.3.0", optional = true }
+ipnet = { version = "2.12.0", optional = true }
 
 # cookie handling for sticky cookie
 chrono = { version = "0.4.44", default-features = false, features = [

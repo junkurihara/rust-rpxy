@@ -20,6 +20,7 @@ default = [
   "sticky-cookie",
   "acme",
   "post-quantum",
+  "proxy-protocol",
 ]
 # default = [
 #   "http3-s2n",
@@ -28,12 +29,14 @@ default = [
 #   "sticky-cookie",
 #   "acme",
 #   "post-quantum",
+#   "proxy-protocol",
 # ]
 http3-quinn = ["rpxy-lib/http3-quinn"]
 http3-s2n = ["rpxy-lib/http3-s2n"]
 native-tls-backend = ["rpxy-lib/native-tls-backend"]
 rustls-backend = ["rpxy-lib/rustls-backend"]
 webpki-roots = ["rpxy-lib/webpki-roots"]
+proxy-protocol = ["rpxy-lib/proxy-protocol"]
 cache = ["rpxy-lib/cache"]
 acme = ["rpxy-lib/acme", "rpxy-acme"]
 post-quantum = ["rpxy-lib/post-quantum"]
@@ -63,7 +66,7 @@ toml = { version = "1.0.4", default-features = false, features = [
   "parse",
   "serde",
 ] }
-hot_reload = { version = "0.3.5", features = ["file-reloader"] }
+hot_reload = { version = "0.3.6", features = ["file-reloader"] }
 serde_ignored = { version = "0.1.14" }
 
 # logging

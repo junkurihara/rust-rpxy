@@ -63,7 +63,7 @@ where
           // We consider the connection count separately from the stream count.
           // Max clients for h1/h2 = max 'stream' for h3.
           let request_count = self.globals.request_count.clone();
-          if request_count.increment() > self.globals.proxy_config.max_clients {
+          if request_count.increment() >= self.globals.proxy_config.max_clients {
             request_count.decrement();
             h3_conn.shutdown(0).await?;
             break;

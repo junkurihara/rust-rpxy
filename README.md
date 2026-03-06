@@ -27,6 +27,7 @@ The supported features are summarized as follows:
 - Post-quantum key exchange for TLS/QUIC [^kyber]
 - TLS connection sanitization to avoid domain fronting [^sanitization]
 - Load balancing with round-robin, random, and sticky sessions
+- HAProxy PROXY Protocol v1/v2 inbound support for recovering original client IP behind L4 proxies (e.g., [`rpxy-l4`](https://github.com/junkurihara/rust-rpxy-l4))
 - and more...
 
 [^h3lib]: HTTP/3 is enabled thanks to [`quinn`](https://github.com/quinn-rs/quinn), [`s2n-quic`](https://github.com/aws/s2n-quic) and [`hyperium/h3`](https://github.com/hyperium/h3). HTTP/3 libraries are mutually exclusive. You need to explicitly specify `s2n-quic` with `--no-default-features` flag. Also note that if you build `rpxy` with `s2n-quic`, then it requires `openssl` just for building the package.
@@ -346,6 +347,28 @@ registry_path = "./acme_registry"       # optional. default is "./acme_registry"
 ```
 
 The above configuration is common to all ACME-enabled domains. Note that the HTTPS port must be open to the public to verify domain ownership.
+
+### HAProxy PROXY Protocol (Inbound)
+
+`rpxy` supports receiving [HAProxy PROXY Protocol](https://www.haproxy.org/download/2.9/doc/proxy-protocol.txt) v1 and v2 headers on inbound TCP connections. This allows `rpxy` to recover the original client's source IP/port when deployed behind an L4 proxy such as [`rpxy-l4`](https://github.com/junkurihara/rust-rpxy-l4).
+
+When enabled, `rpxy` expects every incoming TCP connection (HTTP/1.1 and HTTP/2) to begin with a valid PROXY protocol header. The header is parsed and stripped before TLS handshake (for HTTPS) or HTTP processing (for plaintext HTTP). Note that HTTP/3 (QUIC/UDP) connections are **not** affected by this setting.
+
+> [!WARNING]
+> PROXY protocol headers are **not authenticated**. You **must** restrict access so that only trusted L4 proxies can reach `rpxy`'s listening ports (e.g., via firewall rules). All connections from untrusted sources will be rejected.
+
+To enable this feature, add `[experimental.tcp_recv_proxy_protocol]` to your `config.toml`:
+
+```toml
+[experimental.tcp_recv_proxy_protocol]
+trusted_proxies = ["127.0.0.1/32", "::1/128"]  # required, non-empty CIDR list (IPv4 and/or IPv6)
+timeout = 50  # optional, milliseconds (default: 50ms). 0 = fallback to 5s (not recommended).
+```
+
+- `trusted_proxies` (required): A list of CIDR ranges. Only connections from these source IPs are allowed to send PROXY headers. Connections from other IPs are immediately closed.
+- `timeout` (optional): Maximum time in milliseconds to wait for the PROXY header after TCP accept. Defaults to 50ms. Setting `0` applies an internal fallback timeout of 5 seconds to prevent indefinite hangs. Not recommended in production.
+
+This feature is built by default. To disable it at compile time, build with `--no-default-features` and omit the `proxy-protocol` feature.
 
 ## TIPS
 

@@ -82,7 +82,7 @@ impl PathManager {
       })
       .max_by_key(|(route_bytes, _)| route_bytes.len());
     matched_upstream.map(|(path, u)| {
-      debug!(
+      trace!(
         "Found upstream: {:?}",
         path.try_into().unwrap_or_else(|_| "<none>".to_string())
       );
@@ -224,9 +224,9 @@ impl UpstreamCandidates {
   /// Get an enabled option of load balancing [[LoadBalance]]
   pub fn get(&self, context_to_lb: &Option<LoadBalanceContext>) -> (Option<&Upstream>, Option<LoadBalanceContext>) {
     let pointer_to_upstream = self.load_balance.get_context(context_to_lb);
-    debug!("Upstream of index {} is chosen.", pointer_to_upstream.ptr);
-    debug!("Context to LB (Cookie in Request): {:?}", context_to_lb);
-    debug!("Context from LB (Set-Cookie in Response): {:?}", pointer_to_upstream.context);
+    trace!("Upstream of index {} is chosen.", pointer_to_upstream.ptr);
+    trace!("Context to LB (Cookie in Request): {:?}", context_to_lb);
+    trace!("Context from LB (Set-Cookie in Response): {:?}", pointer_to_upstream.context);
     (self.inner.get(pointer_to_upstream.ptr), pointer_to_upstream.context)
   }
 }
