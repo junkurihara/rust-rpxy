@@ -419,6 +419,7 @@ where
                     debug!("Shutdown TLS connection after ACME TLS ALPN challenge");
                     use tokio::io::AsyncWriteExt;
                     stream.inner_mut().shutdown().await.ok();
+                    return;
                   }
                   self_inner.serve_connection(stream, client_addr, Some(server_name));
                 }

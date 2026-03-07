@@ -150,7 +150,7 @@ fi
 update-ca-certificates
 
 # Check the given user and its uid:gid
-if [ $(id -u ${USER}) -ne ${USER_ID} -o $(id -g ${USER}) -ne ${GROUP_ID} ]; then
+if [ $(id -u ${USER}) -ne ${USER_ID} ] || [ $(id -g ${USER}) -ne ${GROUP_ID} ]; then
   echo "${USER} exists or was previously created. However, its uid and gid are inconsistent. Please recreate your container."
   exit 1
 fi
