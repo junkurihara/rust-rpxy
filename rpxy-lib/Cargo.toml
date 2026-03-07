@@ -22,6 +22,7 @@ http3-s2n = [
   "rpxy-certs/http3",
   "h3",
 ]
+proxy-protocol = ["dep:ppp", "dep:ipnet"]
 cache = ["http-cache-semantics", "lru", "sha2", "base64"]
 sticky-cookie = ["base64", "sha2", "chrono"]
 native-tls-backend = ["hyper-tls"]
@@ -36,12 +37,12 @@ post-quantum = [
 ]
 
 [dependencies]
-rand = "0.9.2"
+rand = "0.10.0"
 ahash = "0.8.12"
-bytes = "1.11.0"
+bytes = "1.11.1"
 derive_builder = "0.20.2"
-futures = { version = "0.3.31", features = ["alloc", "async-await"] }
-tokio = { version = "1.48.0", default-features = false, features = [
+futures = { version = "0.3.32", features = ["alloc", "async-await"] }
+tokio = { version = "1.50.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -49,21 +50,21 @@ tokio = { version = "1.48.0", default-features = false, features = [
   "macros",
   "fs",
 ] }
-tokio-util = { version = "0.7.17", default-features = false }
-pin-project-lite = "0.2.16"
+tokio-util = { version = "0.7.18", default-features = false }
+pin-project-lite = "0.2.17"
 async-trait = "0.1.89"
 
 # Error handling
-anyhow = "1.0.100"
-thiserror = "2.0.17"
+anyhow = "1.0.102"
+thiserror = "2.0.18"
 
 # http for both server and client
 http = "1.4.0"
 http-body-util = "0.1.3"
 hyper = { version = "1.8.1", default-features = false }
-hyper-util = { version = "0.1.19", features = ["full"] }
-futures-util = { version = "0.3.31", default-features = false }
-futures-channel = { version = "0.3.31", default-features = false }
+hyper-util = { version = "0.1.20", features = ["full"] }
+futures-util = { version = "0.3.32", default-features = false }
+futures-channel = { version = "0.3.32", default-features = false }
 
 # http client for upstream
 hyper-tls = { version = "0.6.0", features = [
@@ -79,8 +80,8 @@ hyper-rustls = { version = "0.27.7", default-features = false, features = [
 
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
-hot_reload = "0.3.5"
-rustls = { version = "0.23.35", default-features = false }
+hot_reload = "0.3.6"
+rustls = { version = "0.23.37", default-features = false }
 rustls-post-quantum = { version = "0.2.4", optional = true }
 tokio-rustls = { version = "0.26.4", features = ["early-data"] }
 
@@ -94,25 +95,29 @@ tracing = { version = "0.1.44" }
 quinn = { version = "0.11.9", optional = true }
 h3 = { version = "0.0.8", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-s2n-quic = { version = "1.71.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+s2n-quic = { version = "1.76.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.71.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.71.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.76.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.76.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
 ##########
 # for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.6.1", features = ["all"], optional = true }
+socket2 = { version = "0.6.3", features = ["all"], optional = true }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
-lru = { version = "0.16.2", optional = true }
+lru = { version = "0.16.3", optional = true }
 sha2 = { version = "0.10.9", default-features = false, optional = true }
 
+# proxy protocol (optional)
+ppp = { version = "2.3.0", optional = true }
+ipnet = { version = "2.12.0", optional = true }
+
 # cookie handling for sticky cookie
-chrono = { version = "0.4.42", default-features = false, features = [
+chrono = { version = "0.4.44", default-features = false, features = [
   "unstable-locales",
   "alloc",
   "clock",
@@ -121,4 +126,4 @@ base64 = { version = "0.22.1", optional = true }
 
 
 [dev-dependencies]
-tokio-test = "0.4.4"
+tokio-test = "0.4.5"

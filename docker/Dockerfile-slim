@@ -1,3 +1,8 @@
+# syntax=docker/dockerfile:1
+
+# Shared arguments for both builder and runner stages
+ARG BUILD_ARTIFACTS=/tmp/target
+
 ########################################
 FROM --platform=$BUILDPLATFORM messense/rust-musl-cross:${TARGETARCH}-musl AS builder
 
@@ -5,7 +10,11 @@ LABEL maintainer="Jun Kurihara"
 
 ARG TARGETARCH
 ARG CARGO_FEATURES
-ENV CARGO_FEATURES=${CARGO_FEATURES}
+ARG BUILD_ARTIFACTS
+ARG CARGO_TARGET_CACHE=/tmp/cargo-target-cache
+
+ARG CFLAGS=-Ofast
+ARG RUSTFLAGS="-C link-arg=-s"
 
 RUN if [ $TARGETARCH = "amd64" ]; then \
   echo "x86_64" > /arch; \
@@ -16,30 +25,32 @@ RUN if [ $TARGETARCH = "amd64" ]; then \
   exit 1; \
   fi
 
-ENV CFLAGS=-Ofast
+WORKDIR /build
 
-WORKDIR /tmp
-
-COPY . /tmp/
-
-ENV RUSTFLAGS="-C link-arg=-s"
-
-RUN echo "Building rpxy from source" && \
+RUN echo "Install toolchain" && \
   # force to reinstall rustup to get the latest version
   rm -rf ~/.rustup && \
   curl https://sh.rustup.rs -sqSf | sh -s -- -y --profile minimal --default-toolchain stable --default-host $(uname -m)-unknown-linux-gnu && \
-  rustup target add $(cat /arch)-unknown-linux-musl || rustup component add --toolchain stable rust-src && \
-  rustup component add --toolchain stable rustfmt clippy && \
+  rustup target add $(cat /arch)-unknown-linux-musl || rustup component add --toolchain stable rust-src
+
+RUN --mount=type=bind,target=. \
+  --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
+  --mount=type=cache,target=/root/.cargo/git,sharing=locked \
+  --mount=type=cache,target=${CARGO_TARGET_CACHE},sharing=locked \
+  echo "Building rpxy from source" && \
   # build rpxy
-  cargo build --release --target $(cat /arch)-unknown-linux-musl ${CARGO_FEATURES} && \
-  musl-strip --strip-all /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy && \
-  cp /tmp/target/$(cat /arch)-unknown-linux-musl/release/rpxy /tmp/target/release/rpxy
+  cargo build --release --target $(cat /arch)-unknown-linux-musl --target-dir ${CARGO_TARGET_CACHE} ${CARGO_FEATURES} && \
+  mkdir -p ${BUILD_ARTIFACTS}/release && \
+  cp ${CARGO_TARGET_CACHE}/$(cat /arch)-unknown-linux-musl/release/rpxy ${BUILD_ARTIFACTS}/release/rpxy && \
+  musl-strip --strip-all ${BUILD_ARTIFACTS}/release/rpxy
 
 ########################################
-FROM --platform=$TARGETPLATFORM alpine:latest AS runner
+FROM --platform=$TARGETPLATFORM alpine:3 AS runner
+
 LABEL maintainer="Jun Kurihara"
 
-ENV RUNTIME_DEPS="logrotate ca-certificates su-exec"
+ARG BUILD_ARTIFACTS
+ARG RUNTIME_DEPS="logrotate ca-certificates su-exec"
 
 RUN apk add --no-cache ${RUNTIME_DEPS} && \
   update-ca-certificates && \
@@ -50,18 +61,17 @@ RUN apk add --no-cache ${RUNTIME_DEPS} && \
   mkdir -p /rpxy/cache &&\
   mkdir -p /rpxy/config
 
-COPY --from=builder /tmp/target/release/rpxy /rpxy/bin/rpxy
+COPY --from=builder ${BUILD_ARTIFACTS}/release/rpxy /rpxy/bin/rpxy
 COPY ./docker/run.sh /rpxy
 COPY ./docker/entrypoint.sh /rpxy
 
 RUN chmod +x /rpxy/run.sh && \
   chmod +x /rpxy/entrypoint.sh
 
+# Set environment variables for SSL certificates used in runtime
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_DIR=/etc/ssl/certs
 
 EXPOSE 80 443
-
-CMD ["/rpxy/entrypoint.sh"]
 
 ENTRYPOINT ["/rpxy/entrypoint.sh"]

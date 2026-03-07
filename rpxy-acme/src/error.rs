@@ -15,4 +15,11 @@ pub enum RpxyAcmeError {
   /// TLS client configuration error
   #[error("TLS client configuration error: {0}")]
   TlsClientConfig(String),
+  /// Write permission error - cannot write certificates to the specified path
+  #[error("Cannot write certificates for domain '{domain}' to '{path}': {source}")]
+  WritePermissionDenied {
+    domain: String,
+    path: String,
+    source: std::io::Error,
+  },
 }

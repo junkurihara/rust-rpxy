@@ -189,7 +189,8 @@ pub async fn build_acme_manager(
     &[acme_option.email],
     domains.as_slice(),
     runtime_handle,
-  )?;
+  )
+  .await?;
 
   Ok(Some(acme_manager))
 }

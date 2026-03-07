@@ -5,7 +5,7 @@ pub use super::{
   sticky_cookie::StickyCookie,
 };
 use derive_builder::Builder;
-use rand::Rng;
+use rand::RngExt;
 use std::sync::{
   Arc,
   atomic::{AtomicUsize, Ordering},

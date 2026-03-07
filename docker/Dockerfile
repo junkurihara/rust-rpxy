@@ -1,25 +1,27 @@
+# syntax=docker/dockerfile:1
+
 FROM ubuntu:24.04 AS base
 LABEL maintainer="Jun Kurihara"
 
 SHELL ["/bin/sh", "-x", "-c"]
-ENV SERIAL=2
+
+# Shared arguments
+ARG BUILD_ARTIFACTS=/tmp/target
 
 ########################################
 FROM --platform=$BUILDPLATFORM base AS builder
 
-ENV CFLAGS=-Ofast
-ENV BUILD_DEPS="curl make ca-certificates build-essential"
-ENV TARGET_SUFFIX=unknown-linux-gnu
-
-WORKDIR /tmp
-
-COPY . /tmp/
+ARG CFLAGS=-Ofast
+ARG RUSTFLAGS="-C link-arg=-s"
+ARG BUILD_DEPS="curl make ca-certificates build-essential"
+ARG TARGET_SUFFIX=unknown-linux-gnu
+ARG CARGO_TARGET_CACHE=/tmp/cargo-target-cache
 
 ARG TARGETARCH
 ARG CARGO_FEATURES
-ENV CARGO_FEATURES="${CARGO_FEATURES}"
 ARG ADDITIONAL_DEPS
-ENV ADDITIONAL_DEPS="${ADDITIONAL_DEPS}"
+
+WORKDIR /build
 
 RUN if [ $TARGETARCH = "amd64" ]; then \
   echo "x86_64" > /arch; \
@@ -30,24 +32,33 @@ RUN if [ $TARGETARCH = "amd64" ]; then \
   exit 1; \
   fi
 
-ENV RUSTFLAGS="-C link-arg=-s"
-
 RUN update-ca-certificates 2> /dev/null || true
 
-RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS ${ADDITIONAL_DEPS} && \
-  curl -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain stable && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && \
+  apt-get install -qy --no-install-recommends $BUILD_DEPS ${ADDITIONAL_DEPS}
+
+RUN curl -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal --default-toolchain stable && \
   export PATH="$HOME/.cargo/bin:$PATH" && \
   echo "Install toolchain" && \
-  rustup target add $(cat /arch)-${TARGET_SUFFIX} && \
+  rustup target add $(cat /arch)-${TARGET_SUFFIX}
+
+RUN --mount=type=bind,target=. \
+  --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
+  --mount=type=cache,target=/root/.cargo/git,sharing=locked \
+  --mount=type=cache,target=${CARGO_TARGET_CACHE},sharing=locked \
+  export PATH="$HOME/.cargo/bin:$PATH" && \
   echo "Building rpxy from source" && \
-  cargo build --release --target=$(cat /arch)-${TARGET_SUFFIX} ${CARGO_FEATURES} && \
-  strip --strip-all /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy &&\
-  cp /tmp/target/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy /tmp/target/release/rpxy
+  cargo build --release --target=$(cat /arch)-${TARGET_SUFFIX} --target-dir ${CARGO_TARGET_CACHE} ${CARGO_FEATURES} && \
+  mkdir -p ${BUILD_ARTIFACTS}/release && \
+  cp ${CARGO_TARGET_CACHE}/$(cat /arch)-${TARGET_SUFFIX}/release/rpxy ${BUILD_ARTIFACTS}/release/rpxy && \
+  strip --strip-all ${BUILD_ARTIFACTS}/release/rpxy
 
 ########################################
 FROM --platform=$TARGETPLATFORM base AS runner
 
-ENV RUNTIME_DEPS="logrotate ca-certificates gosu"
+ARG RUNTIME_DEPS="logrotate ca-certificates gosu"
 
 RUN apt-get update && \
   apt-get install -qy --no-install-recommends $RUNTIME_DEPS && \
@@ -61,7 +72,7 @@ RUN apt-get update && \
   mkdir -p /rpxy/cache &&\
   mkdir -p /rpxy/config
 
-COPY --from=builder /tmp/target/release/rpxy /rpxy/bin/rpxy
+COPY --from=builder ${BUILD_ARTIFACTS}/release/rpxy /rpxy/bin/rpxy
 COPY ./docker/run.sh /rpxy
 COPY ./docker/entrypoint.sh /rpxy
 
@@ -69,7 +80,5 @@ RUN chmod +x /rpxy/run.sh && \
   chmod +x /rpxy/entrypoint.sh
 
 EXPOSE 80 443
-
-CMD ["/usr/bin/bash" "/rpxy/entrypoint.sh"]
 
 ENTRYPOINT ["/usr/bin/bash", "/rpxy/entrypoint.sh"]

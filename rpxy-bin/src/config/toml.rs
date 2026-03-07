@@ -5,6 +5,8 @@ use crate::{
 };
 use ahash::HashMap;
 use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
+#[cfg(feature = "proxy-protocol")]
+use rpxy_lib::{TcpRecvProxyProtocolConfig, reexports::IpNet};
 use serde::Deserialize;
 use std::{fs, net::SocketAddr};
 use tokio::time::Duration;
@@ -133,6 +135,13 @@ pub struct AcmeOption {
   pub registry_path: Option<String>,
 }
 
+#[cfg(feature = "proxy-protocol")]
+#[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
+pub struct TcpRecvProxyProtocolOption {
+  pub trusted_proxies: Vec<String>,
+  pub timeout: Option<u64>,
+}
+
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Experimental {
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -146,6 +155,9 @@ pub struct Experimental {
 
   pub ignore_sni_consistency: Option<bool>,
   pub connection_handling_timeout: Option<u64>,
+
+  #[cfg(feature = "proxy-protocol")]
+  pub tcp_recv_proxy_protocol: Option<TcpRecvProxyProtocolOption>,
 }
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
@@ -307,6 +319,31 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         if let Some(num) = cache_option.max_cache_each_size_on_memory {
           proxy_config.cache_max_each_size_on_memory = num;
         }
+      }
+
+      #[cfg(feature = "proxy-protocol")]
+      if let Some(pp_option) = &exp.tcp_recv_proxy_protocol {
+        ensure!(
+          !pp_option.trusted_proxies.is_empty(),
+          "tcp_recv_proxy_protocol.trusted_proxies must not be empty"
+        );
+        let trusted_proxies = pp_option
+          .trusted_proxies
+          .iter()
+          .map(|s| {
+            s.parse::<IpNet>()
+              .map_err(|e| anyhow!("Invalid CIDR in trusted_proxies: {}: {}", s, e))
+          })
+          .collect::<std::result::Result<Vec<_>, _>>()?;
+        let timeout = match pp_option.timeout {
+          None => Duration::from_millis(crate::constants::PROXY_PROTOCOL_TIMEOUT_MSEC),
+          Some(0) => Duration::ZERO,
+          Some(ms) => Duration::from_millis(ms),
+        };
+        proxy_config.tcp_recv_proxy_protocol = Some(std::sync::Arc::new(TcpRecvProxyProtocolConfig {
+          trusted_proxies,
+          timeout,
+        }));
       }
     }
 

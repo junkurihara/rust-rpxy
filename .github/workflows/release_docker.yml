@@ -20,8 +20,8 @@ jobs:
       contents: read
       packages: write
 
-    runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'push' }} || ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true) }}
     strategy:
       fail-fast: false
       matrix:
@@ -95,6 +95,8 @@ jobs:
               jqtype/rpxy:s2n-webpki-roots
               ghcr.io/junkurihara/rust-rpxy:s2n-webpki-roots
 
+    env:
+      CACHE_SCOPE: rpxy-${{ matrix.target }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -103,24 +105,49 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        id: buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Restore BuildKit cache mounts
+        id: buildkit-cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/buildkit-cache/${{ matrix.target }}
+          key: ${{ runner.os }}-buildkit-cache-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'docker/Dockerfile', 'docker/Dockerfile-slim') }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit-cache-${{ matrix.target }}-
+
+      - name: Inject BuildKit cache mounts
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-dir: ${{ runner.temp }}/buildkit-cache/${{ matrix.target }}
+          cache-map: |
+            {
+              "var-cache-apt": "/var/cache/apt",
+              "var-lib-apt": "/var/lib/apt",
+              "cargo-registry": "/root/.cargo/registry",
+              "cargo-git": "/root/.cargo/git",
+              "cargo-target": "/tmp/cargo-target-cache"
+            }
+          skip-extraction: ${{ steps.buildkit-cache.outputs.cache-hit }}
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.GHCR }}
           username: ${{ github.actor }}
@@ -128,7 +155,7 @@ jobs:
 
       # - name: Nightly build test on amd64 for pull requests
       #   if: ${{ github.event_name == 'pull_request' }}
-      #   uses: docker/build-push-action@v6
+      #   uses: docker/build-push-action@v7
       #   with:
       #     context: .
       #     build-args: ${{ matrix.build-args }}
@@ -142,7 +169,7 @@ jobs:
 
       - name: Unstable build and push from develop branch
         if: ${{ startsWith(github.ref_name, 'feat/') && (github.event_name == 'push') }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-args: ${{ matrix.build-args }}
@@ -152,14 +179,14 @@ jobs:
             ${{ env.DH_REGISTRY_NAME }}:unstable${{ matrix.tags-suffix }}
           build-contexts: ${{ matrix.build-contexts }}
           file: ${{ matrix.dockerfile }}
-          cache-from: type=gha,scope=rpxy-unstable-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=rpxy-unstable-${{ matrix.target }}
+          cache-from: type=gha,scope=${{ env.CACHE_SCOPE }}
+          cache-to: type=gha,mode=max,scope=${{ env.CACHE_SCOPE }}
           platforms: linux/amd64
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Nightly build and push from develop branch
         if: ${{ (github.ref_name == 'develop') && (github.event_name == 'push') }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-args: ${{ matrix.build-args }}
@@ -169,8 +196,8 @@ jobs:
             ${{ env.DH_REGISTRY_NAME }}:nightly${{ matrix.tags-suffix }}
           build-contexts: ${{ matrix.build-contexts }}
           file: ${{ matrix.dockerfile }}
-          cache-from: type=gha,scope=rpxy-nightly-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=rpxy-nightly-${{ matrix.target }}
+          cache-from: type=gha,scope=${{ env.CACHE_SCOPE }}
+          cache-to: type=gha,mode=max,scope=${{ env.CACHE_SCOPE }}
           platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
 
@@ -182,9 +209,15 @@ jobs:
           text: ${{ github.event.pull_request.title }}
           regex: "^(\\d+\\.\\d+\\.\\d+)$"
 
+      - name: validate release version
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true && steps.regex-match.outputs.match == '' }}
+        run: |
+          echo "Release pull request title must match x.y.z"
+          exit 1
+
       - name: Release build and push from main branch
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
-        uses: docker/build-push-action@v6
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true && steps.regex-match.outputs.match != '' }}
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-args: ${{ matrix.build-args }}
@@ -193,12 +226,12 @@ jobs:
             ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ env.DH_REGISTRY_NAME }}:latest${{ matrix.tags-suffix }}
             ${{ matrix.aliases }}
-            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:${{ github.event.pull_request.title }}${{ matrix.tags-suffix }}
-            ${{ env.DH_REGISTRY_NAME }}:${{ github.event.pull_request.title }}${{ matrix.tags-suffix }}
+            ${{ env.GHCR }}/${{ env.GHCR_IMAGE_NAME }}:${{ steps.regex-match.outputs.match }}${{ matrix.tags-suffix }}
+            ${{ env.DH_REGISTRY_NAME }}:${{ steps.regex-match.outputs.match }}${{ matrix.tags-suffix }}
           build-contexts: ${{ matrix.build-contexts }}
           file: ${{ matrix.dockerfile }}
-          cache-from: type=gha,scope=rpxy-latest-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=rpxy-latest-${{ matrix.target }}
+          cache-from: type=gha,scope=${{ env.CACHE_SCOPE }}
+          cache-to: type=gha,mode=max,scope=${{ env.CACHE_SCOPE }}
           platforms: ${{ matrix.platforms }}
           labels: ${{ steps.meta.outputs.labels }}
 
@@ -207,12 +240,25 @@ jobs:
       contents: write
       actions: write
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
     needs: build_and_push
     steps:
+      - name: check pull_request title
+        uses: kaisugi/action-regex-match@v1.0.2
+        id: regex-match
+        with:
+          text: ${{ github.event.pull_request.title }}
+          regex: "^(\\d+\\.\\d+\\.\\d+)$"
+
+      - name: validate release version
+        if: ${{ steps.regex-match.outputs.match == '' }}
+        run: |
+          echo "Release pull request title must match x.y.z"
+          exit 1
+
       - name: Repository dispatch for release
         uses: peter-evans/repository-dispatch@v4
         with:
           event-type: release-event
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "pull_request": { "title": "${{ github.event.pull_request.title }}", "body": ${{ toJson(github.event.pull_request.body) }}, "number": "${{ github.event.pull_request.number }}", "head": "${{ github.event.pull_request.head.ref }}", "base": "${{ github.event.pull_request.base.ref}}"}}'
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "pull_request": { "title": "${{ steps.regex-match.outputs.match }}", "body": ${{ toJson(github.event.pull_request.body) }}, "number": "${{ github.event.pull_request.number }}", "head": "${{ github.event.pull_request.head.ref }}", "base": "${{ github.event.pull_request.base.ref}}"}}'

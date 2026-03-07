@@ -11,3 +11,7 @@ pub const CACHE_DIR: &str = "./cache";
 
 pub(crate) const ACCESS_LOG_FILE: &str = "access.log";
 pub(crate) const SYSTEM_LOG_FILE: &str = "rpxy.log";
+
+#[cfg(feature = "proxy-protocol")]
+/// Timeout in milliseconds for receiving the PROXY protocol header (enabled with "proxy-protocol" feature).
+pub(crate) const PROXY_PROTOCOL_TIMEOUT_MSEC: u64 = 50;

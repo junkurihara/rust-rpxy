@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "illumos"))]
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -49,7 +50,7 @@ fn main() {
       }
       rpxy_res = rpxy_service(config_rx, runtime.handle().clone()) => {
         if let Err(e) = rpxy_res {
-          error!("rpxy service existed: {e}");
+          error!("rpxy service exited: {e}");
           std::process::exit(1);
         }
       }

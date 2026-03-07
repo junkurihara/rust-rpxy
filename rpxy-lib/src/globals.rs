@@ -3,6 +3,17 @@ use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
 use std::{net::SocketAddr, time::Duration};
 
+#[cfg(feature = "proxy-protocol")]
+/// Configuration parameters for TCP inbound PROXY protocol receive
+#[derive(PartialEq, Eq, Clone)]
+pub struct TcpRecvProxyProtocolConfig {
+  /// Trusted source IPs/CIDRs allowed to send PROXY headers. Must not be empty.
+  pub trusted_proxies: Vec<ipnet::IpNet>,
+  /// Timeout for reading the PROXY header after TCP accept.
+  /// Zero triggers an internal fallback timeout of 5 seconds (not recommended in production).
+  pub timeout: Duration,
+}
+
 /// Global object containing proxy configurations and shared object like counters.
 /// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
 pub struct Globals {
@@ -48,6 +59,11 @@ pub struct ProxyConfig {
   // experimentals
   /// SNI consistency check
   pub sni_consistency: bool, // Handler
+
+  #[cfg(feature = "proxy-protocol")]
+  /// TCP inbound PROXY protocol receive configuration
+  pub tcp_recv_proxy_protocol: Option<std::sync::Arc<TcpRecvProxyProtocolConfig>>,
+
   /// Connection handling timeout
   /// timeout to handle a connection, total time of receive request, serve, and send response. this might limits the max length of response.
   pub connection_handling_timeout: Option<Duration>,
@@ -99,6 +115,9 @@ impl Default for ProxyConfig {
 
       sni_consistency: true,
       connection_handling_timeout: None,
+
+      #[cfg(feature = "proxy-protocol")]
+      tcp_recv_proxy_protocol: None,
 
       #[cfg(feature = "cache")]
       cache_enabled: false,

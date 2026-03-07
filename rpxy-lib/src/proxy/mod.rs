@@ -1,4 +1,6 @@
 mod proxy_main;
+#[cfg(feature = "proxy-protocol")]
+mod proxy_protocol;
 mod socket;
 
 #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
