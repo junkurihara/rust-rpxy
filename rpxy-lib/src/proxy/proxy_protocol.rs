@@ -536,10 +536,7 @@ mod tests {
     // returned if the connection FIN is detected after the partial data is exhausted.
     match result {
       Err(_elapsed) => {} // test timeout fired — expected for stuck partial data
-      Ok(Err(e)) => assert!(
-        e.kind() == std::io::ErrorKind::UnexpectedEof,
-        "Unexpected error kind: {e:?}"
-      ),
+      Ok(Err(e)) => assert!(e.kind() == std::io::ErrorKind::UnexpectedEof, "Unexpected error kind: {e:?}"),
       Ok(Ok(_)) => panic!("Expected error for partial PROXY header, got success"),
     }
   }

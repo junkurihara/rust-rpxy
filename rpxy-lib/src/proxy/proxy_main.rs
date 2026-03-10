@@ -11,6 +11,7 @@ use crate::{
   message_handler::HttpMessageHandler,
   name_exp::ServerName,
 };
+use ahash::HashMap;
 use futures::{FutureExt, select};
 use http::{Request, Response};
 use hyper::{
@@ -23,7 +24,6 @@ use rpxy_certs::ServerCrypto;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{net::TcpStream, time::timeout};
 use tokio_util::sync::CancellationToken;
-use ahash::HashMap;
 
 #[cfg(feature = "proxy-protocol")]
 use crate::globals::TcpRecvProxyProtocolConfig;
@@ -64,7 +64,8 @@ struct TlsHandshakeResult {
 async fn serve_tls_handshake(
   raw_stream: TcpStream,
   #[cfg(feature = "acme")] server_configs_acme_challenge: Arc<HashMap<String, Arc<rustls::ServerConfig>>>,
-  server_crypto_map: Arc<HashMap<ServerName, Arc<rustls::ServerConfig>>>) -> RpxyResult<TlsHandshakeResult> {
+  server_crypto_map: Arc<HashMap<ServerName, Arc<rustls::ServerConfig>>>,
+) -> RpxyResult<TlsHandshakeResult> {
   let acceptor = tokio_rustls::LazyConfigAcceptor::new(tokio_rustls::rustls::server::Acceptor::default(), raw_stream).await;
   if let Err(e) = acceptor {
     return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
@@ -79,7 +80,7 @@ async fn serve_tls_handshake(
   }
   #[cfg(feature = "acme")]
   let mut is_handshake_acme = false; // for shutdown just after TLS handshake
-  /* ------------------ */
+  // ------------------
   // Check for ACME TLS ALPN challenge
   #[cfg(feature = "acme")]
   let server_crypto = {
@@ -93,21 +94,25 @@ async fn serve_tls_handshake(
     } else {
       let server_crypto = server_crypto_map.as_ref().get(server_name.as_ref().unwrap());
       let Some(server_crypto) = server_crypto else {
-        return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
+        return Err(RpxyError::NoTlsServingApp(
+          server_name.as_ref().unwrap().try_into().unwrap_or_default(),
+        ));
       };
       server_crypto
     }
   };
-  /* ------------------ */
+  // ------------------
   #[cfg(not(feature = "acme"))]
   let server_crypto = {
     let server_crypto = server_crypto_map.get(server_name.as_ref().unwrap());
     let Some(server_crypto) = server_crypto else {
-      return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().try_into().unwrap_or_default()));
+      return Err(RpxyError::NoTlsServingApp(
+        server_name.as_ref().unwrap().try_into().unwrap_or_default(),
+      ));
     };
     server_crypto
   };
-  /* ------------------ */
+  // ------------------
   let stream = match start.into_stream(server_crypto.clone()).await {
     Ok(s) => TokioIo::new(s),
     Err(e) => {
@@ -176,6 +181,116 @@ impl<T> Proxy<T>
 where
   T: Send + Sync + Connect + Clone + 'static,
 {
+  /// Handle TCP connection at TLS listener, including PROXY protocol parsing if enabled, TLS handshake, and then serve the connection for HTTP/1.1 and HTTP/2
+  fn serve_tls_tcp_connection(
+    &self,
+    tcp_cnx: Result<(TcpStream, SocketAddr), std::io::Error>,
+    server_crypto_map: &Option<Arc<super::SniServerCryptoMap>>,
+    #[cfg(feature = "proxy-protocol")] pp_semaphore: &Arc<tokio::sync::Semaphore>,
+  ) {
+    if tcp_cnx.is_err() || server_crypto_map.is_none() {
+      return;
+    }
+
+    #[cfg(feature = "proxy-protocol")]
+    let (mut raw_stream, client_addr) = tcp_cnx.unwrap();
+    #[cfg(not(feature = "proxy-protocol"))]
+    let (raw_stream, client_addr) = tcp_cnx.unwrap();
+    trace!("Accepted TCP connection from {client_addr} at TLS listener");
+
+    #[cfg(feature = "proxy-protocol")]
+    let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone();
+
+    #[cfg(feature = "proxy-protocol")]
+    let pp_permit = if pp_config.is_some() {
+      match pp_semaphore.clone().try_acquire_owned() {
+        Ok(permit) => Some(permit),
+        Err(_) => {
+          debug!("PROXY parsing task limit reached, dropping connection from {client_addr} (TLS)");
+          return;
+        }
+      }
+    } else {
+      None
+    };
+
+    // Clone necessary variables for async task, server_crypto_map was confirmed to be `Some` above, so unwrap is safe here.
+    let server_crypto_map = server_crypto_map.clone().unwrap();
+    let self_inner = self.clone();
+    #[cfg(feature = "acme")]
+    let server_configs_acme_challenge = self.globals.server_configs_acme_challenge.clone();
+
+    // spawns async TLS handshake to avoid blocking thread by sequential handshake.
+    self.globals.runtime_handle.spawn(async move {
+      // Hold the semaphore permit for the PROXY-parse + TLS-handshake task; active connections are bounded separately (e.g. via `request_count`)
+      #[cfg(feature = "proxy-protocol")]
+      let _permit = pp_permit;
+
+      #[cfg(feature = "proxy-protocol")]
+      // [PROXY-PROTOCOL] Parse PROXY header before TLS handshake, and obtain the real client address
+      let client_addr = {
+        if let Some(ref pp_config) = pp_config {
+          let parse_result = extract_parse_result_from_proxy_protocol_header(&mut raw_stream, client_addr, pp_config).await;
+          match parse_result {
+            Ok(addr) => addr,
+            Err(e) => {
+              warn!("Failed to parse PROXY header: {e}. Closing connection from {client_addr}");
+              return;
+            }
+          }
+        } else {
+          client_addr
+        }
+      };
+
+      #[cfg(feature = "acme")]
+      let tls_handshake_fut = serve_tls_handshake(raw_stream, server_configs_acme_challenge, server_crypto_map);
+      #[cfg(not(feature = "acme"))]
+      let tls_handshake_fut = serve_tls_handshake(raw_stream, server_crypto_map);
+
+      // timeout is introduced to avoid get stuck here.
+      let Ok(tls_handshake_result) = timeout(Duration::from_secs(TLS_HANDSHAKE_TIMEOUT_SEC), tls_handshake_fut).await else {
+        error!("Timeout to handshake TLS");
+        return;
+      };
+      /* ------------------ */
+      #[cfg(feature = "acme")]
+      {
+        match tls_handshake_result {
+          Ok(TlsHandshakeResult {
+            mut stream,
+            server_name,
+            is_handshake_acme,
+          }) => {
+            if is_handshake_acme {
+              debug!("Shutdown TLS connection after ACME TLS ALPN challenge");
+              use tokio::io::AsyncWriteExt;
+              stream.inner_mut().shutdown().await.ok();
+              return;
+            }
+            self_inner.serve_connection(stream, client_addr, Some(server_name));
+          }
+          Err(e) => {
+            error!("{}", e);
+          }
+        }
+      }
+      /* ------------------ */
+      #[cfg(not(feature = "acme"))]
+      {
+        match tls_handshake_result {
+          Ok(TlsHandshakeResult { stream, server_name }) => {
+            self_inner.serve_connection(stream, client_addr, Some(server_name));
+          }
+          Err(e) => {
+            error!("{}", e);
+          }
+        }
+      }
+      /* ------------------ */
+    });
+  }
+
   /// Serves requests from clients
   fn serve_connection<I>(&self, stream: I, peer_addr: SocketAddr, tls_server_name: Option<ServerName>)
   where
@@ -341,107 +456,9 @@ where
     #[cfg(feature = "proxy-protocol")]
     let pp_semaphore = Arc::new(tokio::sync::Semaphore::new(self.globals.proxy_config.max_clients));
     loop {
-      #[cfg(feature = "acme")]
-      let server_configs_acme_challenge = self.globals.server_configs_acme_challenge.clone();
-
       select! {
         tcp_cnx = tcp_listener.accept().fuse() => {
-          if tcp_cnx.is_err() || server_crypto_map.is_none() {
-            continue;
-          }
-          let sc_map_inner = server_crypto_map.clone().unwrap();
-          let self_inner = self.clone();
-
-          #[cfg(feature = "proxy-protocol")]
-          let (mut raw_stream, client_addr) = tcp_cnx.unwrap();
-          #[cfg(not(feature = "proxy-protocol"))]
-          let (raw_stream, client_addr) = tcp_cnx.unwrap();
-          trace!("Accepted TCP connection from {client_addr} at TLS listener");
-
-          #[cfg(feature = "proxy-protocol")]
-          let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone();
-
-          #[cfg(feature = "proxy-protocol")]
-          let pp_permit = if pp_config.is_some() {
-            match pp_semaphore.clone().try_acquire_owned() {
-              Ok(permit) => Some(permit),
-              Err(_) => {
-                debug!("PROXY parsing task limit reached, dropping connection from {client_addr} (TLS)");
-                continue;
-              }
-            }
-          } else {
-            None
-          };
-
-          // spawns async handshake to avoid blocking thread by sequential handshake.
-          self.globals.runtime_handle.spawn(async move {
-            // Hold the semaphore permit for the PROXY-parse + TLS-handshake task; active connections are bounded separately (e.g. via `request_count`)
-            #[cfg(feature = "proxy-protocol")]
-            let _permit = pp_permit;
-
-            #[cfg(feature = "proxy-protocol")]
-            // [PROXY-PROTOCOL] Parse PROXY header before TLS handshake, and obtain the real client address
-            let client_addr = {
-              if let Some(ref pp_config) = pp_config {
-                let parse_result = extract_parse_result_from_proxy_protocol_header(&mut raw_stream, client_addr, pp_config).await;
-                match parse_result {
-                  Ok(addr) => addr,
-                  Err(e) => {
-                    warn!("Failed to parse PROXY header: {e}. Closing connection from {client_addr}");
-                    return;
-                  }
-                }
-              } else {
-                client_addr
-              }
-            };
-
-            #[cfg(feature = "acme")]
-            let tls_handshake_fut = serve_tls_handshake(raw_stream, server_configs_acme_challenge, sc_map_inner);
-            #[cfg(not(feature = "acme"))]
-            let tls_handshake_fut = serve_tls_handshake(raw_stream, sc_map_inner);
-
-            // timeout is introduced to avoid get stuck here.
-            let Ok(tls_handshake_result) = timeout(
-              Duration::from_secs(TLS_HANDSHAKE_TIMEOUT_SEC),
-              tls_handshake_fut
-            ).await else {
-              error!("Timeout to handshake TLS");
-              return;
-            };
-            /* ------------------ */
-            #[cfg(feature = "acme")]
-            {
-              match tls_handshake_result {
-                Ok(TlsHandshakeResult { mut stream, server_name, is_handshake_acme }) => {
-                  if is_handshake_acme {
-                    debug!("Shutdown TLS connection after ACME TLS ALPN challenge");
-                    use tokio::io::AsyncWriteExt;
-                    stream.inner_mut().shutdown().await.ok();
-                    return;
-                  }
-                  self_inner.serve_connection(stream, client_addr, Some(server_name));
-                }
-                Err(e) => {
-                  error!("{}", e);
-                }
-              }
-            }
-            /* ------------------ */
-            #[cfg(not(feature = "acme"))]
-            {
-              match tls_handshake_result {
-                Ok(TlsHandshakeResult { stream, server_name }) => {
-                  self_inner.serve_connection(stream, client_addr, Some(server_name));
-                }
-                Err(e) => {
-                  error!("{}", e);
-                }
-              }
-            }
-            /* ------------------ */
-          });
+          self.serve_tls_tcp_connection(tcp_cnx, &server_crypto_map, #[cfg(feature = "proxy-protocol")] &pp_semaphore);
         }
         _ = server_crypto_rx.changed().fuse() => {
           if server_crypto_rx.borrow().is_none() {
