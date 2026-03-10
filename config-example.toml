@@ -7,8 +7,25 @@
 #         Global settings         #
 ###################################
 # Both or either one of http/https ports must be specified
+# Port for plaintext http
 listen_port = 8080
+# Port for https
 listen_port_tls = 8443
+
+# TODO:
+# Optional. Bind to a specific IPv4 address. [default: 0.0.0.0]
+# listen_address_v4 = '0.0.0.0'
+
+# TODO:
+# Optional. Bind to a specific IPv6 address.
+# If omitted and listen_ipv6 = true, bind to '::'.
+# If omitted and listen_ipv6 = false or undefined, IPv6 is disabled.
+# listen_address_v6 = '::'
+
+# TODO:
+# Optional. Enable IPv6 listening on '::' when listen_address_v6 is not specified.
+# [default: false]
+listen_ipv6 = false
 
 # Optional. If you listen on a custom port like 8443 but redirect with firewall to 443
 # When you specify this, the server uses this port in an "Alt-SVC" header for e.g. indicating support for HTTP/3 and also sends a redirection response 301 with specified port to the client for plaintext http request
@@ -23,9 +40,6 @@ max_concurrent_streams = 100
 
 # Optional. Counted in total for http1.1, 2, 3
 max_clients = 512
-
-# Optional: Listen [::]
-listen_ipv6 = false
 
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # except for configured application.
