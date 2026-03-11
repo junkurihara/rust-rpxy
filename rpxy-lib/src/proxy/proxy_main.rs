@@ -365,11 +365,10 @@ where
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   /// Start with QUIC (HTTP/3)
   pub(super) async fn start_with_quic(&self, cancel_token: CancellationToken) -> RpxyResult<()> {
-    // If HTTP/3 is not enabled, just return without spawning the QUIC listener task
-    // This causes all tasks including HTTP and HTTPS quit immediately
-    if !self.globals.proxy_config.http3 {
-      return Ok(());
-    }
+    debug_assert!(
+      self.listener_spec.is_http3(),
+      "start_with_quic should only be called for HTTP/3 listener"
+    );
 
     // If HTTP/3 is enabled, spawn a task to handle HTTP/3 connections
     let join_handle_h3 = self.globals.runtime_handle.spawn({
