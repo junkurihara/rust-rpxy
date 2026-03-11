@@ -8,7 +8,10 @@ use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsCon
 #[cfg(feature = "proxy-protocol")]
 use rpxy_lib::{TcpRecvProxyProtocolConfig, reexports::IpNet};
 use serde::Deserialize;
-use std::{fs, net::SocketAddr};
+use std::{
+  fs,
+  net::{IpAddr, SocketAddr},
+};
 use tokio::time::Duration;
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
@@ -231,32 +234,13 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       );
     }
 
-    // Unless explicitly specified, bind to all addresses for the respective IP versions.
-    let mut listen_addresses = Vec::new();
-    if let Some(addr) = &self.listen_address_v4 {
-      listen_addresses.push(addr.clone());
-    } else {
-      listen_addresses.push(DEFAULT_LISTEN_ADDRESS_V4.to_string());
-    }
-    if let Some(addr) = &self.listen_address_v6 {
-      listen_addresses.push(addr.clone());
-    } else if self.listen_ipv6.unwrap_or(false) {
-      listen_addresses.push(DEFAULT_LISTEN_ADDRESS_V6.to_string());
-    }
-
-    proxy_config.listen_sockets = listen_addresses
-      .iter()
-      .flat_map(|addr| {
-        let mut v: Vec<SocketAddr> = vec![];
-        if let Some(port) = proxy_config.http_port {
-          v.push(format!("{addr}:{port}").parse().unwrap());
-        }
-        if let Some(port) = proxy_config.https_port {
-          v.push(format!("{addr}:{port}").parse().unwrap());
-        }
-        v
-      })
-      .collect();
+    proxy_config.listen_sockets = build_listen_sockets(
+      &self.listen_address_v4,
+      &self.listen_address_v6,
+      self.listen_ipv6.unwrap_or(false),
+      proxy_config.http_port,
+      proxy_config.https_port,
+    )?;
 
     // tcp backlog
     if let Some(backlog) = self.tcp_listen_backlog {
@@ -360,6 +344,62 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 
     Ok(proxy_config)
   }
+}
+
+/// Validate and normalize listen address strings, then combine with ports to build socket addresses.
+/// Accepts both bracketed (`[::1]`) and bare (`::1`) forms for IPv6.
+fn build_listen_sockets(
+  listen_address_v4: &Option<String>,
+  listen_address_v6: &Option<String>,
+  listen_ipv6: bool,
+  http_port: Option<u16>,
+  https_port: Option<u16>,
+) -> Result<Vec<SocketAddr>, anyhow::Error> {
+  let mut listen_ips: Vec<IpAddr> = Vec::new();
+
+  // IPv4
+  if let Some(addr_str) = listen_address_v4 {
+    let ip: IpAddr = addr_str
+      .parse()
+      .map_err(|e| anyhow!("Invalid listen_address_v4 '{}': {}", addr_str, e))?;
+    ensure!(ip.is_ipv4(), "listen_address_v4 '{}' is not an IPv4 address", addr_str);
+    listen_ips.push(ip);
+  } else {
+    listen_ips.push(DEFAULT_LISTEN_ADDRESS_V4.parse().unwrap());
+  }
+
+  // IPv6
+  if let Some(addr_str) = listen_address_v6 {
+    // Strip surrounding brackets if present (e.g. "[::1]" -> "::1") for user convenience
+    let stripped = addr_str
+      .strip_prefix('[')
+      .and_then(|s| s.strip_suffix(']'))
+      .unwrap_or(addr_str);
+    let ip: IpAddr = stripped
+      .parse()
+      .map_err(|e| anyhow!("Invalid listen_address_v6 '{}': {}", addr_str, e))?;
+    ensure!(ip.is_ipv6(), "listen_address_v6 '{}' is not an IPv6 address", addr_str);
+    listen_ips.push(ip);
+  } else if listen_ipv6 {
+    listen_ips.push(DEFAULT_LISTEN_ADDRESS_V6.parse().unwrap());
+  }
+
+  // Combine each IP with the configured ports
+  let sockets = listen_ips
+    .iter()
+    .flat_map(|ip| {
+      let mut v: Vec<SocketAddr> = vec![];
+      if let Some(port) = http_port {
+        v.push(SocketAddr::new(*ip, port));
+      }
+      if let Some(port) = https_port {
+        v.push(SocketAddr::new(*ip, port));
+      }
+      v
+    })
+    .collect();
+
+  Ok(sockets)
 }
 
 impl ConfigToml {

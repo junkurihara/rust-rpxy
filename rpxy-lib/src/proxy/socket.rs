@@ -59,6 +59,10 @@ pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> RpxyResult<TcpSocket
 pub(super) fn bind_udp_socket(listening_on: &SocketAddr) -> RpxyResult<UdpSocket> {
   let domain = listening_on.is_ipv6().then(|| Domain::IPV6).unwrap_or(Domain::IPV4);
   let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
+  // address binding without dual stack
+  if listening_on.is_ipv6() {
+    socket.set_only_v6(true)?;
+  }
   socket.set_nonblocking(true)?; // This was made true inside quinn. so this line isn't necessary here. but just in case.
   socket.set_reuse_address(true)?; // This isn't necessary?
   #[cfg(not(any(target_os = "solaris", target_os = "illumos", target_os = "cygwin", target_os = "wasi")))]
