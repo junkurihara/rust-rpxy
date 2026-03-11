@@ -79,7 +79,7 @@ where
   async fn h3_listener_service_inner(&self, server_crypto: &Option<s2n_quic_rustls::Server>) -> RpxyResult<()> {
     // setup UDP socket
     let io = provider::io::tokio::Builder::default()
-      .with_receive_address(self.listening_on)?
+      .with_receive_address(self.listener_spec.listening_on)?
       .with_reuse_port()?
       .build()?;
 

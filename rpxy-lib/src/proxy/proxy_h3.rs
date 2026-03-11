@@ -148,8 +148,8 @@ where
       .handle_request(
         new_req,
         client_addr,
-        self.listening_on,
-        self.tls_enabled,
+        self.listener_spec.listening_on,
+        self.listener_spec.tls_enabled(),
         Some(tls_server_name),
       )
       .await?;

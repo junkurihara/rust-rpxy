@@ -13,7 +13,7 @@ publish.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-http3-quinn = ["socket2", "quinn", "h3", "h3-quinn", "rpxy-certs/http3"]
+http3-quinn = ["quinn", "h3", "h3-quinn", "rpxy-certs/http3"]
 http3-s2n = [
   "s2n-quic",
   "s2n-quic-core",
@@ -104,8 +104,8 @@ s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
 ##########
-# for UDP socket wit SO_REUSEADDR when h3 with quinn
-socket2 = { version = "0.6.3", features = ["all"], optional = true }
+# for UDP socket with SO_REUSEADDR and set_only_v6 for socket binding
+socket2 = { version = "0.6.3", features = ["all"] }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
