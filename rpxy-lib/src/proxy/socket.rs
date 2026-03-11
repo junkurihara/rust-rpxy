@@ -10,7 +10,7 @@ use tokio::net::TcpSocket;
 /// Mostly imported from tokio::net::tcp::socket::TcpSocket
 pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> RpxyResult<TcpSocket> {
   let domain = listening_on.is_ipv6().then(|| Domain::IPV6).unwrap_or(Domain::IPV4);
-  let ty = socket2::Type::STREAM;
+  let ty = Type::STREAM;
   #[cfg(any(
     target_os = "android",
     target_os = "dragonfly",
@@ -23,10 +23,10 @@ pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> RpxyResult<TcpSocket
   ))]
   let ty = ty.nonblocking();
   let socket = Socket::new(domain, ty, Some(Protocol::TCP))?;
-  // TODO: for future update with address binding without dual stack
-  // if listening_on.is_ipv6() {
-  //   socket.set_only_v6(true)?;
-  // }
+  // address binding without dual stack
+  if listening_on.is_ipv6() {
+    socket.set_only_v6(true)?;
+  }
   #[cfg(not(any(
     target_os = "android",
     target_os = "dragonfly",

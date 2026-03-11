@@ -72,6 +72,12 @@ pub enum RpxyError {
   #[error("Certificate reload error: {0}")]
   CertificateReloadError(#[from] hot_reload::ReloaderError<rpxy_certs::ServerCryptoBase>),
 
+  // proxy main errors
+  #[error("Failed to build proxy listener spec: {0}")]
+  FailedToBuildListenerSpec(#[from] crate::proxy::ListenerSpecBuilderError),
+  #[error("Failed to build proxy: {0}")]
+  FailedToBuildProxy(#[from] crate::proxy::ProxyBuilderError),
+
   // backend errors
   #[error("Invalid reverse proxy setting")]
   InvalidReverseProxyConfig,

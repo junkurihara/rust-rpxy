@@ -45,7 +45,7 @@ where
     server_config_h3.max_incoming(self.globals.proxy_config.h3_max_concurrent_connections as usize);
 
     // To reuse address
-    let udp_socket = bind_udp_socket(&self.listening_on)?;
+    let udp_socket = bind_udp_socket(&self.listener_spec.listening_on)?;
     let runtime =
       quinn::default_runtime().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No async runtime found"))?;
     let endpoint = Endpoint::new(quinn::EndpointConfig::default(), Some(server_config_h3), udp_socket, runtime)?;

@@ -227,9 +227,8 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       );
     }
 
-    // NOTE: when [::]:xx is bound, both v4 and v6 listeners are enabled.
     let listen_addresses: Vec<&str> = if let Some(true) = self.listen_ipv6 {
-      LISTEN_ADDRESSES_V6.to_vec()
+      [LISTEN_ADDRESSES_V4, LISTEN_ADDRESSES_V6].concat().to_vec()
     } else {
       LISTEN_ADDRESSES_V4.to_vec()
     };

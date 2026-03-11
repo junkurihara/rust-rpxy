@@ -28,6 +28,7 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "proxy-protocol")]
 use crate::globals::TcpRecvProxyProtocolConfig;
 
+/* -------------------------------------------------------------------------------------------------------- */
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
 async fn serve_request<T>(
@@ -130,6 +131,7 @@ async fn serve_tls_handshake(
   })
 }
 
+/* -------------------------------------------------------------------------------------------------------- */
 #[cfg(feature = "proxy-protocol")]
 /// Fallback timeout when user sets `timeout = 0`. Covers the entire parse
 /// (peek loop, read_exact, etc.) so no phase can hang indefinitely.
@@ -163,22 +165,79 @@ async fn extract_parse_result_from_proxy_protocol_header(
 }
 
 /* -------------------------------------------------------------------------------------------------------- */
-#[derive(Clone)]
+/// Listener type
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum ListenerKind {
+  HttpV4,
+  HttpV6,
+  HttpsV4,
+  HttpsV6,
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  Http3V4,
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  Http3V6,
+}
+
+/// Metadata for listener, including listener type and socket address
+#[derive(Clone, Debug, derive_builder::Builder)]
+pub struct ListenerSpec {
+  /// listener type (e.g., HTTP or HTTPS, IPv4 or IPv6)
+  pub(crate) kind: ListenerKind,
+  /// listen socket address
+  pub(crate) listening_on: SocketAddr,
+}
+
+impl ListenerSpec {
+  #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
+  /// whether TLS is enabled or not (for HTTP/1.1 and HTTP/2)
+  pub(crate) fn tls_enabled(&self) -> bool {
+    matches!(self.kind, ListenerKind::HttpsV4 | ListenerKind::HttpsV6)
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  /// whether TLS or QUIC is enabled or not
+  pub(crate) fn tls_enabled(&self) -> bool {
+    matches!(
+      self.kind,
+      ListenerKind::HttpsV4 | ListenerKind::HttpsV6 | ListenerKind::Http3V4 | ListenerKind::Http3V6
+    )
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  /// whether the listener is for HTTP/3 or not
+  pub(crate) fn is_http3(&self) -> bool {
+    matches!(self.kind, ListenerKind::Http3V4 | ListenerKind::Http3V6)
+  }
+}
+
+impl std::fmt::Display for ListenerSpec {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    // Display http, https, or http3 based on the listener kind with socket address
+    let proto_str = match self.kind {
+      ListenerKind::HttpV4 | ListenerKind::HttpV6 => "http",
+      ListenerKind::HttpsV4 | ListenerKind::HttpsV6 => "https",
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+      ListenerKind::Http3V4 | ListenerKind::Http3V6 => "http3",
+    };
+    write!(f, "{} ({})", self.listening_on, proto_str)
+  }
+}
+
+/* -------------------------------------------------------------------------------------------------------- */
+#[derive(Clone, derive_builder::Builder)]
 /// Proxy main object responsible to serve requests received from clients at the given socket address.
-pub(crate) struct Proxy<T, E = LocalExecutor>
+pub struct Proxy<T, E = LocalExecutor>
 where
   T: Send + Sync + Connect + Clone + 'static,
 {
   /// global context shared among async tasks
-  pub globals: Arc<Globals>,
-  /// listen socket address
-  pub listening_on: SocketAddr,
-  /// whether TLS is enabled or not
-  pub tls_enabled: bool,
+  pub(crate) globals: Arc<Globals>,
   /// hyper connection builder serving http request
-  pub connection_builder: Arc<ConnectionBuilder<E>>,
+  pub(crate) connection_builder: Arc<ConnectionBuilder<E>>,
   /// message handler serving incoming http request
-  pub message_handler: Arc<HttpMessageHandler<T>>,
+  pub(crate) message_handler: Arc<HttpMessageHandler<T>>,
+  /// listener spec
+  pub(crate) listener_spec: ListenerSpec,
 }
 
 impl<T> Proxy<T>
@@ -199,8 +258,8 @@ where
 
     let server_clone = self.connection_builder.clone();
     let message_handler_clone = self.message_handler.clone();
-    let tls_enabled = self.tls_enabled;
-    let listening_on = self.listening_on;
+    let tls_enabled = self.listener_spec.tls_enabled();
+    let listening_on = self.listener_spec.listening_on;
     let handling_timeout = self.globals.proxy_config.connection_handling_timeout;
 
     self.globals.runtime_handle.clone().spawn(async move {
@@ -232,7 +291,7 @@ where
   /// Start without TLS (HTTP cleartext)
   async fn start_without_tls(&self) -> RpxyResult<()> {
     let listener_service = async {
-      let tcp_socket = bind_tcp_socket(&self.listening_on)?;
+      let tcp_socket = bind_tcp_socket(&self.listener_spec.listening_on)?;
       let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
       info!("Start TCP proxy serving with HTTP request for configured host names");
       #[cfg(not(feature = "proxy-protocol"))]
@@ -284,7 +343,6 @@ where
 
   /// Start with TLS (HTTPS)
   pub(super) async fn start_with_tls(&self, cancel_token: CancellationToken) -> RpxyResult<()> {
-    // By default, TLS listener is spawned
     let join_handle_tls = self.globals.runtime_handle.spawn({
       let self_clone = self.clone();
       let cancel_token = cancel_token.clone();
@@ -300,40 +358,37 @@ where
         }
       }
     });
+    let _ = join_handle_tls.await;
+    Ok(())
+  }
 
-    #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
-    {
-      let _ = join_handle_tls.await;
-      Ok(())
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  /// Start with QUIC (HTTP/3)
+  pub(super) async fn start_with_quic(&self, cancel_token: CancellationToken) -> RpxyResult<()> {
+    // If HTTP/3 is not enabled, just return without spawning the QUIC listener task
+    // This causes all tasks including HTTP and HTTPS quit immediately
+    if !self.globals.proxy_config.http3 {
+      return Ok(());
     }
 
-    #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-    {
-      // If HTTP/3 is not enabled, wait for TLS listener to finish
-      if !self.globals.proxy_config.http3 {
-        let _ = join_handle_tls.await;
-        return Ok(());
-      }
-
-      // If HTTP/3 is enabled, spawn a task to handle HTTP/3 connections
-      let join_handle_h3 = self.globals.runtime_handle.spawn({
-        let self_clone = self.clone();
-        async move {
-          select! {
-            _ = self_clone.h3_listener_service().fuse() => {
-              error!("UDP proxy service for QUIC exited");
-              cancel_token.cancel();
-            },
-            _ = cancel_token.cancelled().fuse() => {
-              debug!("Cancel token is called for QUIC listener");
-            }
+    // If HTTP/3 is enabled, spawn a task to handle HTTP/3 connections
+    let join_handle_h3 = self.globals.runtime_handle.spawn({
+      let self_clone = self.clone();
+      async move {
+        select! {
+          _ = self_clone.h3_listener_service().fuse() => {
+            error!("UDP proxy service for QUIC exited");
+            cancel_token.cancel();
+          },
+          _ = cancel_token.cancelled().fuse() => {
+            debug!("Cancel token is called for QUIC listener");
           }
         }
-      });
-      let _ = futures::future::join(join_handle_tls, join_handle_h3).await;
+      }
+    });
+    let _ = join_handle_h3.await;
 
-      Ok(())
-    }
+    Ok(())
   }
 
   /// TCP Listener Service, i.e., http/2 and http/1.1
@@ -341,7 +396,7 @@ where
     let Some(mut server_crypto_rx) = self.globals.cert_reloader_rx.clone() else {
       return Err(RpxyError::NoCertificateReloader);
     };
-    let tcp_socket = bind_tcp_socket(&self.listening_on)?;
+    let tcp_socket = bind_tcp_socket(&self.listener_spec.listening_on)?;
     let tcp_listener = tcp_socket.listen(self.globals.proxy_config.tcp_listen_backlog)?;
     info!("Start TCP proxy serving with HTTPS request for configured host names");
 
@@ -491,8 +546,19 @@ where
 
   /// Entrypoint for HTTP/1.1, 2 and 3 servers
   pub async fn start(&self, cancel_token: CancellationToken) -> RpxyResult<()> {
+    #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     let proxy_service = async {
-      if self.tls_enabled {
+      if self.listener_spec.is_http3() {
+        self.start_with_quic(cancel_token).await
+      } else if self.listener_spec.tls_enabled() {
+        self.start_with_tls(cancel_token).await
+      } else {
+        self.start_without_tls().await
+      }
+    };
+    #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
+    let proxy_service = async {
+      if self.listener_spec.tls_enabled() {
         self.start_with_tls(cancel_token).await
       } else {
         self.start_without_tls().await
