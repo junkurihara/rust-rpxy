@@ -17,7 +17,9 @@ use tokio::time::Duration;
 /// # Fields
 /// - `listen_port`: Optional TCP port for HTTP.
 /// - `listen_port_tls`: Optional TCP port for HTTPS/TLS.
-/// - `listen_ipv6`: Enable IPv6 listening.
+/// - `listen_address_v4`: Optional IPv4 address to bind (default: 0.0.0.0).
+/// - `listen_address_v6`: Optional IPv6 address to bind (default: ::).
+/// - `listen_ipv6`: Enable IPv6 listening. If listen_address_v6 is not specified, binds to '::' when true, and disables IPv6 when false (default: false).
 /// - `https_redirection_port`: Optional port for HTTP to HTTPS redirection.
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
@@ -28,6 +30,8 @@ use tokio::time::Duration;
 pub struct ConfigToml {
   pub listen_port: Option<u16>,
   pub listen_port_tls: Option<u16>,
+  pub listen_address_v4: Option<String>,
+  pub listen_address_v6: Option<String>,
   pub listen_ipv6: Option<bool>,
   pub https_redirection_port: Option<u16>,
   pub tcp_listen_backlog: Option<u32>,
@@ -227,11 +231,19 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       );
     }
 
-    let listen_addresses: Vec<&str> = if let Some(true) = self.listen_ipv6 {
-      [LISTEN_ADDRESSES_V4, LISTEN_ADDRESSES_V6].concat().to_vec()
+    // Unless explicitly specified, bind to all addresses for the respective IP versions.
+    let mut listen_addresses = Vec::new();
+    if let Some(addr) = &self.listen_address_v4 {
+      listen_addresses.push(addr.clone());
     } else {
-      LISTEN_ADDRESSES_V4.to_vec()
-    };
+      listen_addresses.push(DEFAULT_LISTEN_ADDRESS_V4.to_string());
+    }
+    if let Some(addr) = &self.listen_address_v6 {
+      listen_addresses.push(addr.clone());
+    } else if self.listen_ipv6.unwrap_or(false) {
+      listen_addresses.push(DEFAULT_LISTEN_ADDRESS_V6.to_string());
+    }
+
     proxy_config.listen_sockets = listen_addresses
       .iter()
       .flat_map(|addr| {

@@ -12,17 +12,14 @@ listen_port = 8080
 # Port for https
 listen_port_tls = 8443
 
-# TODO:
 # Optional. Bind to a specific IPv4 address. [default: 0.0.0.0]
 # listen_address_v4 = '0.0.0.0'
 
-# TODO:
 # Optional. Bind to a specific IPv6 address.
 # If omitted and listen_ipv6 = true, bind to '::'.
 # If omitted and listen_ipv6 = false or undefined, IPv6 is disabled.
 # listen_address_v6 = '::'
 
-# TODO:
 # Optional. Enable IPv6 listening on '::' when listen_address_v6 is not specified.
 # [default: false]
 listen_ipv6 = false
