@@ -164,18 +164,11 @@ pub async fn entrypoint(
     if let Some(https_port) = globals.proxy_config.https_port {
       tls_enabled = https_port == listening_on.port()
     }
-    let kind = if tls_enabled {
-      if listening_on.is_ipv4() {
-        ListenerKind::HttpsV4
-      } else {
-        ListenerKind::HttpsV6
-      }
-    } else {
-      if listening_on.is_ipv4() {
-        ListenerKind::HttpV4
-      } else {
-        ListenerKind::HttpV6
-      }
+    let kind = match (tls_enabled, listening_on.is_ipv4()) {
+      (false, true) => ListenerKind::HttpV4,
+      (false, false) => ListenerKind::HttpV6,
+      (true, true) => ListenerKind::HttpsV4,
+      (true, false) => ListenerKind::HttpsV6,
     };
     let listener_spec = ListenerSpecBuilder::default().kind(kind).listening_on(listening_on).build();
     listener_specs.push(listener_spec);
