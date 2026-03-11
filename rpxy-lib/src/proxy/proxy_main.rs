@@ -167,7 +167,7 @@ async fn extract_parse_result_from_proxy_protocol_header(
 /* -------------------------------------------------------------------------------------------------------- */
 /// Listener type
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub(crate) enum ListenerKind {
+pub enum ListenerKind {
   HttpV4,
   HttpV6,
   HttpsV4,
