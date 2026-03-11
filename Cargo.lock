@@ -2060,7 +2060,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2083,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-acme"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2105,7 +2105,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-certs"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2122,7 +2122,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-lib"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2485,9 +2485,9 @@ dependencies = [
 
 [[package]]
 name = "schannel"
-version = "0.1.28"
+version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891d81b926048e76efe18581bf793546b4c0eaf8448d72be8de2bbee5fd166e1"
+checksum = "91c1b7e4904c873ef0710c1f407dde2e6287de2bebc1bbbf7d430bb7cbffd939"
 dependencies = [
  "windows-sys 0.61.2",
 ]
@@ -2700,9 +2700,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.26.0"
+version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82a72c767771b47409d2345987fda8628641887d5466101319899796367354a0"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
  "getrandom 0.4.2",
@@ -3708,18 +3708,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.41"
+version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96e13bc581734df6250836c59a5f44f3c57db9f9acb9dc8e3eaabdaf6170254d"
+checksum = "f2578b716f8a7a858b7f02d5bd870c14bf4ddbbcf3a4c05414ba6503640505e3"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.41"
+version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3545ea9e86d12ab9bba9fcd99b54c1556fd3199007def5a03c375623d05fac1c"
+checksum = "7e6cc098ea4d3bd6246687de65af3f920c430e236bee1e3bf2e441463f08a02f"
 dependencies = [
  "proc-macro2",
  "quote",

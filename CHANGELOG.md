@@ -2,6 +2,12 @@
 
 ## 0.11.1 or 0.12.0 (Unreleased)
 
+### Improvement
+
+- Feat: Support specific listener address binding for both IPv4 and IPv6. This is to support the use case where rpxy is used in a host with multiple network interfaces and needs to bind to a specific one. To enable this feature, the `listen_address_v4` and `listen_address_v6` options in the config file have to be specified. If `listen_address_v6` is not specified and `listen_ipv6` is true, it binds to `::`. If `listen_address_v6` is not specified and `listen_ipv6` is false or undefined, IPv6 is disabled. (#239)
+
+- Deps and refactor
+
 ## 0.11.0
 
 ### Improvement
