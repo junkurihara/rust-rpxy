@@ -17,7 +17,7 @@ use crate::{
   globals::Globals,
   log::*,
   message_handler::HttpMessageHandlerBuilder,
-  proxy::Proxy,
+  proxy::{ListenerKind, ListenerSpecBuilder, ProxyBuilder},
 };
 use futures::future::join_all;
 use hot_reload::ReloaderReceiver;
@@ -158,30 +158,58 @@ pub async fn entrypoint(
 
   // spawn each proxy for a given socket with copied Arc-ed backend, message_handler and connection builder.
   let addresses = globals.proxy_config.listen_sockets.clone();
-  let join_handles = addresses.into_iter().map(|listening_on| {
+  let mut listener_specs = Vec::new();
+  addresses.into_iter().for_each(|listening_on| {
     let mut tls_enabled = false;
     if let Some(https_port) = globals.proxy_config.https_port {
       tls_enabled = https_port == listening_on.port()
     }
-    let proxy = Proxy {
-      globals: globals.clone(),
-      listening_on,
-      tls_enabled,
-      connection_builder: connection_builder.clone(),
-      message_handler: message_handler.clone(),
+    let kind = match (tls_enabled, listening_on.is_ipv4()) {
+      (false, true) => ListenerKind::HttpV4,
+      (false, false) => ListenerKind::HttpV6,
+      (true, true) => ListenerKind::HttpsV4,
+      (true, false) => ListenerKind::HttpsV6,
     };
+    let listener_spec = ListenerSpecBuilder::default().kind(kind).listening_on(listening_on).build();
+    listener_specs.push(listener_spec);
 
+    #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+    if tls_enabled && globals.proxy_config.http3 {
+      let kind = if listening_on.is_ipv4() {
+        ListenerKind::Http3V4
+      } else {
+        ListenerKind::Http3V6
+      };
+      let listener_spec_h3 = ListenerSpecBuilder::default().kind(kind).listening_on(listening_on).build();
+      listener_specs.push(listener_spec_h3);
+    }
+  });
+  let listener_specs = listener_specs.into_iter().collect::<Result<Vec<_>, _>>()?;
+
+  let proxies = listener_specs
+    .into_iter()
+    .map(|listener_spec| {
+      ProxyBuilder::default()
+        .globals(globals.clone())
+        .listener_spec(listener_spec)
+        .connection_builder(connection_builder.clone())
+        .message_handler(message_handler.clone())
+        .build()
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+
+  let join_handles = proxies.into_iter().map(|proxy| {
     let cancel_token = cancel_token.clone();
     globals.runtime_handle.spawn(async move {
-      info!("rpxy proxy service for {listening_on} started");
+      info!("rpxy proxy service for {} started", proxy.listener_spec);
 
       tokio::select! {
         _ = cancel_token.cancelled() => {
-          debug!("rpxy proxy service for {listening_on} terminated");
+          debug!("rpxy proxy service for {} terminated", proxy.listener_spec);
           Ok(())
         },
         proxy_res = proxy.start(cancel_token.child_token()) => {
-          info!("rpxy proxy service for {listening_on} exited");
+          info!("rpxy proxy service for {} exited", proxy.listener_spec);
           // cancel other proxy tasks
           cancel_token.cancel();
           proxy_res

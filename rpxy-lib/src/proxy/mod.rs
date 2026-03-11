@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// SNI to ServerConfig map type
 pub type SniServerCryptoMap = std::collections::HashMap<ServerName, Arc<ServerConfig>, ahash::RandomState>;
 
-pub(crate) use proxy_main::Proxy;
+pub use proxy_main::{ListenerKind, ListenerSpecBuilder, ListenerSpecBuilderError, ProxyBuilder, ProxyBuilderError};
 
 /// build connection builder shared with proxy instances
 pub(crate) fn connection_builder(globals: &Arc<Globals>) -> Arc<ConnectionBuilder<LocalExecutor>> {
