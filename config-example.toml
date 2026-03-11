@@ -16,11 +16,11 @@ listen_port_tls = 8443
 # listen_address_v4 = '0.0.0.0'
 
 # Optional. Bind to a specific IPv6 address.
-# If omitted and listen_ipv6 = true, bind to '::'.
+# If omitted and listen_ipv6 = true, bind to '[::]'.
 # If omitted and listen_ipv6 = false or undefined, IPv6 is disabled.
-# listen_address_v6 = '::'
+# listen_address_v6 = '[::]'
 
-# Optional. Enable IPv6 listening on '::' when listen_address_v6 is not specified.
+# Optional. Enable IPv6 listening on '[::]' when listen_address_v6 is not specified.
 # [default: false]
 listen_ipv6 = false
 
