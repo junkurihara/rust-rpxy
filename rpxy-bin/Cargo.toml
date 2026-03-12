@@ -61,7 +61,7 @@ async-trait = { version = "0.1.89" }
 futures-util = { version = "0.3.32", default-features = false }
 
 # config
-clap = { version = "4.5.60", features = ["std", "cargo", "wrap_help"] }
+clap = { version = "4.6.0", features = ["std", "cargo", "wrap_help"] }
 toml = { version = "1.0.6", default-features = false, features = [
   "parse",
   "serde",
