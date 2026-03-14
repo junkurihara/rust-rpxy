@@ -12,13 +12,21 @@ listen_port = 8080
 # Port for https
 listen_port_tls = 8443
 
-# Optional. Bind to a specific IPv4 address. [default: 0.0.0.0]
+# Optional. Bind to a specific IPv4 address or addresses. [default: 0.0.0.0]
+# Duplicate addresses are silently ignored.
+# Single address:
 # listen_address_v4 = '0.0.0.0'
+# Multiple addresses (bind to specific interfaces, '0.0.0.0' MUST NOT be included in the list if multiple addresses are specified):
+# listen_address_v4 = ['192.168.1.1', '10.0.0.1']
 
-# Optional. Bind to a specific IPv6 address.
+# Optional. Bind to a specific IPv6 address or addresses.
 # If omitted and listen_ipv6 = true, bind to '[::]'.
 # If omitted and listen_ipv6 = false or undefined, IPv6 is disabled.
+# Duplicate addresses are silently ignored.
+# Single address:
 # listen_address_v6 = '[::]'
+# Multiple addresses (bind to specific interfaces, '::' MUST NOT be included in the list if multiple addresses are specified):
+# listen_address_v6 = ['::1', 'fe80::1']
 
 # Optional. Enable IPv6 listening on '[::]' when listen_address_v6 is not specified.
 # [default: false]

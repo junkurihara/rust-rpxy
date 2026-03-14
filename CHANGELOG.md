@@ -1,6 +1,16 @@
 # CHANGELOG
 
-## 0.11.1 or 0.12.0 (Unreleased)
+## 0.11.3 or 0.12.0 (Unreleased)
+
+## 0.11.2
+
+### Improvement
+
+- Feat: Support implementation of multiple address-binding: This is to support the use case where rpxy is used in a host with multiple network interfaces and needs to bind to multiple ones. Both `listen_address_v4` and `listen_address_v6` options in the config file accepts either a single address or a list of addresses.
+
+- Deps and refactor
+
+## 0.11.1
 
 ### Improvement
 
