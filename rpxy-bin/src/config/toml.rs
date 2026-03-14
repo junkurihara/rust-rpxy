@@ -10,9 +10,33 @@ use rpxy_lib::{TcpRecvProxyProtocolConfig, reexports::IpNet};
 use serde::Deserialize;
 use std::{
   fs,
-  net::{IpAddr, SocketAddr},
+  net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 use tokio::time::Duration;
+
+/// Helper type that accepts both a single string and an array of strings in TOML.
+///
+/// This enables backward-compatible multi-value support:
+/// ```toml
+/// listen_address_v4 = '192.168.1.1'          # single
+/// listen_address_v4 = ['192.168.1.1', '10.0.0.1']  # multiple
+/// ```
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(untagged)]
+pub enum OneOrMany {
+  One(String),
+  Many(Vec<String>),
+}
+
+impl OneOrMany {
+  /// Convert into a `Vec<String>` regardless of variant.
+  pub fn into_vec(self) -> Vec<String> {
+    match self {
+      OneOrMany::One(s) => vec![s],
+      OneOrMany::Many(v) => v,
+    }
+  }
+}
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 /// Main configuration structure parsed from the TOML file.
@@ -20,8 +44,8 @@ use tokio::time::Duration;
 /// # Fields
 /// - `listen_port`: Optional TCP port for HTTP.
 /// - `listen_port_tls`: Optional TCP port for HTTPS/TLS.
-/// - `listen_address_v4`: Optional IPv4 address to bind (default: 0.0.0.0).
-/// - `listen_address_v6`: Optional IPv6 address to bind (default: ::).
+/// - `listen_address_v4`: Optional IPv4 address(es) to bind (default: 0.0.0.0). Accepts a single string or an array.
+/// - `listen_address_v6`: Optional IPv6 address(es) to bind (default: ::). Accepts a single string or an array.
 /// - `listen_ipv6`: Enable IPv6 listening. If listen_address_v6 is not specified, binds to '::' when true, and disables IPv6 when false (default: false).
 /// - `https_redirection_port`: Optional port for HTTP to HTTPS redirection.
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
@@ -33,8 +57,8 @@ use tokio::time::Duration;
 pub struct ConfigToml {
   pub listen_port: Option<u16>,
   pub listen_port_tls: Option<u16>,
-  pub listen_address_v4: Option<String>,
-  pub listen_address_v6: Option<String>,
+  pub listen_address_v4: Option<OneOrMany>,
+  pub listen_address_v6: Option<OneOrMany>,
   pub listen_ipv6: Option<bool>,
   pub https_redirection_port: Option<u16>,
   pub tcp_listen_backlog: Option<u32>,
@@ -234,9 +258,11 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       );
     }
 
+    let v4_addrs = self.listen_address_v4.clone().map(|o| o.into_vec());
+    let v6_addrs = self.listen_address_v6.clone().map(|o| o.into_vec());
     proxy_config.listen_sockets = build_listen_sockets(
-      &self.listen_address_v4,
-      &self.listen_address_v6,
+      &v4_addrs,
+      &v6_addrs,
       self.listen_ipv6.unwrap_or(false),
       proxy_config.http_port,
       proxy_config.https_port,
@@ -347,10 +373,10 @@ impl TryInto<ProxyConfig> for &ConfigToml {
 }
 
 /// Validate and normalize listen address strings, then combine with ports to build socket addresses.
-/// Accepts both bracketed (`[::1]`) and bare (`::1`) forms for IPv6.
+/// Each field accepts one or more addresses. Accepts both bracketed (`[::1]`) and bare (`::1`) forms for IPv6.
 fn build_listen_sockets(
-  listen_address_v4: &Option<String>,
-  listen_address_v6: &Option<String>,
+  listen_addresses_v4: &Option<Vec<String>>,
+  listen_addresses_v6: &Option<Vec<String>>,
   listen_ipv6: bool,
   http_port: Option<u16>,
   https_port: Option<u16>,
@@ -358,28 +384,55 @@ fn build_listen_sockets(
   let mut listen_ips: Vec<IpAddr> = Vec::new();
 
   // IPv4
-  if let Some(addr_str) = listen_address_v4 {
-    let ip: IpAddr = addr_str
-      .parse()
-      .map_err(|e| anyhow!("Invalid listen_address_v4 '{}': {}", addr_str, e))?;
-    ensure!(ip.is_ipv4(), "listen_address_v4 '{}' is not an IPv4 address", addr_str);
-    listen_ips.push(ip);
+  if let Some(addrs) = listen_addresses_v4 {
+    ensure!(!addrs.is_empty(), "listen_address_v4 must not be an empty array");
+
+    let listen_v4_ips = addrs
+      .iter()
+      .map(|addr_str| {
+        addr_str
+          .parse::<Ipv4Addr>()
+          .map_err(|e| anyhow!("Invalid listen_address_v4 '{addr_str}': {e}"))
+      })
+      .collect::<Result<std::collections::HashSet<_>, _>>()?;
+    // Reject unspecified (wildcard) address mixed with specific addresses
+    if listen_v4_ips.len() > 1 {
+      ensure!(
+        !listen_v4_ips.iter().any(|ip| ip.is_unspecified()),
+        "listen_address_v4 must not contain the wildcard address '0.0.0.0' when multiple addresses are specified"
+      );
+    }
+    listen_ips.extend(listen_v4_ips.into_iter().map(IpAddr::V4));
   } else {
     listen_ips.push(DEFAULT_LISTEN_ADDRESS_V4.parse().unwrap());
   }
 
   // IPv6
-  if let Some(addr_str) = listen_address_v6 {
-    // Strip surrounding brackets if present (e.g. "[::1]" -> "::1") for user convenience
-    let stripped = addr_str
-      .strip_prefix('[')
-      .and_then(|s| s.strip_suffix(']'))
-      .unwrap_or(addr_str);
-    let ip: IpAddr = stripped
-      .parse()
-      .map_err(|e| anyhow!("Invalid listen_address_v6 '{}': {}", addr_str, e))?;
-    ensure!(ip.is_ipv6(), "listen_address_v6 '{}' is not an IPv6 address", addr_str);
-    listen_ips.push(ip);
+  if let Some(addrs) = listen_addresses_v6 {
+    ensure!(!addrs.is_empty(), "listen_address_v6 must not be an empty array");
+    let listen_v6_ips = addrs
+      .iter()
+      .map(|addr_str| {
+        // Strip surrounding brackets if present (e.g. "[::1]" -> "::1") for user convenience
+        let stripped = addr_str
+          .strip_prefix('[')
+          .and_then(|s| s.strip_suffix(']'))
+          .unwrap_or(addr_str);
+        stripped
+          .parse::<Ipv6Addr>()
+          .map_err(|e| anyhow!("Invalid listen_address_v6 '{addr_str}': {e}"))
+      })
+      .collect::<Result<std::collections::HashSet<_>, _>>()?;
+
+    // Reject unspecified (wildcard) address mixed with specific addresses
+    if listen_v6_ips.len() > 1 {
+      // let v6_unspecified: Ipv6Addr = "::".parse().unwrap();
+      ensure!(
+        !listen_v6_ips.iter().any(|ip| ip.is_unspecified()),
+        "listen_address_v6 must not contain the wildcard address '::' when multiple addresses are specified"
+      );
+    }
+    listen_ips.extend(listen_v6_ips.into_iter().map(IpAddr::V6));
   } else if listen_ipv6 {
     listen_ips.push(DEFAULT_LISTEN_ADDRESS_V6.parse().unwrap());
   }
@@ -513,5 +566,148 @@ impl TryInto<UpstreamUri> for &UpstreamParams {
     Ok(UpstreamUri {
       inner: location.parse::<Uri>().map_err(|e| anyhow!("{}", e))?,
     })
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn one_or_many_deserialize_single_string() {
+    let toml_str = r#"val = '192.168.1.1'"#;
+    #[derive(Deserialize)]
+    struct T {
+      val: OneOrMany,
+    }
+    let t: T = toml::from_str(toml_str).unwrap();
+    assert_eq!(t.val.into_vec(), vec!["192.168.1.1".to_string()]);
+  }
+
+  #[test]
+  fn one_or_many_deserialize_array() {
+    let toml_str = r#"val = ['192.168.1.1', '10.0.0.1']"#;
+    #[derive(Deserialize)]
+    struct T {
+      val: OneOrMany,
+    }
+    let t: T = toml::from_str(toml_str).unwrap();
+    assert_eq!(t.val.into_vec(), vec!["192.168.1.1".to_string(), "10.0.0.1".to_string()]);
+  }
+
+  #[test]
+  fn build_sockets_single_v4() {
+    let sockets = build_listen_sockets(&Some(vec!["127.0.0.1".into()]), &None, false, Some(8080), None).unwrap();
+    assert_eq!(sockets, vec!["127.0.0.1:8080".parse::<SocketAddr>().unwrap()]);
+  }
+
+  #[test]
+  fn build_sockets_multiple_v4() {
+    let addrs = Some(vec!["192.168.1.1".into(), "10.0.0.1".into()]);
+    let sockets = build_listen_sockets(&addrs, &None, false, Some(80), Some(443)).unwrap();
+    assert_eq!(sockets.len(), 4);
+    assert!(sockets.contains(&"192.168.1.1:80".parse::<SocketAddr>().unwrap()));
+    assert!(sockets.contains(&"192.168.1.1:443".parse::<SocketAddr>().unwrap()));
+    assert!(sockets.contains(&"10.0.0.1:80".parse::<SocketAddr>().unwrap()));
+    assert!(sockets.contains(&"10.0.0.1:443".parse::<SocketAddr>().unwrap()));
+  }
+
+  #[test]
+  fn build_sockets_default_v4_when_none() {
+    let sockets = build_listen_sockets(&None, &None, false, Some(8080), None).unwrap();
+    assert_eq!(sockets, vec!["0.0.0.0:8080".parse::<SocketAddr>().unwrap()]);
+  }
+
+  #[test]
+  fn build_sockets_v6_with_brackets() {
+    let sockets = build_listen_sockets(&None, &Some(vec!["[::1]".into()]), false, Some(8080), None).unwrap();
+    assert!(sockets.contains(&"[::1]:8080".parse::<SocketAddr>().unwrap()));
+  }
+
+  #[test]
+  fn build_sockets_multiple_v6() {
+    let v6 = Some(vec!["::1".into(), "fe80::1".into()]);
+    let sockets = build_listen_sockets(&None, &v6, false, Some(80), None).unwrap();
+    assert_eq!(sockets.len(), 3); // default v4 + 2 v6
+    assert!(sockets.contains(&"[::1]:80".parse::<SocketAddr>().unwrap()));
+    assert!(sockets.contains(&"[fe80::1]:80".parse::<SocketAddr>().unwrap()));
+  }
+
+  #[test]
+  fn build_sockets_duplicate_v4_deduplicated() {
+    let addrs = Some(vec!["10.0.0.1".into(), "10.0.0.1".into()]);
+    let sockets = build_listen_sockets(&addrs, &None, false, Some(80), None).unwrap();
+    assert_eq!(sockets.len(), 1);
+  }
+
+  #[test]
+  fn build_sockets_empty_array_rejected() {
+    let result = build_listen_sockets(&Some(vec![]), &None, false, Some(80), None);
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn build_sockets_ipv6_in_v4_field_rejected() {
+    let result = build_listen_sockets(&Some(vec!["::1".into()]), &None, false, Some(80), None);
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn build_sockets_ipv4_in_v6_field_rejected() {
+    let result = build_listen_sockets(&None, &Some(vec!["127.0.0.1".into()]), false, Some(80), None);
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn build_sockets_wildcard_v4_with_multiple_rejected() {
+    let addrs = Some(vec!["0.0.0.0".into(), "192.168.1.1".into()]);
+    let result = build_listen_sockets(&addrs, &None, false, Some(80), None);
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn build_sockets_wildcard_v6_with_multiple_rejected() {
+    let result = build_listen_sockets(&None, &Some(vec!["::".into(), "::1".into()]), false, Some(80), None);
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn build_sockets_wildcard_v4_single_allowed() {
+    let sockets = build_listen_sockets(&Some(vec!["0.0.0.0".into()]), &None, false, Some(80), None).unwrap();
+    assert_eq!(sockets.len(), 1);
+  }
+
+  #[test]
+  fn build_sockets_wildcard_v6_single_allowed() {
+    let sockets = build_listen_sockets(&None, &Some(vec!["::".into()]), false, Some(80), None).unwrap();
+    assert_eq!(sockets.len(), 2); // default v4 + single v6
+  }
+
+  #[test]
+  fn config_toml_single_address_backward_compat() {
+    let toml_str = r#"
+      listen_port = 8080
+      listen_address_v4 = '127.0.0.1'
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    assert_eq!(config.listen_address_v4.unwrap().into_vec(), vec!["127.0.0.1".to_string()]);
+  }
+
+  #[test]
+  fn config_toml_multiple_addresses() {
+    let toml_str = r#"
+      listen_port = 8080
+      listen_address_v4 = ['192.168.1.1', '10.0.0.1']
+      listen_address_v6 = ['::1', 'fe80::1']
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    assert_eq!(
+      config.listen_address_v4.unwrap().into_vec(),
+      vec!["192.168.1.1".to_string(), "10.0.0.1".to_string()]
+    );
+    assert_eq!(
+      config.listen_address_v6.unwrap().into_vec(),
+      vec!["::1".to_string(), "fe80::1".to_string()]
+    );
   }
 }
