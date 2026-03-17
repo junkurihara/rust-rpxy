@@ -23,19 +23,21 @@ impl ConsecutiveCounter {
   /// Record a check result. Returns `Some(new_state)` if a state transition occurred.
   pub fn record(&mut self, ok: bool) -> Option<bool> {
     if ok {
-      self.consecutive_ok += 1;
+      self.consecutive_ok = self.consecutive_ok.saturating_add(1);
       self.consecutive_fail = 0;
 
       if !self.is_healthy && self.consecutive_ok >= self.healthy_threshold {
         self.is_healthy = true;
+        self.consecutive_ok = 0;
         return Some(true);
       }
     } else {
-      self.consecutive_fail += 1;
+      self.consecutive_fail = self.consecutive_fail.saturating_add(1);
       self.consecutive_ok = 0;
 
       if self.is_healthy && self.consecutive_fail >= self.unhealthy_threshold {
         self.is_healthy = false;
+        self.consecutive_fail = 0;
         return Some(false);
       }
     }

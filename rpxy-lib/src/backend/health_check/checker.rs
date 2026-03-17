@@ -53,8 +53,8 @@ pub(crate) fn spawn_health_checkers(
       let num_upstreams = health_upstreams.len();
 
       info!(
-        "[{server_name}] Health checker started for path \"{path_str}\" ({num_upstreams} upstreams, {:?}, interval={:?})",
-        config.check_type, config.interval
+        "[{server_name}] Health checker started for path \"{path_str}\" ({num_upstreams} upstreams, {:?}, interval={:?}, timeout={:?}, healthy_threshold={}, unhealthy_threshold={})",
+        config.check_type, config.interval, config.timeout, config.healthy_threshold, config.unhealthy_threshold
       );
 
       let config = config.clone();
@@ -64,8 +64,9 @@ pub(crate) fn spawn_health_checkers(
         HealthCheckType::Http { .. } => http_client.clone(),
         _ => None,
       };
-      let handle = runtime_handle
-        .spawn(async move { run_health_checker(server_name, health_upstreams, config, cancel, task_http_client).await });
+      let handle = runtime_handle.spawn(async move {
+        run_health_checker(server_name, path_str, health_upstreams, config, cancel, task_http_client).await
+      });
 
       Some(handle)
     });
@@ -79,6 +80,7 @@ pub(crate) fn spawn_health_checkers(
 /// Checks all upstreams concurrently with join_all, then sleeps for interval.
 async fn run_health_checker(
   server_name: String,
+  path_str: String,
   upstreams: Vec<(hyper::Uri, Arc<UpstreamHealth>)>,
   config: HealthCheckConfig,
   cancel: CancellationToken,
@@ -89,10 +91,16 @@ async fn run_health_checker(
     .map(|_| ConsecutiveCounter::new(config.unhealthy_threshold, config.healthy_threshold))
     .collect();
 
+  // Log once at startup if HTTP client is unavailable (instead of every iteration)
+  let http_fallback = matches!(config.check_type, HealthCheckType::Http { .. }) && http_client.is_none();
+  if http_fallback {
+    warn!("[{server_name}:{path_str}] HTTP health check client unavailable, falling back to TCP");
+  }
+
   loop {
     tokio::select! {
       _ = cancel.cancelled() => {
-        debug!("Health checker terminated");
+        debug!("[{server_name}:{path_str}] Health checker terminated");
         return Ok(());
       }
       _ = tokio::time::sleep(config.interval) => {
@@ -109,8 +117,6 @@ async fn run_health_checker(
                 if let Some(ref client) = http_client {
                   client.check(&server_name, &uri, path, expected_status, timeout).await
                 } else {
-                  // Fallback to TCP if HTTP client failed to build
-                  warn!("[{server_name}] HTTP health check client unavailable, falling back to TCP for {uri}");
                   check_tcp(&server_name, &uri, timeout).await
                 }
               }
@@ -124,13 +130,13 @@ async fn run_health_checker(
         results.into_iter().for_each(|(i, ok)| {
           let (ref uri, ref health) = upstreams[i];
           if !ok {
-            debug!("[{server_name}] Health check failed for {uri}");
+            debug!("[{server_name}:{path_str}] Health check failed for {uri}");
           }
           if let Some(new_state) = counters[i].record(ok) {
             if new_state {
-              info!("[{server_name}] Upstream {uri} is now healthy ({} consecutive successes)", config.healthy_threshold);
+              info!("[{server_name}:{path_str}] Upstream {uri} is now healthy ({} consecutive successes)", config.healthy_threshold);
             } else {
-              info!("[{server_name}] Upstream {uri} is now unhealthy ({} consecutive failures)", config.unhealthy_threshold);
+              info!("[{server_name}:{path_str}] Upstream {uri} is now unhealthy ({} consecutive failures)", config.unhealthy_threshold);
             }
             health.set(new_state);
           }
@@ -138,7 +144,7 @@ async fn run_health_checker(
 
         // Warn if all upstreams are unhealthy
         if upstreams.iter().all(|(_, h)| !h.is_healthy()) {
-          warn!("[{server_name}] All upstreams are unhealthy, serving best-effort");
+          warn!("[{server_name}:{path_str}] All upstreams are unhealthy, serving best-effort");
         }
       }
     }
