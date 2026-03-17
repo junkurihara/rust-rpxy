@@ -21,6 +21,7 @@ pub use sticky_cookie::{StickyCookie, StickyCookieValue};
 #[cfg(feature = "sticky-cookie")]
 type LoadBalanceResult<T> = std::result::Result<T, LoadBalanceError>;
 /// Describes things that can go wrong in the Load Balance
+#[allow(unused)]
 #[derive(Debug, Error)]
 pub enum LoadBalanceError {
   // backend load balance errors

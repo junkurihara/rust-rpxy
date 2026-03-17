@@ -206,6 +206,7 @@ impl UpstreamCandidatesBuilder {
     self.replace_path = Some(v.to_owned().as_ref().map_or_else(|| None, |v| Some(v.to_path_name())));
     self
   }
+  #[allow(unused)]
   /// Set the load balancing option
   pub fn load_balance(
     &mut self,
