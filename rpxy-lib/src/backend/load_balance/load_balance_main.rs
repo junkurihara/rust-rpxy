@@ -48,9 +48,19 @@ fn healthy_index_count(upstreams: &[Upstream]) -> usize {
 /// Pick the nth healthy upstream without allocating an intermediate index list.
 /// Falls back to all upstreams if every upstream is unhealthy (best-effort).
 pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> usize {
+  assert!(!upstreams.is_empty(), "upstream list must not be empty");
+
+  let len = upstreams.len();
   let healthy_count = healthy_index_count(upstreams);
+
+  // Fast path: all upstreams are healthy (common case, including when health-check is disabled)
+  if healthy_count == len {
+    return nth % len;
+  }
+
   if healthy_count == 0 {
-    nth % upstreams.len()
+    // When all upstreams are unhealthy, fall back to round robin among all upstreams (best-effort).
+    nth % len
   } else {
     let target = nth % healthy_count;
     upstreams
@@ -66,6 +76,7 @@ pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> us
 #[cfg(feature = "health-check")]
 /// Get the index of the first healthy upstream, or 0 if all are unhealthy (best-effort).
 pub(super) fn first_available_index(upstreams: &[Upstream]) -> usize {
+  assert!(!upstreams.is_empty(), "upstream list must not be empty");
   first_healthy_index(upstreams).unwrap_or(0)
 }
 

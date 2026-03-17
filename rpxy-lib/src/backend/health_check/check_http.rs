@@ -80,9 +80,11 @@ impl HealthCheckHttpClient {
       }
     };
 
+    let host = target_uri.authority().map(|a| a.as_str()).unwrap_or_default();
     let req = match http::Request::builder()
       .method(http::Method::GET)
       .uri(&target_uri)
+      .header(http::header::HOST, host)
       .body(Empty::<Bytes>::new())
     {
       Ok(r) => r,

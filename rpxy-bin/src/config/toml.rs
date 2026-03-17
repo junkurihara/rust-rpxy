@@ -570,6 +570,9 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
     let mut reverse_proxies: Vec<ReverseProxyConfig> = Vec::new();
 
     for rpo in rp_settings.iter() {
+      if rpo.upstream.is_empty() {
+        return Err(anyhow!("[{}] At least one upstream must be specified", &_server_name_string));
+      }
       let upstream_res: Vec<Option<UpstreamUri>> = rpo.upstream.iter().map(|v| v.try_into().ok()).collect();
       if !upstream_res.iter().all(|v| v.is_some()) {
         return Err(anyhow!("[{}] Upstream uri is invalid", &_server_name_string));
@@ -940,6 +943,27 @@ mod tests {
     )
     .unwrap_err();
     assert!(err.to_string().contains("healthy_threshold"));
+  }
+
+  #[test]
+  fn empty_upstream_list_is_rejected() {
+    let app = Application {
+      server_name: Some("example.com".into()),
+      reverse_proxy: Some(vec![ReverseProxyOption {
+        path: None,
+        replace_path: None,
+        upstream: vec![],
+        upstream_options: None,
+        load_balance: None,
+        #[cfg(feature = "health-check")]
+        health_check: None,
+      }]),
+      tls: None,
+    };
+    let result: Result<Vec<ReverseProxyConfig>, _> = (&app).try_into();
+    assert!(result.is_err());
+    let err = result.err().unwrap();
+    assert!(err.to_string().contains("At least one upstream must be specified"));
   }
 
   #[cfg(feature = "health-check")]
