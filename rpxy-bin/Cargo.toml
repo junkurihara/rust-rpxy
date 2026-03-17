@@ -65,7 +65,7 @@ futures-util = { version = "0.3.32", default-features = false }
 
 # config
 clap = { version = "4.6.0", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "1.0.6", default-features = false, features = [
+toml = { version = "1.0.7", default-features = false, features = [
   "parse",
   "serde",
 ] }
