@@ -1,6 +1,6 @@
 use super::{
   Upstream,
-  load_balance_main::{LoadBalanceContext, LoadBalanceWithPointer, PointerToUpstream},
+  load_balance_main::{LoadBalanceContext, LoadBalanceWithPointer, PointerToUpstream, healthy_indices},
   sticky_cookie::StickyCookieConfig,
 };
 use crate::{constants::STICKY_COOKIE_NAME, log::*};
@@ -20,9 +20,6 @@ pub struct LoadBalanceSticky {
   #[builder(default)]
   /// Pointer to the index of the last served upstream destination
   ptr: Arc<AtomicUsize>,
-  #[builder(setter(custom), default)]
-  /// Number of upstream destinations
-  num_upstreams: usize,
   #[builder(setter(custom))]
   /// Information to build the cookie to stick clients to specific backends
   pub sticky_config: StickyCookieConfig,
@@ -40,11 +37,6 @@ pub struct UpstreamMap {
   upstream_id_map: HashMap<String, usize>,
 }
 impl LoadBalanceStickyBuilder {
-  /// Set the number of upstream destinations
-  pub fn num_upstreams(&mut self, v: &usize) -> &mut Self {
-    self.num_upstreams = Some(*v);
-    self
-  }
   /// Set the information to build the cookie to stick clients to specific backends
   pub fn sticky_config(&mut self, server_name: &str, path_opt: &Option<String>) -> &mut Self {
     self.sticky_config = Some(StickyCookieConfig {
@@ -78,18 +70,21 @@ impl LoadBalanceStickyBuilder {
   }
 }
 impl<'a> LoadBalanceSticky {
-  /// Increment the count of upstream served up to the max value
-  fn simple_increment_ptr(&self) -> usize {
-    // Get a current count of upstream served
-    let current_ptr = self.ptr.load(Ordering::Relaxed);
-
-    if current_ptr < self.num_upstreams - 1 {
-      self.ptr.fetch_add(1, Ordering::Relaxed)
-    } else {
-      // Clear the counter
-      self.ptr.fetch_and(0, Ordering::Relaxed)
+  /// Atomically increment ptr, reset near overflow.
+  fn fetch_and_advance(&self) -> usize {
+    let prev = self.ptr.fetch_add(1, Ordering::Relaxed);
+    if prev >= usize::MAX - 1 {
+      self.ptr.store(0, Ordering::Relaxed);
     }
+    prev
   }
+
+  /// Round-robin among the given healthy indices pool
+  fn rr_from_pool(&self, pool: &[usize]) -> usize {
+    let count = self.fetch_and_advance();
+    pool[count % pool.len()]
+  }
+
   /// This is always called only internally. So 'unwrap()' is executed.
   fn get_server_id_from_index(&self, index: usize) -> String {
     self.upstream_maps.upstream_index_map.get(index).unwrap().to_owned()
@@ -99,34 +94,9 @@ impl<'a> LoadBalanceSticky {
     let id_str = id.into().to_string();
     self.upstream_maps.upstream_id_map.get(&id_str).map(|v| v.to_owned())
   }
-}
-impl LoadBalanceWithPointer for LoadBalanceSticky {
-  /// Get the pointer to the upstream server to serve the incoming request.
-  fn get_ptr(&self, req_info: Option<&LoadBalanceContext>) -> PointerToUpstream {
-    // If given context is None or invalid (not contained), get_ptr() is invoked to increment the pointer.
-    // Otherwise, get the server index indicated by the server_id inside the cookie
-    let ptr = match req_info {
-      None => {
-        debug!("No sticky cookie");
-        self.simple_increment_ptr()
-      }
-      Some(context) => {
-        let server_id = &context.sticky_cookie.value.value;
-        self.get_server_index_from_id(server_id).map_or_else(
-          || {
-            debug!("Invalid sticky cookie: id={}", server_id);
-            self.simple_increment_ptr()
-          },
-          |server_index| {
-            debug!("Valid sticky cookie: id={}, index={}", server_id, server_index);
-            server_index
-          },
-        )
-      }
-    };
 
-    // Get the server id from the ptr.
-    // TODO: This should be simplified and optimized if ptr is not changed (id value exists in cookie).
+  /// Build a PointerToUpstream with a new cookie context for the given index
+  fn build_ptr_with_new_cookie(&self, ptr: usize) -> PointerToUpstream {
     let upstream_id = self.get_server_id_from_index(ptr);
     let new_cookie = self.sticky_config.build_sticky_cookie(upstream_id).unwrap();
     let new_context = Some(LoadBalanceContext {
@@ -136,5 +106,207 @@ impl LoadBalanceWithPointer for LoadBalanceSticky {
       ptr,
       context: new_context,
     }
+  }
+}
+impl LoadBalanceWithPointer for LoadBalanceSticky {
+  /// Get the pointer to the upstream server to serve the incoming request.
+  fn get_ptr(&self, req_info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
+    let healthy_indices = healthy_indices(upstreams);
+
+    match req_info {
+      None => {
+        debug!("No sticky cookie");
+        let ptr = self.rr_from_pool(&healthy_indices);
+        self.build_ptr_with_new_cookie(ptr)
+      }
+      Some(context) => {
+        let server_id = &context.sticky_cookie.value.value;
+        match self.get_server_index_from_id(server_id) {
+          Some(index) if upstreams.get(index).is_some_and(|u| u.is_healthy()) => {
+            // Valid cookie, target is healthy -> use it, NO re-issue
+            debug!("Valid sticky cookie: id={server_id}, index={index}, healthy",);
+            PointerToUpstream {
+              ptr: index,
+              context: None,
+            }
+          }
+          Some(index) => {
+            // Valid cookie but target is unhealthy -> fallback + new cookie
+            debug!("Valid sticky cookie: id={server_id}, index={index}, unhealthy -> fallback",);
+            let ptr = self.rr_from_pool(&healthy_indices);
+            self.build_ptr_with_new_cookie(ptr)
+          }
+          None => {
+            // Invalid cookie -> RR + new cookie
+            debug!("Invalid sticky cookie: id={}", server_id);
+            let ptr = self.rr_from_pool(&healthy_indices);
+            self.build_ptr_with_new_cookie(ptr)
+          }
+        }
+      }
+    }
+  }
+}
+
+/* --------------------------------------------------------------------- */
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::backend::load_balance::sticky_cookie::{StickyCookie, StickyCookieValue};
+
+  fn make_upstream(uri_str: &str) -> Upstream {
+    Upstream {
+      uri: uri_str.parse::<hyper::Uri>().unwrap(),
+      #[cfg(feature = "health-check")]
+      health: None,
+    }
+  }
+
+  #[cfg(feature = "health-check")]
+  fn make_upstream_with_health(uri_str: &str, healthy: bool) -> Upstream {
+    let health = Arc::new(crate::backend::health_check::UpstreamHealth::new());
+    health.set(healthy);
+    Upstream {
+      uri: uri_str.parse::<hyper::Uri>().unwrap(),
+      health: Some(health),
+    }
+  }
+
+  fn build_sticky_lb(upstreams: &[Upstream]) -> LoadBalanceSticky {
+    LoadBalanceStickyBuilder::default()
+      .sticky_config("example.com", &Some("/".to_string()))
+      .upstream_maps(upstreams)
+      .build()
+      .unwrap()
+  }
+
+  fn make_context_for(lb: &LoadBalanceSticky, index: usize) -> LoadBalanceContext {
+    let server_id = lb.get_server_id_from_index(index);
+    LoadBalanceContext {
+      sticky_cookie: StickyCookie {
+        value: StickyCookieValue {
+          name: STICKY_COOKIE_NAME.to_string(),
+          value: server_id,
+        },
+        info: None,
+      },
+    }
+  }
+
+  fn make_invalid_context() -> LoadBalanceContext {
+    LoadBalanceContext {
+      sticky_cookie: StickyCookie {
+        value: StickyCookieValue {
+          name: STICKY_COOKIE_NAME.to_string(),
+          value: "invalid_server_id_garbage".to_string(),
+        },
+        info: None,
+      },
+    }
+  }
+
+  #[test]
+  fn no_cookie_returns_new_cookie() {
+    let upstreams = vec![make_upstream("http://a:8080"), make_upstream("http://b:8080")];
+    let lb = build_sticky_lb(&upstreams);
+
+    let result = lb.get_ptr(None, &upstreams);
+    // Should issue a new cookie (context is Some)
+    assert!(result.context.is_some());
+    assert!(result.ptr < upstreams.len());
+  }
+
+  #[test]
+  fn valid_cookie_healthy_target_no_reissue() {
+    let upstreams = vec![make_upstream("http://a:8080"), make_upstream("http://b:8080")];
+    let lb = build_sticky_lb(&upstreams);
+    let ctx = make_context_for(&lb, 1);
+
+    let result = lb.get_ptr(Some(&ctx), &upstreams);
+    // Should stick to index 1, NO cookie re-issue
+    assert_eq!(result.ptr, 1);
+    assert!(result.context.is_none());
+  }
+
+  #[test]
+  fn invalid_cookie_falls_back_with_new_cookie() {
+    let upstreams = vec![make_upstream("http://a:8080"), make_upstream("http://b:8080")];
+    let lb = build_sticky_lb(&upstreams);
+    let ctx = make_invalid_context();
+
+    let result = lb.get_ptr(Some(&ctx), &upstreams);
+    // Should fallback to RR and issue a new cookie
+    assert!(result.context.is_some());
+    assert!(result.ptr < upstreams.len());
+  }
+
+  #[test]
+  fn no_cookie_round_robins() {
+    let upstreams = vec![
+      make_upstream("http://a:8080"),
+      make_upstream("http://b:8080"),
+      make_upstream("http://c:8080"),
+    ];
+    let lb = build_sticky_lb(&upstreams);
+
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..6 {
+      let result = lb.get_ptr(None, &upstreams);
+      seen.insert(result.ptr);
+    }
+    // After 6 calls across 3 upstreams, all should be visited
+    assert_eq!(seen.len(), 3);
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn valid_cookie_unhealthy_target_fallback_with_new_cookie() {
+    let upstreams = vec![
+      make_upstream_with_health("http://a:8080", true),
+      make_upstream_with_health("http://b:8080", false), // target is down
+      make_upstream_with_health("http://c:8080", true),
+    ];
+    let lb = build_sticky_lb(&upstreams);
+    let ctx = make_context_for(&lb, 1); // cookie points to index 1 (unhealthy)
+
+    let result = lb.get_ptr(Some(&ctx), &upstreams);
+    // Should NOT stick to index 1, should fallback and issue new cookie
+    assert_ne!(result.ptr, 1);
+    assert!(result.context.is_some());
+    // Should pick from healthy: index 0 or 2
+    assert!(result.ptr == 0 || result.ptr == 2);
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn no_cookie_skips_unhealthy() {
+    let upstreams = vec![
+      make_upstream_with_health("http://a:8080", false),
+      make_upstream_with_health("http://b:8080", true),
+      make_upstream_with_health("http://c:8080", false),
+    ];
+    let lb = build_sticky_lb(&upstreams);
+
+    // All calls should go to index 1 (only healthy)
+    for _ in 0..5 {
+      let result = lb.get_ptr(None, &upstreams);
+      assert_eq!(result.ptr, 1);
+      assert!(result.context.is_some());
+    }
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn all_unhealthy_best_effort() {
+    let upstreams = vec![
+      make_upstream_with_health("http://a:8080", false),
+      make_upstream_with_health("http://b:8080", false),
+    ];
+    let lb = build_sticky_lb(&upstreams);
+
+    let result = lb.get_ptr(None, &upstreams);
+    // Should still pick one (best-effort)
+    assert!(result.ptr < upstreams.len());
+    assert!(result.context.is_some());
   }
 }

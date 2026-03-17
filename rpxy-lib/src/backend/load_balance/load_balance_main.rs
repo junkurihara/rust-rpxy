@@ -1,3 +1,4 @@
+use super::Upstream;
 #[allow(unused)]
 #[cfg(feature = "sticky-cookie")]
 pub use super::{
@@ -18,6 +19,8 @@ pub mod load_balance_options {
   pub const RANDOM: &str = "random";
   #[cfg(feature = "sticky-cookie")]
   pub const STICKY_ROUND_ROBIN: &str = "sticky";
+  #[cfg(feature = "health-check")]
+  pub const PRIMARY_BACKUP: &str = "primary_backup";
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +32,24 @@ pub struct PointerToUpstream {
 }
 /// Trait for LB
 pub(super) trait LoadBalanceWithPointer {
-  fn get_ptr(&self, req_info: Option<&LoadBalanceContext>) -> PointerToUpstream;
+  /// Get the index of the upstream serving the incoming request, and optionally a context to update LB state (e.g. sticky cookie value).
+  fn get_ptr(&self, req_info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream;
+}
+
+/// Collect indices of healthy upstreams. Returns all indices if none are healthy (best-effort).
+pub(super) fn healthy_indices(upstreams: &[Upstream]) -> Vec<usize> {
+  let healthy: Vec<usize> = upstreams
+    .iter()
+    .enumerate()
+    .filter(|(_, u)| u.is_healthy())
+    .map(|(i, _)| i)
+    .collect();
+  if healthy.is_empty() {
+    // All unhealthy — best-effort: return all indices
+    (0..upstreams.len()).collect()
+  } else {
+    healthy
+  }
 }
 
 #[derive(Debug, Clone, Builder)]
@@ -38,50 +58,54 @@ pub struct LoadBalanceRoundRobin {
   #[builder(default)]
   /// Pointer to the index of the last served upstream destination
   ptr: Arc<AtomicUsize>,
-  #[builder(setter(custom), default)]
-  /// Number of upstream destinations
-  num_upstreams: usize,
 }
-impl LoadBalanceRoundRobinBuilder {
-  pub fn num_upstreams(&mut self, v: &usize) -> &mut Self {
-    self.num_upstreams = Some(*v);
-    self
+impl LoadBalanceRoundRobin {
+  /// Atomically increment ptr, reset near overflow to avoid wrapping issues.
+  fn fetch_and_advance(&self) -> usize {
+    let prev = self.ptr.fetch_add(1, Ordering::Relaxed);
+    if prev >= usize::MAX - 1 {
+      self.ptr.store(0, Ordering::Relaxed);
+    }
+    prev
   }
 }
 impl LoadBalanceWithPointer for LoadBalanceRoundRobin {
-  /// Increment the count of upstream served up to the max value
-  fn get_ptr(&self, _info: Option<&LoadBalanceContext>) -> PointerToUpstream {
-    // Get a current count of upstream served
-    let current_ptr = self.ptr.load(Ordering::Relaxed);
-
-    let ptr = if current_ptr < self.num_upstreams - 1 {
-      self.ptr.fetch_add(1, Ordering::Relaxed)
-    } else {
-      // Clear the counter
-      self.ptr.fetch_and(0, Ordering::Relaxed)
-    };
+  /// Get the index of the upstream serving the incoming request using round robin among healthy upstreams.
+  fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
+    let healthy = healthy_indices(upstreams);
+    let count = self.fetch_and_advance();
+    let ptr = healthy[count % healthy.len()];
     PointerToUpstream { ptr, context: None }
   }
 }
 
 #[derive(Debug, Clone, Builder)]
 /// Random LB object to keep the object of random pools
-pub struct LoadBalanceRandom {
-  #[builder(setter(custom), default)]
-  /// Number of upstream destinations
-  num_upstreams: usize,
-}
-impl LoadBalanceRandomBuilder {
-  pub fn num_upstreams(&mut self, v: &usize) -> &mut Self {
-    self.num_upstreams = Some(*v);
-    self
+pub struct LoadBalanceRandom {}
+
+impl LoadBalanceWithPointer for LoadBalanceRandom {
+  fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
+    let healthy = healthy_indices(upstreams);
+    let mut rng = rand::rng();
+    let ptr = healthy[rng.random_range(0..healthy.len())];
+    PointerToUpstream { ptr, context: None }
   }
 }
-impl LoadBalanceWithPointer for LoadBalanceRandom {
-  /// Returns the random index within the range
-  fn get_ptr(&self, _info: Option<&LoadBalanceContext>) -> PointerToUpstream {
-    let mut rng = rand::rng();
-    let ptr = rng.random_range(0..self.num_upstreams);
+
+#[cfg(feature = "health-check")]
+#[derive(Debug, Clone)]
+/// Primary/Backup LB: use the first healthy upstream (lowest index).
+/// Falls back to the next healthy upstream when primary is down.
+/// Requires health_check to be enabled (validated at config time).
+pub struct LoadBalancePrimaryBackup;
+
+#[cfg(feature = "health-check")]
+impl LoadBalanceWithPointer for LoadBalancePrimaryBackup {
+  // Always pick the lowest-indexed healthy upstream (primary preference)
+  // Fallback to 0 if None (this does not happen since healthy_indices returns all indices if none are healthy. Just in case.)
+  fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
+    let healthy = healthy_indices(upstreams);
+    let ptr = healthy.get(0).cloned().unwrap_or(0);
     PointerToUpstream { ptr, context: None }
   }
 }
@@ -98,6 +122,9 @@ pub enum LoadBalance {
   #[cfg(feature = "sticky-cookie")]
   /// Round robin with session persistance using cookie
   StickyRoundRobin(LoadBalanceSticky),
+  #[cfg(feature = "health-check")]
+  /// Primary/Backup: always prefer the lowest-indexed healthy upstream
+  PrimaryBackup(LoadBalancePrimaryBackup),
 }
 impl Default for LoadBalance {
   fn default() -> Self {
@@ -107,19 +134,18 @@ impl Default for LoadBalance {
 
 impl LoadBalance {
   /// Get the index of the upstream serving the incoming request
-  pub fn get_context(&self, _context_to_lb: &Option<LoadBalanceContext>) -> PointerToUpstream {
+  pub fn get_context(&self, _context_to_lb: &Option<LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
     match self {
       LoadBalance::FixToFirst => PointerToUpstream {
         ptr: 0usize,
         context: None,
       },
-      LoadBalance::RoundRobin(ptr) => ptr.get_ptr(None),
-      LoadBalance::Random(ptr) => ptr.get_ptr(None),
+      LoadBalance::RoundRobin(ptr) => ptr.get_ptr(None, upstreams),
+      LoadBalance::Random(ptr) => ptr.get_ptr(None, upstreams),
       #[cfg(feature = "sticky-cookie")]
-      LoadBalance::StickyRoundRobin(ptr) => {
-        // Generate new context if sticky round robin is enabled.
-        ptr.get_ptr(_context_to_lb.as_ref())
-      }
+      LoadBalance::StickyRoundRobin(ptr) => ptr.get_ptr(_context_to_lb.as_ref(), upstreams),
+      #[cfg(feature = "health-check")]
+      LoadBalance::PrimaryBackup(ptr) => ptr.get_ptr(None, upstreams),
     }
   }
 }

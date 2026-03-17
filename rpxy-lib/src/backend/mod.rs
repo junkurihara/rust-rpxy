@@ -3,6 +3,9 @@ mod load_balance;
 mod upstream;
 mod upstream_opts;
 
+#[cfg(feature = "health-check")]
+pub(crate) mod health_check;
+
 #[cfg(feature = "sticky-cookie")]
 pub(crate) use self::load_balance::{StickyCookie, StickyCookieValue};
 #[allow(unused)]

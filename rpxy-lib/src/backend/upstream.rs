@@ -3,8 +3,9 @@ use super::load_balance::LoadBalanceStickyBuilder;
 use super::load_balance::{
   LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder, load_balance_options as lb_opts,
 };
-// use super::{BytesName, LbContext, PathNameBytesExp, UpstreamOption};
 use super::upstream_opts::UpstreamOption;
+#[cfg(feature = "health-check")]
+use crate::globals::HealthCheckConfig;
 use crate::{
   error::RpxyError,
   globals::{AppConfig, UpstreamUri},
@@ -18,13 +19,15 @@ use derive_builder::Builder;
 #[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
+#[cfg(feature = "health-check")]
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 /// Handler for given path to route incoming request to path's corresponding upstream server(s).
 pub struct PathManager {
   /// HashMap of upstream candidate server info, key is path name
   /// TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
-  inner: HashMap<PathName, UpstreamCandidates>,
+  pub(crate) inner: HashMap<PathName, UpstreamCandidates>,
 }
 
 impl TryFrom<&AppConfig> for PathManager {
@@ -33,15 +36,34 @@ impl TryFrom<&AppConfig> for PathManager {
     let mut inner: HashMap<PathName, UpstreamCandidates> = HashMap::default();
 
     app_config.reverse_proxy.iter().for_each(|rpc| {
+      #[cfg(not(feature = "health-check"))]
       let upstream_vec: Vec<Upstream> = rpc.upstream.iter().map(Upstream::from).collect();
-      let elem = UpstreamCandidatesBuilder::default()
+      #[cfg(feature = "health-check")]
+      let upstream_vec: Vec<Upstream> = rpc
+        .upstream
+        .iter()
+        .map(Upstream::from)
+        .map(|u| Upstream {
+          health: rpc
+            .health_check
+            .as_ref()
+            .map(|_| Arc::new(super::health_check::UpstreamHealth::new())),
+          ..u
+        })
+        .collect();
+
+      let mut builder = UpstreamCandidatesBuilder::default();
+      builder
         .upstream(&upstream_vec)
         .path(&rpc.path)
         .replace_path(&rpc.replace_path)
         .load_balance(&rpc.load_balance, &upstream_vec, &app_config.server_name, &rpc.path)
-        .options(&rpc.upstream_options)
-        .build()
-        .unwrap();
+        .options(&rpc.upstream_options);
+
+      #[cfg(feature = "health-check")]
+      builder.health_check_config(&rpc.health_check);
+
+      let elem = builder.build().unwrap();
       inner.insert(elem.path.clone(), elem);
     });
 
@@ -96,11 +118,31 @@ impl PathManager {
 pub struct Upstream {
   /// Base uri without specific path
   pub uri: hyper::Uri,
+  /// Health state shared with the health checker task.
+  /// None if health check is not configured or explicitly disabled for upstream group this upstream belongs to.
+  #[cfg(feature = "health-check")]
+  pub health: Option<Arc<super::health_check::UpstreamHealth>>,
 }
 impl From<&UpstreamUri> for Upstream {
   fn from(value: &UpstreamUri) -> Self {
     Self {
       uri: value.inner.clone(),
+      #[cfg(feature = "health-check")]
+      health: None,
+    }
+  }
+}
+impl Upstream {
+  /// Returns whether this upstream is considered healthy.
+  /// Always returns true if health check is not configured.
+  pub fn is_healthy(&self) -> bool {
+    #[cfg(feature = "health-check")]
+    {
+      self.health.as_ref().map_or(true, |h| h.is_healthy())
+    }
+    #[cfg(not(feature = "health-check"))]
+    {
+      true
     }
   }
 }
@@ -137,6 +179,11 @@ pub struct UpstreamCandidates {
   #[builder(setter(custom), default)]
   /// Activated upstream options defined in [[UpstreamOption]]
   pub options: HashSet<UpstreamOption>,
+
+  #[cfg(feature = "health-check")]
+  #[builder(setter(custom), default)]
+  /// Health check configuration for this upstream group
+  pub health_check_config: Option<HealthCheckConfig>,
 }
 
 impl UpstreamCandidatesBuilder {
@@ -168,31 +215,21 @@ impl UpstreamCandidatesBuilder {
     _server_name: &str,
     _path_opt: &Option<String>,
   ) -> &mut Self {
-    let upstream_num = &upstream_vec.len();
     let lb = if let Some(x) = v {
       match x.as_str() {
         lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
-        lb_opts::RANDOM => LoadBalance::Random(
-          LoadBalanceRandomBuilder::default()
-            .num_upstreams(upstream_num)
-            .build()
-            .unwrap(),
-        ),
-        lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(
-          LoadBalanceRoundRobinBuilder::default()
-            .num_upstreams(upstream_num)
-            .build()
-            .unwrap(),
-        ),
+        lb_opts::RANDOM => LoadBalance::Random(LoadBalanceRandomBuilder::default().build().unwrap()),
+        lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(LoadBalanceRoundRobinBuilder::default().build().unwrap()),
         #[cfg(feature = "sticky-cookie")]
         lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
           LoadBalanceStickyBuilder::default()
-            .num_upstreams(upstream_num)
             .sticky_config(_server_name, _path_opt)
             .upstream_maps(upstream_vec) // TODO:
             .build()
             .unwrap(),
         ),
+        #[cfg(feature = "health-check")]
+        lb_opts::PRIMARY_BACKUP => LoadBalance::PrimaryBackup(super::load_balance::LoadBalancePrimaryBackup),
         _ => {
           error!("Specified load balancing option is invalid.");
           LoadBalance::default()
@@ -204,6 +241,14 @@ impl UpstreamCandidatesBuilder {
     self.load_balance = Some(lb);
     self
   }
+
+  #[cfg(feature = "health-check")]
+  /// Set the health check configuration
+  pub fn health_check_config(&mut self, v: &Option<HealthCheckConfig>) -> &mut Self {
+    self.health_check_config = Some(v.clone());
+    self
+  }
+
   /// Set the activated upstream options defined in [[UpstreamOption]]
   pub fn options(&mut self, v: &Option<Vec<String>>) -> &mut Self {
     let opts = v.as_ref().map_or_else(
@@ -223,7 +268,7 @@ impl UpstreamCandidatesBuilder {
 impl UpstreamCandidates {
   /// Get an enabled option of load balancing [[LoadBalance]]
   pub fn get(&self, context_to_lb: &Option<LoadBalanceContext>) -> (Option<&Upstream>, Option<LoadBalanceContext>) {
-    let pointer_to_upstream = self.load_balance.get_context(context_to_lb);
+    let pointer_to_upstream = self.load_balance.get_context(context_to_lb, &self.inner);
     trace!("Upstream of index {} is chosen.", pointer_to_upstream.ptr);
     trace!("Context to LB (Cookie in Request): {:?}", context_to_lb);
     trace!("Context from LB (Set-Cookie in Response): {:?}", pointer_to_upstream.context);
@@ -240,7 +285,11 @@ mod test {
   #[test]
   fn calc_id_works() {
     let uri = "https://www.rust-lang.org".parse::<hyper::Uri>().unwrap();
-    let upstream = Upstream { uri };
+    let upstream = Upstream {
+      uri,
+      #[cfg(feature = "health-check")]
+      health: None,
+    };
     assert_eq!(
       "eGsjoPbactQ1eUJjafYjPT3ekYZQkaqJnHdA_FMSkgM",
       upstream.calculate_id_with_index(0)

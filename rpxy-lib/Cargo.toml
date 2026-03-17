@@ -22,6 +22,7 @@ http3-s2n = [
   "rpxy-certs/http3",
   "h3",
 ]
+health-check = []
 proxy-protocol = ["dep:ppp", "dep:ipnet"]
 cache = ["http-cache-semantics", "lru", "sha2", "base64"]
 sticky-cookie = ["base64", "sha2", "chrono"]
