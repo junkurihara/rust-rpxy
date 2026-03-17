@@ -71,11 +71,11 @@ impl HealthCheckHttpClient {
   }
 
   /// Perform an HTTP health check: GET `uri + path`, check response status.
-  pub async fn check(&self, uri: &hyper::Uri, path: &str, expected_status: u16, timeout: Duration) -> bool {
+  pub async fn check(&self, server_name: &str, uri: &hyper::Uri, path: &str, expected_status: u16, timeout: Duration) -> bool {
     let target_uri = match build_health_check_uri(uri, path) {
       Some(u) => u,
       None => {
-        debug!("Failed to build health check URI for {}{}", uri, path);
+        debug!("[{server_name}] Failed to build health check URI for {uri}{path}");
         return false;
       }
     };
@@ -87,7 +87,7 @@ impl HealthCheckHttpClient {
     {
       Ok(r) => r,
       Err(e) => {
-        debug!("Failed to build health check request for {}: {}", target_uri, e);
+        debug!("[{server_name}] Failed to build health check request for {target_uri}: {e}");
         return false;
       }
     };
@@ -95,19 +95,20 @@ impl HealthCheckHttpClient {
     match tokio::time::timeout(timeout, self.inner.request(req)).await {
       Ok(Ok(resp)) => {
         let status = resp.status().as_u16();
+        trace!("[{server_name}] Health check HTTP response for {target_uri}: {status}");
         if status == expected_status {
           true
         } else {
-          debug!("Health check HTTP status mismatch for {target_uri}: got {status}, expected {expected_status}");
+          debug!("[{server_name}] Health check HTTP status mismatch for {target_uri}: got {status}, expected {expected_status}");
           false
         }
       }
       Ok(Err(e)) => {
-        debug!("Health check HTTP request failed for {target_uri}: {e}");
+        debug!("[{server_name}] Health check HTTP request failed for {target_uri}: {e}");
         false
       }
       Err(_) => {
-        debug!("Health check HTTP request timed out for {target_uri}");
+        debug!("[{server_name}] Health check HTTP request timed out for {target_uri}");
         false
       }
     }
