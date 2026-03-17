@@ -15,3 +15,6 @@ pub(crate) use self::{
   upstream_opts::UpstreamOption,
 };
 pub(crate) use backend_main::{BackendApp, BackendAppBuilderError, BackendAppManager};
+
+#[cfg(feature = "health-check")]
+pub(crate) const LOAD_BALANCE_PRIMARY_BACKUP: &str = self::load_balance::load_balance_options::PRIMARY_BACKUP;

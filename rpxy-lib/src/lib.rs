@@ -33,6 +33,9 @@ pub use crate::{
 };
 
 #[cfg(feature = "health-check")]
+pub const LOAD_BALANCE_PRIMARY_BACKUP: &str = crate::backend::LOAD_BALANCE_PRIMARY_BACKUP;
+
+#[cfg(feature = "health-check")]
 pub use crate::{
   constants::health_check as health_check_defaults,
   globals::{HealthCheckConfig, HealthCheckType},

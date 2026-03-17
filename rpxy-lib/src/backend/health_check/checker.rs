@@ -7,12 +7,13 @@ use crate::{
 };
 use futures::future::join_all;
 use std::sync::Arc;
+use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 
 /// Check if any configured health check uses HTTP type.
 fn has_http_health_check(app_manager: &BackendAppManager) -> bool {
   app_manager.apps.iter().any(|(_name, backend_app)| {
-    backend_app.path_manager.inner.iter().any(|(_path, candidates)| {
+    backend_app.path_manager.iter_candidates().any(|(_path, candidates)| {
       candidates
         .health_check_config
         .as_ref()
@@ -42,7 +43,7 @@ pub(crate) fn spawn_health_checkers(
 
   app_manager.apps.iter().for_each(|(_app_name, backend_app)| {
     let server_name = (&backend_app.server_name).try_into().unwrap_or_else(|_| "<none>".to_string());
-    let sub_handles = backend_app.path_manager.inner.iter().filter_map(|(path, candidates)| {
+    let sub_handles = backend_app.path_manager.iter_candidates().filter_map(|(path, candidates)| {
       // Collect upstreams that have health check enabled (i.e., have UpstreamHealth)
       let health_upstreams: Vec<_> = candidates
         .inner
@@ -86,7 +87,7 @@ pub(crate) fn spawn_health_checkers(
 }
 
 /// Run a single health checker task for a group of upstreams.
-/// Checks all upstreams concurrently with join_all, then sleeps for interval.
+/// Runs an immediate first probe, then schedules subsequent probes with a fixed interval.
 async fn run_health_checker(
   server_name: String,
   path_str: String,
@@ -99,6 +100,8 @@ async fn run_health_checker(
     .iter()
     .map(|_| ConsecutiveCounter::new(config.unhealthy_threshold, config.healthy_threshold))
     .collect();
+  let mut ticker = tokio::time::interval(config.interval);
+  ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
   loop {
     tokio::select! {
@@ -106,7 +109,7 @@ async fn run_health_checker(
         debug!("[{server_name}:{path_str}] Health checker terminated");
         return Ok(());
       }
-      _ = tokio::time::sleep(config.interval) => {
+      _ = ticker.tick() => {
         let checks = upstreams.iter().enumerate().map(|(i, (uri, _health))| {
           let uri = uri.clone();
           let timeout = config.timeout;

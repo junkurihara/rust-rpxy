@@ -36,20 +36,37 @@ pub(super) trait LoadBalanceWithPointer {
   fn get_ptr(&self, req_info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream;
 }
 
-/// Collect indices of healthy upstreams. Returns all indices if none are healthy (best-effort).
-pub(super) fn healthy_indices(upstreams: &[Upstream]) -> Vec<usize> {
-  let healthy: Vec<usize> = upstreams
-    .iter()
-    .enumerate()
-    .filter(|(_, u)| u.is_healthy())
-    .map(|(i, _)| i)
-    .collect();
-  if healthy.is_empty() {
-    // All unhealthy — best-effort: return all indices
-    (0..upstreams.len()).collect()
+#[cfg(feature = "health-check")]
+fn first_healthy_index(upstreams: &[Upstream]) -> Option<usize> {
+  upstreams.iter().position(Upstream::is_healthy)
+}
+
+fn healthy_index_count(upstreams: &[Upstream]) -> usize {
+  upstreams.iter().filter(|u| u.is_healthy()).count()
+}
+
+/// Pick the nth healthy upstream without allocating an intermediate index list.
+/// Falls back to all upstreams if every upstream is unhealthy (best-effort).
+pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> usize {
+  let healthy_count = healthy_index_count(upstreams);
+  if healthy_count == 0 {
+    nth % upstreams.len()
   } else {
-    healthy
+    let target = nth % healthy_count;
+    upstreams
+      .iter()
+      .enumerate()
+      .filter(|(_, u)| u.is_healthy())
+      .nth(target)
+      .map(|(i, _)| i)
+      .expect("healthy upstream index must exist")
   }
+}
+
+#[cfg(feature = "health-check")]
+/// Get the index of the first healthy upstream, or 0 if all are unhealthy (best-effort).
+pub(super) fn first_available_index(upstreams: &[Upstream]) -> usize {
+  first_healthy_index(upstreams).unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Builder)]
@@ -72,9 +89,8 @@ impl LoadBalanceRoundRobin {
 impl LoadBalanceWithPointer for LoadBalanceRoundRobin {
   /// Get the index of the upstream serving the incoming request using round robin among healthy upstreams.
   fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
-    let healthy = healthy_indices(upstreams);
     let count = self.fetch_and_advance();
-    let ptr = healthy[count % healthy.len()];
+    let ptr = pick_nth_available_index(upstreams, count);
     PointerToUpstream { ptr, context: None }
   }
 }
@@ -85,9 +101,9 @@ pub struct LoadBalanceRandom {}
 
 impl LoadBalanceWithPointer for LoadBalanceRandom {
   fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
-    let healthy = healthy_indices(upstreams);
+    let pool_len = healthy_index_count(upstreams).max(1).min(upstreams.len());
     let mut rng = rand::rng();
-    let ptr = healthy[rng.random_range(0..healthy.len())];
+    let ptr = pick_nth_available_index(upstreams, rng.random_range(0..pool_len));
     PointerToUpstream { ptr, context: None }
   }
 }
@@ -101,11 +117,10 @@ pub struct LoadBalancePrimaryBackup;
 
 #[cfg(feature = "health-check")]
 impl LoadBalanceWithPointer for LoadBalancePrimaryBackup {
-  // Always pick the lowest-indexed healthy upstream (primary preference)
-  // Fallback to 0 if None (this does not happen since healthy_indices returns all indices if none are healthy. Just in case.)
+  // Always pick the lowest-indexed healthy upstream (primary preference).
+  // Falls back to index 0 if every upstream is currently unhealthy.
   fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
-    let healthy = healthy_indices(upstreams);
-    let ptr = healthy.get(0).cloned().unwrap_or(0);
+    let ptr = first_available_index(upstreams);
     PointerToUpstream { ptr, context: None }
   }
 }
@@ -139,9 +154,8 @@ impl LoadBalance {
       LoadBalance::FixToFirst => {
         #[cfg(feature = "health-check")]
         {
-          let healthy = healthy_indices(upstreams);
           PointerToUpstream {
-            ptr: healthy[0],
+            ptr: first_available_index(upstreams),
             context: None,
           }
         }

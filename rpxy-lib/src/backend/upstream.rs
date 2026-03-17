@@ -27,7 +27,7 @@ use std::sync::Arc;
 pub struct PathManager {
   /// HashMap of upstream candidate server info, key is path name
   /// TODO: HashMapでいいのかは疑問。max_by_keyでlongest prefix matchしてるのも無駄っぽいが。。。
-  pub(crate) inner: HashMap<PathName, UpstreamCandidates>,
+  inner: HashMap<PathName, UpstreamCandidates>,
 }
 
 impl TryFrom<&AppConfig> for PathManager {
@@ -84,6 +84,11 @@ impl TryFrom<&AppConfig> for PathManager {
 }
 
 impl PathManager {
+  #[cfg(feature = "health-check")]
+  pub(crate) fn iter_candidates(&self) -> impl Iterator<Item = (&PathName, &UpstreamCandidates)> {
+    self.inner.iter()
+  }
+
   /// Get an appropriate upstream destinations for given path string.
   /// trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
   /// コスト的にこの程度で十分では。
@@ -206,13 +211,12 @@ impl UpstreamCandidatesBuilder {
     self.replace_path = Some(v.to_owned().as_ref().map_or_else(|| None, |v| Some(v.to_path_name())));
     self
   }
-  #[allow(unused)]
   /// Set the load balancing option
   pub fn load_balance(
     &mut self,
     v: &Option<String>,
     // upstream_num: &usize,
-    upstream_vec: &[Upstream],
+    _upstream_vec: &[Upstream],
     _server_name: &str,
     _path_opt: &Option<String>,
   ) -> &mut Self {
@@ -225,7 +229,7 @@ impl UpstreamCandidatesBuilder {
         lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
           LoadBalanceStickyBuilder::default()
             .sticky_config(_server_name, _path_opt)
-            .upstream_maps(upstream_vec) // TODO:
+            .upstream_maps(_upstream_vec) // TODO:
             .build()
             .unwrap(),
         ),

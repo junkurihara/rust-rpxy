@@ -48,7 +48,7 @@ impl HealthCheckHttpClient {
       let tls = hyper_tls::native_tls::TlsConnector::builder()
         .request_alpns(&["h2", "http/1.1"])
         .build()
-        .map_err(|e| RpxyError::FailedToBuildForwarder(e.to_string()))?;
+        .map_err(|e| RpxyError::FailedToBuildHealthCheckClient(e.to_string()))?;
       let mut http = HttpConnector::new();
       http.enforce_http(false);
       let connector = hyper_tls::HttpsConnector::from((http, tls.into()));

@@ -1,6 +1,6 @@
 use super::{
   Upstream,
-  load_balance_main::{LoadBalanceContext, LoadBalanceWithPointer, PointerToUpstream, healthy_indices},
+  load_balance_main::{LoadBalanceContext, LoadBalanceWithPointer, PointerToUpstream, pick_nth_available_index},
   sticky_cookie::StickyCookieConfig,
 };
 use crate::{constants::STICKY_COOKIE_NAME, log::*};
@@ -79,10 +79,10 @@ impl<'a> LoadBalanceSticky {
     prev
   }
 
-  /// Round-robin among the given healthy indices pool
-  fn rr_from_pool(&self, pool: &[usize]) -> usize {
+  /// Round-robin among healthy upstreams, falling back to all upstreams if all are unhealthy.
+  fn rr_next_index(&self, upstreams: &[Upstream]) -> usize {
     let count = self.fetch_and_advance();
-    pool[count % pool.len()]
+    pick_nth_available_index(upstreams, count)
   }
 
   /// This is always called only internally. So 'unwrap()' is executed.
@@ -111,12 +111,10 @@ impl<'a> LoadBalanceSticky {
 impl LoadBalanceWithPointer for LoadBalanceSticky {
   /// Get the pointer to the upstream server to serve the incoming request.
   fn get_ptr(&self, req_info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
-    let healthy_indices = healthy_indices(upstreams);
-
     match req_info {
       None => {
         debug!("No sticky cookie");
-        let ptr = self.rr_from_pool(&healthy_indices);
+        let ptr = self.rr_next_index(upstreams);
         self.build_ptr_with_new_cookie(ptr)
       }
       Some(context) => {
@@ -133,13 +131,13 @@ impl LoadBalanceWithPointer for LoadBalanceSticky {
           Some(index) => {
             // Valid cookie but target is unhealthy -> fallback + new cookie
             debug!("Valid sticky cookie: id={server_id}, index={index}, unhealthy -> fallback",);
-            let ptr = self.rr_from_pool(&healthy_indices);
+            let ptr = self.rr_next_index(upstreams);
             self.build_ptr_with_new_cookie(ptr)
           }
           None => {
             // Invalid cookie -> RR + new cookie
             debug!("Invalid sticky cookie: id={}", server_id);
-            let ptr = self.rr_from_pool(&healthy_indices);
+            let ptr = self.rr_next_index(upstreams);
             self.build_ptr_with_new_cookie(ptr)
           }
         }

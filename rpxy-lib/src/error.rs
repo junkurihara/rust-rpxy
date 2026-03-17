@@ -99,6 +99,8 @@ pub enum RpxyError {
   // Forwarder errors
   #[error("Failed to build forwarder: {0}")]
   FailedToBuildForwarder(String),
+  #[error("Failed to build health check client: {0}")]
+  FailedToBuildHealthCheckClient(String),
   #[error("Failed to fetch from upstream: {0}")]
   FailedToFetchFromUpstream(String),
 
