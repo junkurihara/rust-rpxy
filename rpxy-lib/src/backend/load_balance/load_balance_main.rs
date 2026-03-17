@@ -136,10 +136,23 @@ impl LoadBalance {
   /// Get the index of the upstream serving the incoming request
   pub fn get_context(&self, _context_to_lb: &Option<LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
     match self {
-      LoadBalance::FixToFirst => PointerToUpstream {
-        ptr: 0usize,
-        context: None,
-      },
+      LoadBalance::FixToFirst => {
+        #[cfg(feature = "health-check")]
+        {
+          let healthy = healthy_indices(upstreams);
+          PointerToUpstream {
+            ptr: healthy[0],
+            context: None,
+          }
+        }
+        #[cfg(not(feature = "health-check"))]
+        {
+          PointerToUpstream {
+            ptr: 0usize,
+            context: None,
+          }
+        }
+      }
       LoadBalance::RoundRobin(ptr) => ptr.get_ptr(None, upstreams),
       LoadBalance::Random(ptr) => ptr.get_ptr(None, upstreams),
       #[cfg(feature = "sticky-cookie")]

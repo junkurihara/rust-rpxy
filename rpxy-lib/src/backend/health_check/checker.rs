@@ -9,24 +9,33 @@ use futures::future::join_all;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
+/// Check if any configured health check uses HTTP type.
+fn has_http_health_check(app_manager: &BackendAppManager) -> bool {
+  app_manager.apps.iter().any(|(_name, backend_app)| {
+    backend_app.path_manager.inner.iter().any(|(_path, candidates)| {
+      candidates
+        .health_check_config
+        .as_ref()
+        .is_some_and(|c| matches!(c.check_type, HealthCheckType::Http { .. }))
+    })
+  })
+}
+
 /// Spawn health checker tasks for all upstream candidates that have health check enabled.
 /// Returns join handles for the spawned tasks.
+/// Fails if HTTP health checks are configured but the HTTP client cannot be built.
 pub(crate) fn spawn_health_checkers(
   app_manager: &Arc<BackendAppManager>,
   cancel_token: CancellationToken,
   runtime_handle: &tokio::runtime::Handle,
-) -> Vec<tokio::task::JoinHandle<RpxyResult<()>>> {
-  // Build a shared HTTP client for all HTTP health checks.
-  // Shared via Arc to avoid creating one client per checker task.
-  let http_client = match HealthCheckHttpClient::try_new(runtime_handle) {
-    Ok(c) => Some(Arc::new(c)),
-    Err(e) => {
-      error!(
-        "Failed to build health check HTTP client: {}. HTTP health checks will fall back to TCP.",
-        e
-      );
-      None
-    }
+) -> RpxyResult<Vec<tokio::task::JoinHandle<RpxyResult<()>>>> {
+  // Only build the HTTP client if at least one health check uses HTTP type.
+  // Fail hard if HTTP health checks are configured but the client cannot be built.
+  let http_client = if has_http_health_check(app_manager) {
+    let client = HealthCheckHttpClient::try_new(runtime_handle)?;
+    Some(Arc::new(client))
+  } else {
+    None
   };
 
   let mut handles = Vec::new();
@@ -73,7 +82,7 @@ pub(crate) fn spawn_health_checkers(
     handles.extend(sub_handles);
   });
 
-  handles
+  Ok(handles)
 }
 
 /// Run a single health checker task for a group of upstreams.
@@ -90,12 +99,6 @@ async fn run_health_checker(
     .iter()
     .map(|_| ConsecutiveCounter::new(config.unhealthy_threshold, config.healthy_threshold))
     .collect();
-
-  // Log once at startup if HTTP client is unavailable (instead of every iteration)
-  let http_fallback = matches!(config.check_type, HealthCheckType::Http { .. }) && http_client.is_none();
-  if http_fallback {
-    warn!("[{server_name}:{path_str}] HTTP health check client unavailable, falling back to TCP");
-  }
 
   loop {
     tokio::select! {
@@ -114,11 +117,13 @@ async fn run_health_checker(
             let ok = match check_type {
               HealthCheckType::Tcp => check_tcp(&server_name, &uri, timeout).await,
               HealthCheckType::Http { ref path, expected_status } => {
-                if let Some(ref client) = http_client {
-                  client.check(&server_name, &uri, path, expected_status, timeout).await
-                } else {
-                  check_tcp(&server_name, &uri, timeout).await
-                }
+                // http_client is guaranteed to be Some here — spawn_health_checkers
+                // fails at startup if HTTP client cannot be built.
+                http_client
+                  .as_ref()
+                  .expect("HTTP health check client must be available")
+                  .check(&server_name, &uri, path, expected_status, timeout)
+                  .await
               }
             };
             (i, ok)

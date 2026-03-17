@@ -644,6 +644,10 @@ fn build_health_check_config(
             .path
             .as_ref()
             .ok_or_else(|| anyhow!("[{server_name}] health_check.path is required when type = \"http\""))?;
+          ensure!(
+            path.starts_with('/'),
+            "[{server_name}] health_check.path must start with \"/\" (got \"{path}\")",
+          );
           let expected_status = detail.expected_status.unwrap_or(hc_defaults::DEFAULT_EXPECTED_STATUS);
           HealthCheckType::Http {
             path: path.clone(),

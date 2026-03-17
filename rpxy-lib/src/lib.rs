@@ -233,7 +233,7 @@ pub async fn entrypoint(
   // 6. spawn health checker tasks (after globals/forwarder, before proxy tasks)
   let handles = {
     let health_checker_handles =
-      backend::health_check::spawn_health_checkers(&app_manager, cancel_token.clone(), &globals.runtime_handle);
+      backend::health_check::spawn_health_checkers(&app_manager, cancel_token.clone(), &globals.runtime_handle)?;
     health_checker_handles.into_iter().chain(proxy_handles.into_iter())
   };
   #[cfg(not(feature = "health-check"))]

@@ -81,7 +81,8 @@ upstream = [
   { location = 'www.yahoo.com', tls = true },
   { location = 'www.yahoo.co.jp', tls = true },
 ]
-load_balance = "round_robin" # or "random" or "sticky" (sticky session) or "primary_backup" or "none" (fix to the first one, default)
+load_balance = "round_robin" # or "random" or "sticky" (sticky session) or "primary_backup" or "none" (default)
+                             # "none": fix to the first upstream. When health_check is enabled, picks the first healthy one.
                              # "primary_backup": always routes to the first healthy upstream; requires health_check to be enabled.
 upstream_options = [
   "keep_original_host",   # [default] do not overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy), which is prior to "set_upstream_host" if both are specified.
@@ -99,7 +100,7 @@ upstream_options = [
 # unhealthy_threshold = 3   # consecutive failures to mark unhealthy [default: 3]
 # healthy_threshold = 2     # consecutive successes to mark healthy again [default: 2]
 # # HTTP-specific options (only when type = "http"):
-# path = "/healthz"         # required for type = "http"
+# path = "/healthz"         # required for type = "http"; must start with "/"
 # expected_status = 200     # expected HTTP status code [default: 200]
 
 # Non-default destination in "localhost" app, which is routed by "path"
