@@ -1,5 +1,10 @@
-use super::{UpstreamHealth, check_tcp::check_tcp, counter::ConsecutiveCounter};
-use crate::{backend::BackendAppManager, error::RpxyResult, globals::HealthCheckConfig, log::*};
+use super::{UpstreamHealth, check_http::HealthCheckHttpClient, check_tcp::check_tcp, counter::ConsecutiveCounter};
+use crate::{
+  backend::BackendAppManager,
+  error::RpxyResult,
+  globals::{HealthCheckConfig, HealthCheckType},
+  log::*,
+};
 use futures::future::join_all;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -11,11 +16,23 @@ pub(crate) fn spawn_health_checkers(
   cancel_token: CancellationToken,
   runtime_handle: &tokio::runtime::Handle,
 ) -> Vec<tokio::task::JoinHandle<RpxyResult<()>>> {
+  // Build a shared HTTP client for all HTTP health checks.
+  // Shared via Arc to avoid creating one client per checker task.
+  let http_client = match HealthCheckHttpClient::try_new(runtime_handle) {
+    Ok(c) => Some(Arc::new(c)),
+    Err(e) => {
+      error!(
+        "Failed to build health check HTTP client: {}. HTTP health checks will fall back to TCP.",
+        e
+      );
+      None
+    }
+  };
+
   let mut handles = Vec::new();
 
   app_manager.apps.iter().for_each(|(_app_name, backend_app)| {
     let sub_handles = backend_app.path_manager.inner.iter().filter_map(|(path, candidates)| {
-      // for (path, candidates) in backend_app.path_manager.inner.iter() {
       // Collect upstreams that have health check enabled (i.e., have UpstreamHealth)
       let health_upstreams: Vec<_> = candidates
         .inner
@@ -24,11 +41,11 @@ pub(crate) fn spawn_health_checkers(
         .collect();
 
       if health_upstreams.is_empty() {
-        return None; // No health check needed for this path
+        return None;
       }
 
       let Some(ref config) = candidates.health_check_config else {
-        return None; // No health check config for this path
+        return None;
       };
 
       let path_str: String = path.try_into().unwrap_or_else(|_| "<none>".to_string());
@@ -41,7 +58,12 @@ pub(crate) fn spawn_health_checkers(
 
       let config = config.clone();
       let cancel = cancel_token.clone();
-      let handle = runtime_handle.spawn(async move { run_health_checker(health_upstreams, config, cancel).await });
+      let task_http_client = match config.check_type {
+        HealthCheckType::Http { .. } => http_client.clone(),
+        _ => None,
+      };
+      let handle =
+        runtime_handle.spawn(async move { run_health_checker(health_upstreams, config, cancel, task_http_client).await });
 
       Some(handle)
     });
@@ -57,6 +79,7 @@ async fn run_health_checker(
   upstreams: Vec<(hyper::Uri, Arc<UpstreamHealth>)>,
   config: HealthCheckConfig,
   cancel: CancellationToken,
+  http_client: Option<Arc<HealthCheckHttpClient>>,
 ) -> RpxyResult<()> {
   let mut counters: Vec<ConsecutiveCounter> = upstreams
     .iter()
@@ -73,8 +96,21 @@ async fn run_health_checker(
         let checks = upstreams.iter().enumerate().map(|(i, (uri, _health))| {
           let uri = uri.clone();
           let timeout = config.timeout;
+          let check_type = config.check_type.clone();
+          let http_client = http_client.clone();
           async move {
-            let ok = check_tcp(&uri, timeout).await;
+            let ok = match check_type {
+              HealthCheckType::Tcp => check_tcp(&uri, timeout).await,
+              HealthCheckType::Http { ref path, expected_status } => {
+                if let Some(ref client) = http_client {
+                  client.check(&uri, path, expected_status, timeout).await
+                } else {
+                  // Fallback to TCP if HTTP client failed to build
+                  warn!("HTTP health check client unavailable, falling back to TCP for {}", uri);
+                  check_tcp(&uri, timeout).await
+                }
+              }
+            };
             (i, ok)
           }
         });

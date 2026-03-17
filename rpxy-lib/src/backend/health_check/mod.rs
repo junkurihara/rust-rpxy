@@ -1,3 +1,4 @@
+mod check_http;
 mod check_tcp;
 mod checker;
 mod counter;
