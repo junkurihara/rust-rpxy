@@ -124,3 +124,64 @@ fn build_health_check_uri(base: &hyper::Uri, path: &str) -> Option<hyper::Uri> {
   let scheme = base.scheme_str().unwrap_or("http");
   format!("{}://{}{}", scheme, authority, path).parse().ok()
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn build_uri(base: &str, path: &str) -> Option<String> {
+    let base_uri: hyper::Uri = base.parse().unwrap();
+    build_health_check_uri(&base_uri, path).map(|u| u.to_string())
+  }
+
+  #[test]
+  fn http_scheme_preserved() {
+    assert_eq!(
+      build_uri("http://backend:8080", "/healthz"),
+      Some("http://backend:8080/healthz".to_string())
+    );
+  }
+
+  #[test]
+  fn https_scheme_preserved() {
+    assert_eq!(
+      build_uri("https://backend:443", "/health"),
+      Some("https://backend:443/health".to_string())
+    );
+  }
+
+  #[test]
+  fn authority_with_port() {
+    assert_eq!(
+      build_uri("http://10.0.0.1:9090", "/status"),
+      Some("http://10.0.0.1:9090/status".to_string())
+    );
+  }
+
+  #[test]
+  fn root_path() {
+    assert_eq!(build_uri("http://backend:80", "/"), Some("http://backend:80/".to_string()));
+  }
+
+  #[test]
+  fn nested_path() {
+    assert_eq!(
+      build_uri("http://backend:80", "/api/health"),
+      Some("http://backend:80/api/health".to_string())
+    );
+  }
+
+  #[test]
+  fn no_authority_returns_none() {
+    let uri: hyper::Uri = "/relative-only".parse().unwrap();
+    assert!(build_health_check_uri(&uri, "/healthz").is_none());
+  }
+
+  #[test]
+  fn ipv6_authority() {
+    assert_eq!(
+      build_uri("http://[::1]:8080", "/healthz"),
+      Some("http://[::1]:8080/healthz".to_string())
+    );
+  }
+}

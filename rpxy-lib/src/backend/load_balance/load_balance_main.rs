@@ -69,9 +69,15 @@ pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> us
     error!("Upstream list is empty when picking nth available index");
     return 0;
   }
+
+  // O(1) fast path: if no upstream in this group has health tracking, all are always healthy.
+  if !upstreams.iter().any(|u| u.has_health_state()) {
+    return nth % len;
+  }
+
   let healthy_count = healthy_index_count(upstreams);
 
-  // Fast path: all upstreams are healthy (common case, including when health has no degradation)
+  // Fast path: all upstreams are healthy
   if healthy_count == len {
     return nth % len;
   }
@@ -97,9 +103,11 @@ pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> us
 /// Get the index of the first healthy upstream, or 0 if all are unhealthy (best-effort).
 pub(super) fn first_available_index(upstreams: &[Upstream]) -> usize {
   if upstreams.is_empty() {
-    // No upstreams available: return a deterministic default index instead of panicking.
-    // This should not happen in practice since config validation should reject empty upstream lists, but we handle it defensively just in case.
     error!("Upstream list is empty when picking first available index");
+    return 0;
+  }
+  // O(1) fast path: no health tracking in this group means all upstreams are always healthy.
+  if !upstreams.iter().any(|u| u.has_health_state()) {
     return 0;
   }
   first_healthy_index(upstreams).unwrap_or(0)
@@ -149,13 +157,18 @@ impl LoadBalanceWithPointer for LoadBalanceRandom {
 
     #[cfg(feature = "health-check")]
     let ptr = {
-      let healthy_count = healthy_index_count(upstreams);
-      // When all upstreams are healthy or all are unhealthy, pick randomly among all upstreams.
-      // Otherwise, pick randomly among healthy upstreams only.
-      if healthy_count == len || healthy_count == 0 {
+      // O(1) fast path: no health tracking in this group
+      if !upstreams.iter().any(|u| u.has_health_state()) {
         rng.random_range(0..len)
       } else {
-        pick_nth_available_index(upstreams, rng.random_range(0..healthy_count))
+        let healthy_count = healthy_index_count(upstreams);
+        // When all upstreams are healthy or all are unhealthy, pick randomly among all upstreams.
+        // Otherwise, pick randomly among healthy upstreams only.
+        if healthy_count == len || healthy_count == 0 {
+          rng.random_range(0..len)
+        } else {
+          pick_nth_available_index(upstreams, rng.random_range(0..healthy_count))
+        }
       }
     };
 

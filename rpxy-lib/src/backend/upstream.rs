@@ -150,6 +150,12 @@ impl Upstream {
       true
     }
   }
+
+  /// Returns whether this upstream has health check state attached.
+  #[cfg(feature = "health-check")]
+  pub fn has_health_state(&self) -> bool {
+    self.health.is_some()
+  }
 }
 impl Upstream {
   #[cfg(feature = "sticky-cookie")]

@@ -212,35 +212,38 @@ pub async fn entrypoint(
     })
     .collect::<Result<Vec<_>, _>>()?;
 
-  let proxy_handles = proxies.into_iter().map(|proxy| {
-    let cancel_token = cancel_token.clone();
-    globals.runtime_handle.spawn(async move {
-      info!("rpxy proxy service for {} started", proxy.listener_spec);
+  // 6. spawn health checker tasks before proxy tasks so that failures are detected before any proxy is started.
+  #[cfg(feature = "health-check")]
+  let health_checker_handles =
+    backend::health_check::spawn_health_checkers(&app_manager, cancel_token.clone(), &globals.runtime_handle)?;
 
-      tokio::select! {
-        _ = cancel_token.cancelled() => {
-          debug!("rpxy proxy service for {} terminated", proxy.listener_spec);
-          Ok(())
-        },
-        proxy_res = proxy.start(cancel_token.child_token()) => {
-          info!("rpxy proxy service for {} exited", proxy.listener_spec);
-          // cancel other proxy tasks
-          cancel_token.cancel();
-          proxy_res
+  let proxy_handles: Vec<_> = proxies
+    .into_iter()
+    .map(|proxy| {
+      let cancel_token = cancel_token.clone();
+      globals.runtime_handle.spawn(async move {
+        info!("rpxy proxy service for {} started", proxy.listener_spec);
+
+        tokio::select! {
+          _ = cancel_token.cancelled() => {
+            debug!("rpxy proxy service for {} terminated", proxy.listener_spec);
+            Ok(())
+          },
+          proxy_res = proxy.start(cancel_token.child_token()) => {
+            info!("rpxy proxy service for {} exited", proxy.listener_spec);
+            // cancel other proxy tasks
+            cancel_token.cancel();
+            proxy_res
+          }
         }
-      }
+      })
     })
-  });
+    .collect();
 
   #[cfg(feature = "health-check")]
-  // 6. spawn health checker tasks (after globals/forwarder, before proxy tasks)
-  let handles = {
-    let health_checker_handles =
-      backend::health_check::spawn_health_checkers(&app_manager, cancel_token.clone(), &globals.runtime_handle)?;
-    health_checker_handles.into_iter().chain(proxy_handles.into_iter())
-  };
+  let handles = health_checker_handles.into_iter().chain(proxy_handles.into_iter());
   #[cfg(not(feature = "health-check"))]
-  let handles = proxy_handles;
+  let handles = proxy_handles.into_iter();
 
   // 7. wait for tasks — fail fast on first error, then cancel remaining tasks
   let mut futures: FuturesUnordered<_> = handles.into_iter().collect();
