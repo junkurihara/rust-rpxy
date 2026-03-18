@@ -125,6 +125,10 @@ pub struct LoadBalanceRandom {}
 impl LoadBalanceWithPointer for LoadBalanceRandom {
   fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
     let len = upstreams.len();
+    if len == 0 {
+      error!("Upstream list is empty in random load balancer, returning default index 0");
+      return PointerToUpstream { ptr: 0, context: None };
+    }
     let healthy_count = healthy_index_count(upstreams);
     let mut rng = rand::rng();
     // When all upstreams are healthy or all are unhealthy, pick randomly among all upstreams.
