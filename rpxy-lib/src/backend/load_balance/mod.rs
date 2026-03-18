@@ -4,10 +4,11 @@ mod load_balance_sticky;
 #[cfg(feature = "sticky-cookie")]
 mod sticky_cookie;
 
-#[cfg(feature = "sticky-cookie")]
 use super::upstream::Upstream;
 use thiserror::Error;
 
+#[cfg(feature = "health-check")]
+pub use load_balance_main::LoadBalancePrimaryBackup;
 pub use load_balance_main::{
   LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder, load_balance_options,
 };
@@ -20,6 +21,7 @@ pub use sticky_cookie::{StickyCookie, StickyCookieValue};
 #[cfg(feature = "sticky-cookie")]
 type LoadBalanceResult<T> = std::result::Result<T, LoadBalanceError>;
 /// Describes things that can go wrong in the Load Balance
+#[allow(unused)]
 #[derive(Debug, Error)]
 pub enum LoadBalanceError {
   // backend load balance errors

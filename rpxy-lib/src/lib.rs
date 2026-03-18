@@ -19,7 +19,7 @@ use crate::{
   message_handler::HttpMessageHandlerBuilder,
   proxy::{ListenerKind, ListenerSpecBuilder, ProxyBuilder},
 };
-use futures::future::join_all;
+use futures::stream::{FuturesUnordered, StreamExt};
 use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
 use rustls::crypto::CryptoProvider;
@@ -27,10 +27,22 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 /* ------------------------------------------------ */
-pub use crate::constants::log_event_names;
+pub use crate::{
+  constants::log_event_names,
+  globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
+};
+
+#[cfg(feature = "health-check")]
+pub const LOAD_BALANCE_PRIMARY_BACKUP: &str = crate::backend::LOAD_BALANCE_PRIMARY_BACKUP;
+
+#[cfg(feature = "health-check")]
+pub use crate::{
+  constants::health_check as health_check_defaults,
+  globals::{HealthCheckConfig, HealthCheckType},
+};
 #[cfg(feature = "proxy-protocol")]
-pub use crate::globals::TcpRecvProxyProtocolConfig;
-pub use crate::globals::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri};
+pub use crate::{constants::proxy_protocol as proxy_protocol_defaults, globals::TcpRecvProxyProtocolConfig};
+
 pub mod reexports {
   pub use hyper::Uri;
   #[cfg(feature = "proxy-protocol")]
@@ -142,8 +154,10 @@ pub async fn entrypoint(
     server_configs_acme_challenge: server_configs_acme_challenge.clone(),
   });
 
-  // 3. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well
+  // 3. build forwarder
   let forwarder = Arc::new(Forwarder::try_new(&globals).await?);
+
+  // 4. build message handler containing Arc-ed http_client and backends, and make it contained in Arc as well
   let message_handler = Arc::new(
     HttpMessageHandlerBuilder::default()
       .globals(globals.clone())
@@ -152,7 +166,7 @@ pub async fn entrypoint(
       .build()?,
   );
 
-  // 4. spawn each proxy for a given socket with copied Arc-ed message_handler.
+  // 5. spawn each proxy for a given socket with copied Arc-ed message_handler.
   // build hyper connection builder shared with proxy instances
   let connection_builder = proxy::connection_builder(&globals);
 
@@ -198,35 +212,76 @@ pub async fn entrypoint(
     })
     .collect::<Result<Vec<_>, _>>()?;
 
-  let join_handles = proxies.into_iter().map(|proxy| {
-    let cancel_token = cancel_token.clone();
-    globals.runtime_handle.spawn(async move {
-      info!("rpxy proxy service for {} started", proxy.listener_spec);
+  // 6. spawn health checker tasks before proxy tasks so that HTTP client
+  //    construction errors are caught before any proxy listener is started.
+  //    Note: the spawned tasks run asynchronously — the first probe has not
+  //    completed by the time proxies start accepting connections.
+  #[cfg(feature = "health-check")]
+  let health_checker_handles =
+    backend::health_check::spawn_health_checkers(&app_manager, cancel_token.clone(), &globals.runtime_handle)?;
 
-      tokio::select! {
-        _ = cancel_token.cancelled() => {
-          debug!("rpxy proxy service for {} terminated", proxy.listener_spec);
-          Ok(())
-        },
-        proxy_res = proxy.start(cancel_token.child_token()) => {
-          info!("rpxy proxy service for {} exited", proxy.listener_spec);
-          // cancel other proxy tasks
-          cancel_token.cancel();
-          proxy_res
+  let proxy_handles: Vec<_> = proxies
+    .into_iter()
+    .map(|proxy| {
+      let cancel_token = cancel_token.clone();
+      globals.runtime_handle.spawn(async move {
+        info!("rpxy proxy service for {} started", proxy.listener_spec);
+
+        tokio::select! {
+          _ = cancel_token.cancelled() => {
+            debug!("rpxy proxy service for {} terminated", proxy.listener_spec);
+            Ok(())
+          },
+          proxy_res = proxy.start(cancel_token.child_token()) => {
+            info!("rpxy proxy service for {} exited", proxy.listener_spec);
+            // cancel other proxy tasks
+            cancel_token.cancel();
+            proxy_res
+          }
+        }
+      })
+    })
+    .collect();
+
+  #[cfg(feature = "health-check")]
+  let handles = health_checker_handles.into_iter().chain(proxy_handles.into_iter());
+  #[cfg(not(feature = "health-check"))]
+  let handles = proxy_handles.into_iter();
+
+  // 7. wait for tasks — fail fast on first error, then cancel remaining tasks
+  let mut futures: FuturesUnordered<_> = handles.into_iter().collect();
+  let mut first_error: Option<RpxyError> = None;
+  while let Some(res) = futures.next().await {
+    let err = match res {
+      Ok(Ok(())) => continue,
+      Ok(Err(e)) => {
+        error!("Proxy service or health check failed: {}", e);
+        e
+      }
+      Err(join_err) => {
+        error!("Task panicked or was cancelled: {}", join_err);
+        join_err.into()
+      }
+    };
+    first_error = Some(err);
+    cancel_token.cancel();
+    break;
+  }
+  if first_error.is_some() {
+    // Drain remaining handles to ensure deterministic shutdown.
+    while let Some(res) = futures.next().await {
+      match res {
+        Ok(Ok(())) => {
+          // Task completed successfully during shutdown; nothing to log.
+        }
+        Ok(Err(e)) => {
+          error!("Proxy service or health check failed during shutdown: {}", e);
+        }
+        Err(join_err) => {
+          error!("Task panicked or was cancelled during shutdown: {}", join_err);
         }
       }
-    })
-  });
-
-  let join_res = join_all(join_handles).await;
-  let mut errs = join_res.into_iter().filter_map(|res| {
-    if let Ok(Err(e)) = res {
-      error!("Some proxy services are down: {}", e);
-      Some(e)
-    } else {
-      None
     }
-  });
-  // returns the first error as the representative error
-  errs.next().map_or(Ok(()), |e| Err(e))
+  }
+  first_error.map_or(Ok(()), Err)
 }

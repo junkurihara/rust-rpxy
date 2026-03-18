@@ -99,6 +99,8 @@ pub enum RpxyError {
   // Forwarder errors
   #[error("Failed to build forwarder: {0}")]
   FailedToBuildForwarder(String),
+  #[error("Failed to build health check client: {0}")]
+  FailedToBuildHealthCheckClient(String),
   #[error("Failed to fetch from upstream: {0}")]
   FailedToFetchFromUpstream(String),
 
@@ -110,6 +112,10 @@ pub enum RpxyError {
   #[cfg(feature = "cache")]
   #[error("Cache error: {0}")]
   CacheError(#[from] crate::forwarder::CacheError),
+
+  // Task errors
+  #[error("Task join error (panic or cancellation): {0}")]
+  TaskJoinError(#[from] tokio::task::JoinError),
 
   // Others
   #[error("Infallible")]
