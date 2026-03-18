@@ -244,12 +244,15 @@ pub async fn entrypoint(
 
   // 7. wait for all proxy tasks to finish, and return the first error if exists
   let join_res = join_all(handles).await;
-  let mut errs = join_res.into_iter().filter_map(|res| {
-    if let Ok(Err(e)) = res {
+  let mut errs = join_res.into_iter().filter_map(|res| match res {
+    Ok(Ok(())) => None,
+    Ok(Err(e)) => {
       error!("Some proxy services or health checks are down: {}", e);
       Some(e)
-    } else {
-      None
+    }
+    Err(join_err) => {
+      error!("Task panicked or was cancelled: {}", join_err);
+      Some(join_err.into())
     }
   });
   // returns the first error as the representative error

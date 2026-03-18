@@ -5,8 +5,9 @@ use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use std::time::Duration;
 
 /// Lightweight HTTP client for health check probes.
-/// Uses the same connector construction pattern as the main Forwarder
-/// to ensure transport-level consistency (TLS settings, ALPN, etc.).
+/// Shares the same TLS backend and ALPN configuration as the main Forwarder,
+/// but omits connection tuning (keepalive, reuse_address) since health checks
+/// are infrequent, short-lived probes.
 pub(super) struct HealthCheckHttpClient {
   inner: InnerClient,
 }
@@ -22,7 +23,7 @@ type InnerClient = Client<hyper_tls::HttpsConnector<HttpConnector>, Empty<Bytes>
 type InnerClient = Client<HttpConnector, Empty<Bytes>>;
 
 impl HealthCheckHttpClient {
-  /// Build the health check HTTP client using the same connector settings as the Forwarder.
+  /// Build the health check HTTP client with the same TLS backend and ALPN as the Forwarder.
   pub fn try_new(runtime_handle: &tokio::runtime::Handle) -> RpxyResult<Self> {
     let executor = LocalExecutor::new(runtime_handle.clone());
 

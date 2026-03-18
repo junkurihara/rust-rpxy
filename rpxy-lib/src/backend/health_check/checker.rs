@@ -110,27 +110,22 @@ async fn run_health_checker(
         return Ok(());
       }
       _ = ticker.tick() => {
-        let checks = upstreams.iter().enumerate().map(|(i, (uri, _health))| {
-          let uri = uri.clone();
-          let timeout = config.timeout;
-          let check_type = config.check_type.clone();
-          let http_client = http_client.clone();
-          let server_name = server_name.clone();
-          async move {
-            let ok = match check_type {
-              HealthCheckType::Tcp => check_tcp(&server_name, &uri, timeout).await,
-              HealthCheckType::Http { ref path, expected_status } => {
-                // http_client is guaranteed to be Some here — spawn_health_checkers
-                // fails at startup if HTTP client cannot be built.
-                http_client
-                  .as_ref()
-                  .expect("HTTP health check client must be available")
-                  .check(&server_name, &uri, path, expected_status, timeout)
-                  .await
-              }
-            };
-            (i, ok)
-          }
+        let server_name = &server_name;
+        let config = &config;
+        let http_client = http_client.as_deref();
+        let checks = upstreams.iter().enumerate().map(|(i, (uri, _health))| async move {
+          let ok = match &config.check_type {
+            HealthCheckType::Tcp => check_tcp(server_name, uri, config.timeout).await,
+            HealthCheckType::Http { path, expected_status } => {
+              // http_client is guaranteed to be Some here — spawn_health_checkers
+              // fails at startup if HTTP client cannot be built.
+              http_client
+                .expect("HTTP health check client must be available")
+                .check(server_name, uri, path, *expected_status, config.timeout)
+                .await
+            }
+          };
+          (i, ok)
         });
 
         let results = join_all(checks).await;

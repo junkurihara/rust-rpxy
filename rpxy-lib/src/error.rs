@@ -113,6 +113,10 @@ pub enum RpxyError {
   #[error("Cache error: {0}")]
   CacheError(#[from] crate::forwarder::CacheError),
 
+  // Task errors
+  #[error("Task join error (panic or cancellation): {0}")]
+  TaskJoinError(#[from] tokio::task::JoinError),
+
   // Others
   #[error("Infallible")]
   Infallible(#[from] std::convert::Infallible),

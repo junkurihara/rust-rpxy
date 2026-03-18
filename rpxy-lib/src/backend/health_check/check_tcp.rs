@@ -14,7 +14,13 @@ pub(super) async fn check_tcp(server_name: &str, uri: &Uri, timeout: Duration) -
   };
   let default_port = if uri.scheme_str() == Some("https") { 443 } else { 80 };
   let port = authority.port_u16().unwrap_or(default_port);
-  let addr = format!("{}:{}", authority.host(), port);
+  let host = authority.host();
+  let addr = if host.contains(':') {
+    // IPv6 literal: wrap in brackets for valid socket address
+    format!("[{}]:{}", host, port)
+  } else {
+    format!("{}:{}", host, port)
+  };
 
   let res = tokio::time::timeout(timeout, TcpStream::connect(&addr))
     .await
