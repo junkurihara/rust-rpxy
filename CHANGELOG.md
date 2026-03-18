@@ -1,6 +1,14 @@
 # CHANGELOG
 
-## 0.11.3 or 0.12.0 (Unreleased)
+## 0.11.4 or 0.12.0 (Unreleased)
+
+## 0.11.3
+
+### Improvement
+
+- Feat: Support `tcp` and `http` active health checks. This is to support the use case where rpxy needs to monitor the health of backend applications and avoid sending requests to unhealthy ones. To enable this feature, the `health-check` feature has to be enabled and the `health_check` option in the config file has to be specified for each reverse proxy backend group.
+
+- Deps and refactor
 
 ## 0.11.2
 

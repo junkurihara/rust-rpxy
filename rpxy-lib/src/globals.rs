@@ -172,6 +172,27 @@ pub struct ReverseProxyConfig {
   pub upstream: Vec<UpstreamUri>,
   pub upstream_options: Option<Vec<String>>,
   pub load_balance: Option<String>,
+  #[cfg(feature = "health-check")]
+  pub health_check: Option<HealthCheckConfig>,
+}
+
+#[cfg(feature = "health-check")]
+/// Health check configuration (internal, converted from TOML)
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct HealthCheckConfig {
+  pub check_type: HealthCheckType,
+  pub interval: Duration,
+  pub timeout: Duration,
+  pub unhealthy_threshold: u32,
+  pub healthy_threshold: u32,
+}
+
+#[cfg(feature = "health-check")]
+/// Type of health check to perform
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub enum HealthCheckType {
+  Tcp,
+  Http { path: String, expected_status: u16 },
 }
 
 /// Configuration parameters for single upstream destination from a reverse proxy

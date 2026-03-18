@@ -1,9 +1,11 @@
+use super::Upstream;
 #[allow(unused)]
 #[cfg(feature = "sticky-cookie")]
 pub use super::{
   load_balance_sticky::{LoadBalanceSticky, LoadBalanceStickyBuilder},
   sticky_cookie::StickyCookie,
 };
+use crate::log::*;
 use derive_builder::Builder;
 use rand::RngExt;
 use std::sync::{
@@ -18,6 +20,8 @@ pub mod load_balance_options {
   pub const RANDOM: &str = "random";
   #[cfg(feature = "sticky-cookie")]
   pub const STICKY_ROUND_ROBIN: &str = "sticky";
+  #[cfg(feature = "health-check")]
+  pub const PRIMARY_BACKUP: &str = "primary_backup";
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +33,86 @@ pub struct PointerToUpstream {
 }
 /// Trait for LB
 pub(super) trait LoadBalanceWithPointer {
-  fn get_ptr(&self, req_info: Option<&LoadBalanceContext>) -> PointerToUpstream;
+  /// Get the index of the upstream serving the incoming request, and optionally a context to update LB state (e.g. sticky cookie value).
+  fn get_ptr(&self, req_info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream;
+}
+
+#[cfg(feature = "health-check")]
+fn first_healthy_index(upstreams: &[Upstream]) -> Option<usize> {
+  upstreams.iter().position(Upstream::is_healthy)
+}
+
+#[cfg(feature = "health-check")]
+fn healthy_index_count(upstreams: &[Upstream]) -> usize {
+  upstreams.iter().filter(|u| u.is_healthy()).count()
+}
+
+/// Pick the nth healthy upstream without allocating an intermediate index list.
+/// Falls back to all upstreams if every upstream is unhealthy (best-effort).
+#[cfg(not(feature = "health-check"))]
+pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> usize {
+  let len = upstreams.len();
+  if len == 0 {
+    error!("Upstream list is empty when picking nth available index");
+    return 0;
+  }
+  // O(1): no health state to check when health-check feature is disabled.
+  nth % len
+}
+
+/// Pick the nth healthy upstream without allocating an intermediate index list.
+/// Falls back to all upstreams if every upstream is unhealthy (best-effort).
+#[cfg(feature = "health-check")]
+pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> usize {
+  let len = upstreams.len();
+  if len == 0 {
+    error!("Upstream list is empty when picking nth available index");
+    return 0;
+  }
+
+  // O(1) fast path: if no upstream in this group has health tracking, all are always healthy.
+  if !upstreams.iter().any(|u| u.has_health_state()) {
+    return nth % len;
+  }
+
+  let healthy_count = healthy_index_count(upstreams);
+
+  // Fast path: all upstreams are healthy
+  if healthy_count == len {
+    return nth % len;
+  }
+
+  if healthy_count == 0 {
+    // When all upstreams are unhealthy, fall back to round robin among all upstreams (best-effort).
+    // Log at debug level to avoid flooding; the health checker already warns on state transitions.
+    debug!("No healthy upstreams available, picking among all upstreams as a fallback");
+    nth % len
+  } else {
+    let target = nth % healthy_count;
+    // Health state can change concurrently between healthy_count and this scan,
+    // so fall back to best-effort (nth % len) if the expected index is gone.
+    upstreams
+      .iter()
+      .enumerate()
+      .filter(|(_, u)| u.is_healthy())
+      .nth(target)
+      .map(|(i, _)| i)
+      .unwrap_or(nth % len)
+  }
+}
+
+#[cfg(feature = "health-check")]
+/// Get the index of the first healthy upstream, or 0 if all are unhealthy (best-effort).
+pub(super) fn first_available_index(upstreams: &[Upstream]) -> usize {
+  if upstreams.is_empty() {
+    error!("Upstream list is empty when picking first available index");
+    return 0;
+  }
+  // O(1) fast path: no health tracking in this group means all upstreams are always healthy.
+  if !upstreams.iter().any(|u| u.has_health_state()) {
+    return 0;
+  }
+  first_healthy_index(upstreams).unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Builder)]
@@ -38,50 +121,76 @@ pub struct LoadBalanceRoundRobin {
   #[builder(default)]
   /// Pointer to the index of the last served upstream destination
   ptr: Arc<AtomicUsize>,
-  #[builder(setter(custom), default)]
-  /// Number of upstream destinations
-  num_upstreams: usize,
 }
-impl LoadBalanceRoundRobinBuilder {
-  pub fn num_upstreams(&mut self, v: &usize) -> &mut Self {
-    self.num_upstreams = Some(*v);
-    self
+impl LoadBalanceRoundRobin {
+  /// Atomically increment ptr, reset near overflow to avoid wrapping issues.
+  fn fetch_and_advance(&self) -> usize {
+    let prev = self.ptr.fetch_add(1, Ordering::Relaxed);
+    if prev >= usize::MAX - 1 {
+      self.ptr.store(0, Ordering::Relaxed);
+    }
+    prev
   }
 }
 impl LoadBalanceWithPointer for LoadBalanceRoundRobin {
-  /// Increment the count of upstream served up to the max value
-  fn get_ptr(&self, _info: Option<&LoadBalanceContext>) -> PointerToUpstream {
-    // Get a current count of upstream served
-    let current_ptr = self.ptr.load(Ordering::Relaxed);
-
-    let ptr = if current_ptr < self.num_upstreams - 1 {
-      self.ptr.fetch_add(1, Ordering::Relaxed)
-    } else {
-      // Clear the counter
-      self.ptr.fetch_and(0, Ordering::Relaxed)
-    };
+  /// Get the index of the upstream serving the incoming request using round robin among healthy upstreams.
+  fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
+    let count = self.fetch_and_advance();
+    let ptr = pick_nth_available_index(upstreams, count);
     PointerToUpstream { ptr, context: None }
   }
 }
 
 #[derive(Debug, Clone, Builder)]
 /// Random LB object to keep the object of random pools
-pub struct LoadBalanceRandom {
-  #[builder(setter(custom), default)]
-  /// Number of upstream destinations
-  num_upstreams: usize,
-}
-impl LoadBalanceRandomBuilder {
-  pub fn num_upstreams(&mut self, v: &usize) -> &mut Self {
-    self.num_upstreams = Some(*v);
-    self
+pub struct LoadBalanceRandom {}
+
+impl LoadBalanceWithPointer for LoadBalanceRandom {
+  fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
+    let len = upstreams.len();
+    if len == 0 {
+      error!("Upstream list is empty in random load balancer, returning default index 0");
+      return PointerToUpstream { ptr: 0, context: None };
+    }
+    let mut rng = rand::rng();
+
+    #[cfg(not(feature = "health-check"))]
+    let ptr = rng.random_range(0..len);
+
+    #[cfg(feature = "health-check")]
+    let ptr = {
+      // O(1) fast path: no health tracking in this group
+      if !upstreams.iter().any(|u| u.has_health_state()) {
+        rng.random_range(0..len)
+      } else {
+        let healthy_count = healthy_index_count(upstreams);
+        // When all upstreams are healthy or all are unhealthy, pick randomly among all upstreams.
+        // Otherwise, pick randomly among healthy upstreams only.
+        if healthy_count == len || healthy_count == 0 {
+          rng.random_range(0..len)
+        } else {
+          pick_nth_available_index(upstreams, rng.random_range(0..healthy_count))
+        }
+      }
+    };
+
+    PointerToUpstream { ptr, context: None }
   }
 }
-impl LoadBalanceWithPointer for LoadBalanceRandom {
-  /// Returns the random index within the range
-  fn get_ptr(&self, _info: Option<&LoadBalanceContext>) -> PointerToUpstream {
-    let mut rng = rand::rng();
-    let ptr = rng.random_range(0..self.num_upstreams);
+
+#[cfg(feature = "health-check")]
+#[derive(Debug, Clone)]
+/// Primary/Backup LB: use the first healthy upstream (lowest index).
+/// Falls back to the next healthy upstream when primary is down.
+/// Requires health_check to be enabled (validated at config time).
+pub struct LoadBalancePrimaryBackup;
+
+#[cfg(feature = "health-check")]
+impl LoadBalanceWithPointer for LoadBalancePrimaryBackup {
+  // Always pick the lowest-indexed healthy upstream (primary preference).
+  // Falls back to index 0 if every upstream is currently unhealthy.
+  fn get_ptr(&self, _info: Option<&LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
+    let ptr = first_available_index(upstreams);
     PointerToUpstream { ptr, context: None }
   }
 }
@@ -98,6 +207,9 @@ pub enum LoadBalance {
   #[cfg(feature = "sticky-cookie")]
   /// Round robin with session persistance using cookie
   StickyRoundRobin(LoadBalanceSticky),
+  #[cfg(feature = "health-check")]
+  /// Primary/Backup: always prefer the lowest-indexed healthy upstream
+  PrimaryBackup(LoadBalancePrimaryBackup),
 }
 impl Default for LoadBalance {
   fn default() -> Self {
@@ -107,19 +219,30 @@ impl Default for LoadBalance {
 
 impl LoadBalance {
   /// Get the index of the upstream serving the incoming request
-  pub fn get_context(&self, _context_to_lb: &Option<LoadBalanceContext>) -> PointerToUpstream {
+  pub fn get_context(&self, _context_to_lb: &Option<LoadBalanceContext>, upstreams: &[Upstream]) -> PointerToUpstream {
     match self {
-      LoadBalance::FixToFirst => PointerToUpstream {
-        ptr: 0usize,
-        context: None,
-      },
-      LoadBalance::RoundRobin(ptr) => ptr.get_ptr(None),
-      LoadBalance::Random(ptr) => ptr.get_ptr(None),
-      #[cfg(feature = "sticky-cookie")]
-      LoadBalance::StickyRoundRobin(ptr) => {
-        // Generate new context if sticky round robin is enabled.
-        ptr.get_ptr(_context_to_lb.as_ref())
+      LoadBalance::FixToFirst => {
+        #[cfg(feature = "health-check")]
+        {
+          PointerToUpstream {
+            ptr: first_available_index(upstreams),
+            context: None,
+          }
+        }
+        #[cfg(not(feature = "health-check"))]
+        {
+          PointerToUpstream {
+            ptr: 0usize,
+            context: None,
+          }
+        }
       }
+      LoadBalance::RoundRobin(ptr) => ptr.get_ptr(None, upstreams),
+      LoadBalance::Random(ptr) => ptr.get_ptr(None, upstreams),
+      #[cfg(feature = "sticky-cookie")]
+      LoadBalance::StickyRoundRobin(ptr) => ptr.get_ptr(_context_to_lb.as_ref(), upstreams),
+      #[cfg(feature = "health-check")]
+      LoadBalance::PrimaryBackup(ptr) => ptr.get_ptr(None, upstreams),
     }
   }
 }

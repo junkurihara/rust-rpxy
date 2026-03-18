@@ -31,7 +31,28 @@ pub const MAX_CACHE_EACH_SIZE: usize = 65_535;
 // on memory cache if less than or equel to
 pub const MAX_CACHE_EACH_SIZE_ON_MEMORY: usize = 4_096;
 
+#[cfg(feature = "proxy-protocol")]
+pub mod proxy_protocol {
+  /// Timeout in milliseconds for receiving the PROXY protocol header (enabled with "proxy-protocol" feature).
+  pub const TIMEOUT_MSEC: u64 = 50;
+}
+
 // TODO: max cache size in total
+
+#[cfg(feature = "health-check")]
+/// Default health check constants
+pub mod health_check {
+  /// Default health check interval in seconds
+  pub const DEFAULT_INTERVAL_SEC: u64 = 10;
+  /// Default health check timeout in seconds
+  pub const DEFAULT_TIMEOUT_SEC: u64 = 5;
+  /// Default consecutive failures to mark unhealthy
+  pub const DEFAULT_UNHEALTHY_THRESHOLD: u32 = 3;
+  /// Default consecutive successes to mark healthy again
+  pub const DEFAULT_HEALTHY_THRESHOLD: u32 = 2;
+  /// Default expected HTTP status code
+  pub const DEFAULT_EXPECTED_STATUS: u16 = 200;
+}
 
 /// Logging event name TODO: Other separated logs?
 pub mod log_event_names {

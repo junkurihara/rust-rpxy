@@ -5,6 +5,8 @@ use crate::{
 };
 use ahash::HashMap;
 use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
+#[cfg(feature = "health-check")]
+use rpxy_lib::{HealthCheckConfig, HealthCheckType, LOAD_BALANCE_PRIMARY_BACKUP};
 #[cfg(feature = "proxy-protocol")]
 use rpxy_lib::{TcpRecvProxyProtocolConfig, reexports::IpNet};
 use serde::Deserialize;
@@ -218,6 +220,33 @@ pub struct ReverseProxyOption {
   pub upstream: Vec<UpstreamParams>,
   pub upstream_options: Option<Vec<String>>,
   pub load_balance: Option<String>,
+  #[cfg(feature = "health-check")]
+  pub health_check: Option<HealthCheckOption>,
+}
+
+#[cfg(feature = "health-check")]
+/// TOML deserialization: accepts both `true` and `{ type = "http", ... }`
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(untagged)]
+pub enum HealthCheckOption {
+  /// Simple boolean: `health_check = true` -> TCP with defaults
+  Enabled(bool),
+  /// Full config table: `[....health_check] type = "http" ...`
+  Config(HealthCheckDetailOption),
+}
+
+#[cfg(feature = "health-check")]
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct HealthCheckDetailOption {
+  #[serde(default, rename = "type")]
+  pub check_type: Option<String>,
+  pub interval: Option<u64>,
+  pub timeout: Option<u64>,
+  pub unhealthy_threshold: Option<u32>,
+  pub healthy_threshold: Option<u32>,
+  // HTTP-specific
+  pub path: Option<String>,
+  pub expected_status: Option<u16>,
 }
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
@@ -357,7 +386,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
           })
           .collect::<std::result::Result<Vec<_>, _>>()?;
         let timeout = match pp_option.timeout {
-          None => Duration::from_millis(crate::constants::PROXY_PROTOCOL_TIMEOUT_MSEC),
+          None => Duration::from_millis(rpxy_lib::proxy_protocol_defaults::TIMEOUT_MSEC),
           Some(0) => Duration::ZERO,
           Some(ms) => Duration::from_millis(ms),
         };
@@ -484,6 +513,12 @@ impl Application {
     // reverse proxy settings
     let reverse_proxy_config: Vec<ReverseProxyConfig> = self.try_into()?;
 
+    // validate load balance + health check combinations
+    #[cfg(feature = "health-check")]
+    reverse_proxy_config
+      .iter()
+      .try_for_each(|rpc| validate_lb_health_check(server_name_string, rpc.load_balance.as_deref(), &rpc.health_check))?;
+
     // tls settings
     let tls_config = if self.tls.is_some() {
       let tls = self.tls.as_ref().unwrap();
@@ -535,11 +570,22 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
     let mut reverse_proxies: Vec<ReverseProxyConfig> = Vec::new();
 
     for rpo in rp_settings.iter() {
+      if rpo.upstream.is_empty() {
+        return Err(anyhow!("[{}] At least one upstream must be specified", &_server_name_string));
+      }
       let upstream_res: Vec<Option<UpstreamUri>> = rpo.upstream.iter().map(|v| v.try_into().ok()).collect();
       if !upstream_res.iter().all(|v| v.is_some()) {
         return Err(anyhow!("[{}] Upstream uri is invalid", &_server_name_string));
       }
       let upstream = upstream_res.into_iter().map(|v| v.unwrap()).collect();
+
+      #[cfg(feature = "health-check")]
+      let health_check = rpo
+        .health_check
+        .as_ref()
+        .map(|hc| build_health_check_config(hc, &_server_name_string))
+        .transpose()?
+        .flatten();
 
       reverse_proxies.push(ReverseProxyConfig {
         path: rpo.path.clone(),
@@ -547,6 +593,8 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
         upstream,
         upstream_options: rpo.upstream_options.clone(),
         load_balance: rpo.load_balance.clone(),
+        #[cfg(feature = "health-check")]
+        health_check,
       })
     }
 
@@ -569,9 +617,116 @@ impl TryInto<UpstreamUri> for &UpstreamParams {
   }
 }
 
+#[cfg(feature = "health-check")]
+/// Convert TOML health check option to internal config, with validation
+fn build_health_check_config(option: &HealthCheckOption, server_name: &str) -> Result<Option<HealthCheckConfig>, anyhow::Error> {
+  use rpxy_lib::health_check_defaults as hc_defaults;
+
+  match option {
+    HealthCheckOption::Enabled(false) => Ok(None),
+    HealthCheckOption::Enabled(true) => {
+      // TCP check with all defaults
+      Ok(Some(HealthCheckConfig {
+        check_type: HealthCheckType::Tcp,
+        interval: Duration::from_secs(hc_defaults::DEFAULT_INTERVAL_SEC),
+        timeout: Duration::from_secs(hc_defaults::DEFAULT_TIMEOUT_SEC),
+        unhealthy_threshold: hc_defaults::DEFAULT_UNHEALTHY_THRESHOLD,
+        healthy_threshold: hc_defaults::DEFAULT_HEALTHY_THRESHOLD,
+      }))
+    }
+    HealthCheckOption::Config(detail) => {
+      let check_type_str = detail.check_type.as_deref().unwrap_or("tcp");
+      let check_type = match check_type_str {
+        "tcp" => HealthCheckType::Tcp,
+        "http" => {
+          let path = detail
+            .path
+            .as_ref()
+            .ok_or_else(|| anyhow!("[{server_name}] health_check.path is required when type = \"http\""))?;
+          ensure!(
+            path.starts_with('/'),
+            "[{server_name}] health_check.path must start with \"/\" (got \"{path}\")",
+          );
+          let expected_status = detail.expected_status.unwrap_or(hc_defaults::DEFAULT_EXPECTED_STATUS);
+          HealthCheckType::Http {
+            path: path.clone(),
+            expected_status,
+          }
+        }
+        other => {
+          return Err(anyhow!("[{server_name}] Unknown health_check type: \"{other}\""));
+        }
+      };
+
+      let interval = Duration::from_secs(detail.interval.unwrap_or(hc_defaults::DEFAULT_INTERVAL_SEC));
+      let timeout = Duration::from_secs(detail.timeout.unwrap_or(hc_defaults::DEFAULT_TIMEOUT_SEC));
+
+      ensure!(
+        timeout < interval,
+        "[{server_name}] health_check.timeout ({timeout:?}) must be less than interval ({interval:?})",
+      );
+
+      let unhealthy_threshold = detail.unhealthy_threshold.unwrap_or(hc_defaults::DEFAULT_UNHEALTHY_THRESHOLD);
+      let healthy_threshold = detail.healthy_threshold.unwrap_or(hc_defaults::DEFAULT_HEALTHY_THRESHOLD);
+
+      ensure!(
+        unhealthy_threshold >= 1,
+        "[{server_name}] health_check.unhealthy_threshold must be >= 1",
+      );
+      ensure!(
+        healthy_threshold >= 1,
+        "[{server_name}] health_check.healthy_threshold must be >= 1",
+      );
+
+      Ok(Some(HealthCheckConfig {
+        check_type,
+        interval,
+        timeout,
+        unhealthy_threshold,
+        healthy_threshold,
+      }))
+    }
+  }
+}
+
+#[cfg(feature = "health-check")]
+/// Validate load balance + health check combinations
+/// Currently only "primary_backup" requires health check, and other load balance strategies don't have specific requirements for health checks.
+fn validate_lb_health_check(
+  server_name: &str,
+  load_balance: Option<&str>,
+  health_check: &Option<HealthCheckConfig>,
+) -> Result<(), anyhow::Error> {
+  if load_balance == Some(LOAD_BALANCE_PRIMARY_BACKUP) && health_check.is_none() {
+    return Err(anyhow!(
+      "[{server_name}] load_balance = \"primary_backup\" requires health_check to be enabled",
+    ));
+  }
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[cfg(feature = "health-check")]
+  fn http_health_check_option(
+    path: Option<&str>,
+    interval: Option<u64>,
+    timeout: Option<u64>,
+    unhealthy_threshold: Option<u32>,
+    healthy_threshold: Option<u32>,
+  ) -> HealthCheckOption {
+    HealthCheckOption::Config(HealthCheckDetailOption {
+      check_type: Some("http".to_string()),
+      interval,
+      timeout,
+      unhealthy_threshold,
+      healthy_threshold,
+      path: path.map(str::to_string),
+      expected_status: None,
+    })
+  }
 
   #[test]
   fn one_or_many_deserialize_single_string() {
@@ -709,5 +864,121 @@ mod tests {
       config.listen_address_v6.unwrap().into_vec(),
       vec!["::1".to_string(), "fe80::1".to_string()]
     );
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn build_health_check_config_enabled_true_uses_tcp_defaults() {
+    let config = build_health_check_config(&HealthCheckOption::Enabled(true), "example.com").unwrap();
+    let config = config.expect("health check config must exist");
+
+    assert_eq!(config.check_type, HealthCheckType::Tcp);
+    assert_eq!(
+      config.interval,
+      Duration::from_secs(rpxy_lib::health_check_defaults::DEFAULT_INTERVAL_SEC)
+    );
+    assert_eq!(
+      config.timeout,
+      Duration::from_secs(rpxy_lib::health_check_defaults::DEFAULT_TIMEOUT_SEC)
+    );
+    assert_eq!(
+      config.unhealthy_threshold,
+      rpxy_lib::health_check_defaults::DEFAULT_UNHEALTHY_THRESHOLD
+    );
+    assert_eq!(
+      config.healthy_threshold,
+      rpxy_lib::health_check_defaults::DEFAULT_HEALTHY_THRESHOLD
+    );
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn build_health_check_config_http_requires_path() {
+    let err = build_health_check_config(
+      &http_health_check_option(None, Some(10), Some(5), Some(2), Some(2)),
+      "example.com",
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("health_check.path is required"));
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn build_health_check_config_http_path_must_start_with_slash() {
+    let err = build_health_check_config(
+      &http_health_check_option(Some("health"), Some(10), Some(5), Some(2), Some(2)),
+      "example.com",
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("health_check.path must start with"));
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn build_health_check_config_timeout_must_be_less_than_interval() {
+    let err = build_health_check_config(
+      &http_health_check_option(Some("/health"), Some(5), Some(5), Some(2), Some(2)),
+      "example.com",
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("health_check.timeout"));
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn build_health_check_config_thresholds_must_be_positive() {
+    let err = build_health_check_config(
+      &http_health_check_option(Some("/health"), Some(10), Some(5), Some(0), Some(1)),
+      "example.com",
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("unhealthy_threshold"));
+
+    let err = build_health_check_config(
+      &http_health_check_option(Some("/health"), Some(10), Some(5), Some(1), Some(0)),
+      "example.com",
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("healthy_threshold"));
+  }
+
+  #[test]
+  fn empty_upstream_list_is_rejected() {
+    let app = Application {
+      server_name: Some("example.com".into()),
+      reverse_proxy: Some(vec![ReverseProxyOption {
+        path: None,
+        replace_path: None,
+        upstream: vec![],
+        upstream_options: None,
+        load_balance: None,
+        #[cfg(feature = "health-check")]
+        health_check: None,
+      }]),
+      tls: None,
+    };
+    let result: Result<Vec<ReverseProxyConfig>, _> = (&app).try_into();
+    assert!(result.is_err());
+    let err = result.err().unwrap();
+    assert!(err.to_string().contains("At least one upstream must be specified"));
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn validate_lb_health_check_primary_backup_requires_health_check() {
+    let err = validate_lb_health_check("example.com", Some(LOAD_BALANCE_PRIMARY_BACKUP), &None).unwrap_err();
+    assert!(err.to_string().contains("requires health_check to be enabled"));
+
+    let health_check = Some(HealthCheckConfig {
+      check_type: HealthCheckType::Tcp,
+      interval: Duration::from_secs(10),
+      timeout: Duration::from_secs(5),
+      unhealthy_threshold: 2,
+      healthy_threshold: 2,
+    });
+    assert!(validate_lb_health_check("example.com", Some(LOAD_BALANCE_PRIMARY_BACKUP), &health_check).is_ok());
   }
 }
