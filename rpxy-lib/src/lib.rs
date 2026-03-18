@@ -270,8 +270,16 @@ pub async fn entrypoint(
   if first_error.is_some() {
     // Drain remaining handles to ensure deterministic shutdown.
     while let Some(res) = futures.next().await {
-      if let Err(join_err) = res {
-        error!("Task panicked or was cancelled during shutdown: {}", join_err);
+      match res {
+        Ok(Ok(())) => {
+          // Task completed successfully during shutdown; nothing to log.
+        }
+        Ok(Err(e)) => {
+          error!("Proxy service or health check failed during shutdown: {}", e);
+        }
+        Err(join_err) => {
+          error!("Task panicked or was cancelled during shutdown: {}", join_err);
+        }
       }
     }
   }
