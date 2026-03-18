@@ -212,7 +212,10 @@ pub async fn entrypoint(
     })
     .collect::<Result<Vec<_>, _>>()?;
 
-  // 6. spawn health checker tasks before proxy tasks so that failures are detected before any proxy is started.
+  // 6. spawn health checker tasks before proxy tasks so that HTTP client
+  //    construction errors are caught before any proxy listener is started.
+  //    Note: the spawned tasks run asynchronously — the first probe has not
+  //    completed by the time proxies start accepting connections.
   #[cfg(feature = "health-check")]
   let health_checker_handles =
     backend::health_check::spawn_health_checkers(&app_manager, cancel_token.clone(), &globals.runtime_handle)?;
@@ -263,6 +266,14 @@ pub async fn entrypoint(
     first_error = Some(err);
     cancel_token.cancel();
     break;
+  }
+  if first_error.is_some() {
+    // Drain remaining handles to ensure deterministic shutdown.
+    while let Some(res) = futures.next().await {
+      if let Err(join_err) = res {
+        error!("Task panicked or was cancelled during shutdown: {}", join_err);
+      }
+    }
   }
   first_error.map_or(Ok(()), Err)
 }

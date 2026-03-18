@@ -89,13 +89,15 @@ pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> us
     nth % len
   } else {
     let target = nth % healthy_count;
+    // Health state can change concurrently between healthy_count and this scan,
+    // so fall back to best-effort (nth % len) if the expected index is gone.
     upstreams
       .iter()
       .enumerate()
       .filter(|(_, u)| u.is_healthy())
       .nth(target)
       .map(|(i, _)| i)
-      .expect("healthy upstream index must exist")
+      .unwrap_or(nth % len)
   }
 }
 
