@@ -19,7 +19,7 @@ use crate::{
   message_handler::HttpMessageHandlerBuilder,
   proxy::{ListenerKind, ListenerSpecBuilder, ProxyBuilder},
 };
-use futures::future::join_all;
+use futures::stream::{FuturesUnordered, StreamExt};
 use hot_reload::ReloaderReceiver;
 use rpxy_certs::ServerCryptoBase;
 use rustls::crypto::CryptoProvider;
@@ -242,19 +242,25 @@ pub async fn entrypoint(
   #[cfg(not(feature = "health-check"))]
   let handles = proxy_handles;
 
-  // 7. wait for all proxy tasks to finish, and return the first error if exists
-  let join_res = join_all(handles).await;
-  let mut errs = join_res.into_iter().filter_map(|res| match res {
-    Ok(Ok(())) => None,
-    Ok(Err(e)) => {
-      error!("Some proxy services or health checks are down: {}", e);
-      Some(e)
+  // 7. wait for tasks — fail fast on first error, then cancel remaining tasks
+  let mut futures: FuturesUnordered<_> = handles.into_iter().collect();
+  let mut first_error: Option<RpxyError> = None;
+  while let Some(res) = futures.next().await {
+    let err = match res {
+      Ok(Ok(())) => continue,
+      Ok(Err(e)) => {
+        error!("Proxy service or health check failed: {}", e);
+        e
+      }
+      Err(join_err) => {
+        error!("Task panicked or was cancelled: {}", join_err);
+        join_err.into()
+      }
+    };
+    if first_error.is_none() {
+      first_error = Some(err);
+      cancel_token.cancel();
     }
-    Err(join_err) => {
-      error!("Task panicked or was cancelled: {}", join_err);
-      Some(join_err.into())
-    }
-  });
-  // returns the first error as the representative error
-  errs.next().map_or(Ok(()), |e| Err(e))
+  }
+  first_error.map_or(Ok(()), Err)
 }

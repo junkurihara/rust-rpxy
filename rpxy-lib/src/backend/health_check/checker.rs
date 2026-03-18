@@ -116,14 +116,13 @@ async fn run_health_checker(
         let checks = upstreams.iter().enumerate().map(|(i, (uri, _health))| async move {
           let ok = match &config.check_type {
             HealthCheckType::Tcp => check_tcp(server_name, uri, config.timeout).await,
-            HealthCheckType::Http { path, expected_status } => {
-              // http_client is guaranteed to be Some here — spawn_health_checkers
-              // fails at startup if HTTP client cannot be built.
-              http_client
-                .expect("HTTP health check client must be available")
-                .check(server_name, uri, path, *expected_status, config.timeout)
-                .await
-            }
+            HealthCheckType::Http { path, expected_status } => match http_client {
+              Some(client) => client.check(server_name, uri, path, *expected_status, config.timeout).await,
+              None => {
+                error!("[{server_name}] HTTP health check client is unavailable, treating as unhealthy");
+                false
+              }
+            },
           };
           (i, ok)
         });

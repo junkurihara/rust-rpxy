@@ -5,6 +5,7 @@ pub use super::{
   load_balance_sticky::{LoadBalanceSticky, LoadBalanceStickyBuilder},
   sticky_cookie::StickyCookie,
 };
+use crate::log::*;
 use derive_builder::Builder;
 use rand::RngExt;
 use std::sync::{
@@ -48,18 +49,24 @@ fn healthy_index_count(upstreams: &[Upstream]) -> usize {
 /// Pick the nth healthy upstream without allocating an intermediate index list.
 /// Falls back to all upstreams if every upstream is unhealthy (best-effort).
 pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> usize {
-  assert!(!upstreams.is_empty(), "upstream list must not be empty");
-
   let len = upstreams.len();
+  if len == 0 {
+    // Should never happen — config validation rejects empty upstream lists.
+    // Return 0 as a defensive fallback instead of panicking.
+    error!("Upstream list is empty when picking nth available index");
+    return 0;
+  }
   let healthy_count = healthy_index_count(upstreams);
 
   // Fast path: all upstreams are healthy (common case, including when health-check is disabled)
   if healthy_count == len {
+    trace!("All upstreams are healthy when picking nth available index");
     return nth % len;
   }
 
   if healthy_count == 0 {
     // When all upstreams are unhealthy, fall back to round robin among all upstreams (best-effort).
+    warn!("No healthy upstreams available when picking nth available index. Picking among all upstreams as a fallback.");
     nth % len
   } else {
     let target = nth % healthy_count;
@@ -76,7 +83,12 @@ pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> us
 #[cfg(feature = "health-check")]
 /// Get the index of the first healthy upstream, or 0 if all are unhealthy (best-effort).
 pub(super) fn first_available_index(upstreams: &[Upstream]) -> usize {
-  assert!(!upstreams.is_empty(), "upstream list must not be empty");
+  if upstreams.is_empty() {
+    // No upstreams available: return a deterministic default index instead of panicking.
+    // This should not happen in practice since config validation should reject empty upstream lists, but we handle it defensively just in case.
+    error!("Upstream list is empty when picking first available index");
+    return 0;
+  }
   first_healthy_index(upstreams).unwrap_or(0)
 }
 
