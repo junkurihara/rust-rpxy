@@ -9,7 +9,7 @@
 > **Work-in-progress project that is being evolved.**
 
 > [!NOTE]
-> This project is an HTTP (i.e., Layer 7) reverse-proxy. If you are looking for a TCP/UDP (i.e., Layer 4) reverse-proxy, please check my another project [`rpxy-l4`](https://github.com/junkurihara/rust-rpxy-l4).
+> This project is an HTTP (i.e., Layer 7) reverse-proxy. If you are looking for a TCP/UDP (i.e., Layer 4) reverse-proxy, please check my other project [`rpxy-l4`](https://github.com/junkurihara/rust-rpxy-l4).
 
 > [!NOTE]
 > If `rpxy` and our other projects like [`rpxy-l4`](https://github.com/junkurihara/rust-rpxy-l4) are useful for you and your organization, please consider sponsoring us on [GitHub Sponsors](https://github.com/sponsors/junkurihara) to help sustain the project. We are also open to any kind of support, including donations and commercial agreements.

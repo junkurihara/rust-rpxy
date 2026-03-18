@@ -60,7 +60,6 @@ pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> us
 
   // Fast path: all upstreams are healthy (common case, including when health-check is disabled)
   if healthy_count == len {
-    trace!("All upstreams are healthy when picking nth available index");
     return nth % len;
   }
 
