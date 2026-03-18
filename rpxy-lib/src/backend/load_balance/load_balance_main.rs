@@ -42,30 +42,44 @@ fn first_healthy_index(upstreams: &[Upstream]) -> Option<usize> {
   upstreams.iter().position(Upstream::is_healthy)
 }
 
+#[cfg(feature = "health-check")]
 fn healthy_index_count(upstreams: &[Upstream]) -> usize {
   upstreams.iter().filter(|u| u.is_healthy()).count()
 }
 
 /// Pick the nth healthy upstream without allocating an intermediate index list.
 /// Falls back to all upstreams if every upstream is unhealthy (best-effort).
+#[cfg(not(feature = "health-check"))]
 pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> usize {
   let len = upstreams.len();
   if len == 0 {
-    // Should never happen — config validation rejects empty upstream lists.
-    // Return 0 as a defensive fallback instead of panicking.
+    error!("Upstream list is empty when picking nth available index");
+    return 0;
+  }
+  // O(1): no health state to check when health-check feature is disabled.
+  nth % len
+}
+
+/// Pick the nth healthy upstream without allocating an intermediate index list.
+/// Falls back to all upstreams if every upstream is unhealthy (best-effort).
+#[cfg(feature = "health-check")]
+pub(super) fn pick_nth_available_index(upstreams: &[Upstream], nth: usize) -> usize {
+  let len = upstreams.len();
+  if len == 0 {
     error!("Upstream list is empty when picking nth available index");
     return 0;
   }
   let healthy_count = healthy_index_count(upstreams);
 
-  // Fast path: all upstreams are healthy (common case, including when health-check is disabled)
+  // Fast path: all upstreams are healthy (common case, including when health has no degradation)
   if healthy_count == len {
     return nth % len;
   }
 
   if healthy_count == 0 {
     // When all upstreams are unhealthy, fall back to round robin among all upstreams (best-effort).
-    warn!("No healthy upstreams available when picking nth available index. Picking among all upstreams as a fallback.");
+    // Log at debug level to avoid flooding; the health checker already warns on state transitions.
+    debug!("No healthy upstreams available, picking among all upstreams as a fallback");
     nth % len
   } else {
     let target = nth % healthy_count;
@@ -128,15 +142,23 @@ impl LoadBalanceWithPointer for LoadBalanceRandom {
       error!("Upstream list is empty in random load balancer, returning default index 0");
       return PointerToUpstream { ptr: 0, context: None };
     }
-    let healthy_count = healthy_index_count(upstreams);
     let mut rng = rand::rng();
-    // When all upstreams are healthy or all are unhealthy, pick randomly among all upstreams.
-    // Otherwise, pick randomly among healthy upstreams only.
-    let ptr = if healthy_count == len || healthy_count == 0 {
-      rng.random_range(0..len)
-    } else {
-      pick_nth_available_index(upstreams, rng.random_range(0..healthy_count))
+
+    #[cfg(not(feature = "health-check"))]
+    let ptr = rng.random_range(0..len);
+
+    #[cfg(feature = "health-check")]
+    let ptr = {
+      let healthy_count = healthy_index_count(upstreams);
+      // When all upstreams are healthy or all are unhealthy, pick randomly among all upstreams.
+      // Otherwise, pick randomly among healthy upstreams only.
+      if healthy_count == len || healthy_count == 0 {
+        rng.random_range(0..len)
+      } else {
+        pick_nth_available_index(upstreams, rng.random_range(0..healthy_count))
+      }
     };
+
     PointerToUpstream { ptr, context: None }
   }
 }

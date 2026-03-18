@@ -216,9 +216,12 @@ impl UpstreamCandidatesBuilder {
     &mut self,
     v: &Option<String>,
     // upstream_num: &usize,
-    _upstream_vec: &[Upstream],
-    _server_name: &str,
-    _path_opt: &Option<String>,
+    #[cfg(feature = "sticky-cookie")] upstream_vec: &[Upstream],
+    #[cfg(not(feature = "sticky-cookie"))] _upstream_vec: &[Upstream],
+    #[cfg(feature = "sticky-cookie")] server_name: &str,
+    #[cfg(not(feature = "sticky-cookie"))] _server_name: &str,
+    #[cfg(feature = "sticky-cookie")] path_opt: &Option<String>,
+    #[cfg(not(feature = "sticky-cookie"))] _path_opt: &Option<String>,
   ) -> &mut Self {
     let lb = if let Some(x) = v {
       match x.as_str() {
@@ -228,8 +231,8 @@ impl UpstreamCandidatesBuilder {
         #[cfg(feature = "sticky-cookie")]
         lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
           LoadBalanceStickyBuilder::default()
-            .sticky_config(_server_name, _path_opt)
-            .upstream_maps(_upstream_vec) // TODO:
+            .sticky_config(server_name, path_opt)
+            .upstream_maps(upstream_vec) // TODO:
             .build()
             .unwrap(),
         ),

@@ -257,10 +257,9 @@ pub async fn entrypoint(
         join_err.into()
       }
     };
-    if first_error.is_none() {
-      first_error = Some(err);
-      cancel_token.cancel();
-    }
+    first_error = Some(err);
+    cancel_token.cancel();
+    break;
   }
   first_error.map_or(Ok(()), Err)
 }

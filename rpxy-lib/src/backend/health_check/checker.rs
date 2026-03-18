@@ -17,7 +17,7 @@ fn has_http_health_check(app_manager: &BackendAppManager) -> bool {
       candidates
         .health_check_config
         .as_ref()
-        .is_some_and(|c| matches!(c.check_type, HealthCheckType::Http { .. }))
+        .is_some_and(|c| matches!(&c.check_type, HealthCheckType::Http { .. }))
     })
   })
 }
