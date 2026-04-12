@@ -162,6 +162,7 @@ pub struct AppConfig {
   pub server_name: String,
   pub reverse_proxy: Vec<ReverseProxyConfig>,
   pub tls: Option<TlsConfig>,
+  pub stealth_mode: bool,
 }
 
 /// Configuration parameters for single reverse proxy corresponding to the path

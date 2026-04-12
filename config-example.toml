@@ -63,6 +63,11 @@ default_app = 'another_localhost'
 [apps.localhost]
 server_name = 'localhost' # Domain name
 
+# Optional: Stealth mode. If true, proxy-related headers (X-Forwarded-For, X-Real-IP, etc.) will NOT be added
+# to requests forwarded to upstream, and the Server header in responses will NOT be overwritten.
+# Useful when you want the upstream server to not know it is being proxied.
+# stealth_mode = true
+
 # Optional: TLS setting. if https_port is specified and tls is true above, this must be given.
 # https_redirection can be specified only when both http_port and https_port are specified. If not explicitly specified, it is true by default.
 # if only https_port is given, https_redirection must not be specified.
