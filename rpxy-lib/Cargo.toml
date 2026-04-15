@@ -72,7 +72,7 @@ hyper-tls = { version = "0.6.0", features = [
   "alpn",
   "vendored",
 ], optional = true }
-hyper-rustls = { version = "0.27.8", default-features = false, features = [
+hyper-rustls = { version = "0.27.9", default-features = false, features = [
   "aws-lc-rs",
   "http1",
   "http2",
