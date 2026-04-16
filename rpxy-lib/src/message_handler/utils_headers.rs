@@ -24,7 +24,7 @@ const X_ORIGINAL_URI: &str = "x-original-uri";
 const X_REAL_IP: &str = "x-real-ip";
 
 /* --------------------------------------------------------------------------------------------------------- */
-// Functions to manipulate headers
+/* Request / response header helpers                                                                       */
 /* --------------------------------------------------------------------------------------------------------- */
 
 #[cfg(feature = "sticky-cookie")]
@@ -195,6 +195,19 @@ pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
 }
 
 /* --------------------------------------------------------------------------------------------------------- */
+/* Forwarding header normalization model                                                                   */
+/* --------------------------------------------------------------------------------------------------------- */
+
+/// Internal representation of the forwarding chain used by rpxy.
+///
+/// The flow is:
+/// 1. Parse `Forwarded` and/or `X-Forwarded-*` into `ForwardedEntry`
+/// 2. Append the immediate peer as rpxy's authoritative latest hop
+/// 3. Trim trusted proxy hops from the right-hand side
+/// 4. Regenerate outgoing `X-Forwarded-*` / `Forwarded` from the normalized chain
+///
+/// Keeping this representation in one place makes the trust-boundary logic
+/// easier to audit than passing partially parsed headers across multiple helpers.
 
 /// An entry in Forwarded header with only the parameters relevant for forwarding chain normalization and consistency check.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -295,6 +308,10 @@ pub(super) fn add_forwarding_header(
   Ok(())
 }
 
+/* --------------------------------------------------------------------------------------------------------- */
+/* High-level forwarding flow                                                                              */
+/* --------------------------------------------------------------------------------------------------------- */
+
 /// Normalize forwarding chain based on trusted proxies configuration.
 fn normalize_forwarding_chain(
   headers: &HeaderMap,
@@ -380,6 +397,10 @@ fn reduce_trusted_proxy_chain(mut chain: Vec<ForwardedEntry>, trusted_forwarded_
   chain.drain(0..authoritative_idx);
   chain
 }
+
+/* --------------------------------------------------------------------------------------------------------- */
+/* Incoming header parsing                                                                                 */
+/* --------------------------------------------------------------------------------------------------------- */
 
 /// Extract IP addresses from X-Forwarded-For header
 fn parse_x_forwarded_for_header(headers: &HeaderMap) -> Result<Vec<ForwardedEntry>> {
@@ -494,6 +515,10 @@ fn forwarded_is_consistent(forwarded: &[ForwardedEntry], xff_chain: &[ForwardedE
 
   true
 }
+
+/* --------------------------------------------------------------------------------------------------------- */
+/* Generic parsing helpers                                                                                 */
+/* --------------------------------------------------------------------------------------------------------- */
 
 /// Get the first header value as string if exist
 fn first_header_value(headers: &HeaderMap, key: impl AsHeaderName) -> Result<Option<String>> {
@@ -626,6 +651,10 @@ fn parse_forwarded_port(port: &str, token: &str) -> Result<u16> {
     .map_err(|e| anyhow!("invalid forwarded port in `{token}`: {e}"))
 }
 
+/* --------------------------------------------------------------------------------------------------------- */
+/* Chain helpers and output generation                                                                     */
+/* --------------------------------------------------------------------------------------------------------- */
+
 /// Canonicalize IP address to ensure consistent matching against trusted proxy list.
 fn canonicalize_ip(ip: IpAddr) -> IpAddr {
   SocketAddr::new(ip, 0).to_canonical().ip()
@@ -717,6 +746,9 @@ fn format_forwarded_node(node: &ForwardedNode) -> Result<String> {
 }
 
 /* --------------------------------------------------------------------------------------------------------- */
+/* Generic URI / connection header helpers                                                                 */
+/* --------------------------------------------------------------------------------------------------------- */
+
 /// Extract host from URI
 pub(super) fn host_from_uri_or_host_header(uri: &Uri, host_header_value: Option<header::HeaderValue>) -> Result<String> {
   // Prioritize uri host over host header
@@ -738,6 +770,9 @@ pub(super) fn host_from_uri_or_host_header(uri: &Uri, host_header_value: Option<
 }
 
 /* --------------------------------------------------------------------------------------------------------- */
+/* Hop-by-hop header handling                                                                              */
+/* --------------------------------------------------------------------------------------------------------- */
+
 /// Remove connection header
 pub(super) fn remove_connection_header(headers: &mut HeaderMap) {
   if let Some(values) = headers.get(header::CONNECTION) {
