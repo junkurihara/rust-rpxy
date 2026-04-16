@@ -23,7 +23,9 @@ where
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
-    add_header_entry_overwrite_if_exist(headers, "server", RESPONSE_HEADER_SERVER)?;
+    if !backend_app.stealth_mode {
+      add_header_entry_overwrite_if_exist(headers, "server", RESPONSE_HEADER_SERVER)?;
+    }
 
     #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
@@ -65,6 +67,7 @@ where
     upgrade: &Option<String>,
     upstream_candidates: &UpstreamCandidates,
     tls_enabled: bool,
+    stealth_mode: bool,
   ) -> Result<HandlerContext> {
     trace!("Generate request to be forwarded");
 
@@ -87,8 +90,10 @@ where
     remove_connection_header(headers);
     // delete hop headers including header.connection
     remove_hop_header(headers);
-    // X-Forwarded-For (and Forwarded if exists)
-    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &original_uri)?;
+    // X-Forwarded-For (and Forwarded if exists), skipped in stealth mode
+    if !stealth_mode {
+      add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &original_uri)?;
+    }
 
     // Add te: trailer if te_trailer
     if contains_te_trailers {

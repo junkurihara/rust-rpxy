@@ -152,6 +152,7 @@ where
         &upgrade_in_request,
         upstream_candidates,
         tls_enabled,
+        backend_app.stealth_mode,
       )
       .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
 

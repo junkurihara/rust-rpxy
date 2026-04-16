@@ -28,6 +28,9 @@ pub struct BackendApp {
   #[builder(default)]
   #[allow(unused)]
   pub mutual_tls: Option<bool>,
+  /// stealth mode: hide proxy headers and server identity from backend
+  #[builder(default)]
+  pub stealth_mode: bool,
 }
 impl<'a> BackendAppBuilder {
   pub fn server_name(&mut self, server_name: impl Into<Cow<'a, str>>) -> &mut Self {
@@ -54,7 +57,8 @@ impl TryFrom<&AppConfig> for BackendApp {
     backend_builder
       .app_name(app_config.app_name.clone())
       .server_name(app_config.server_name.clone())
-      .path_manager(path_manager);
+      .path_manager(path_manager)
+      .stealth_mode(app_config.stealth_mode);
     // TLS settings and build backend instance
     let backend = if app_config.tls.is_none() {
       backend_builder.build()?

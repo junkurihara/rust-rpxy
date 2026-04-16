@@ -201,6 +201,7 @@ pub struct Application {
   pub server_name: Option<String>,
   pub reverse_proxy: Option<Vec<ReverseProxyOption>>,
   pub tls: Option<TlsOption>,
+  pub stealth_mode: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
@@ -556,6 +557,7 @@ impl Application {
       server_name: server_name_string.to_owned(),
       reverse_proxy: reverse_proxy_config,
       tls: tls_config,
+      stealth_mode: self.stealth_mode.unwrap_or(false),
     })
   }
 }
@@ -959,6 +961,7 @@ mod tests {
         health_check: None,
       }]),
       tls: None,
+      stealth_mode: None,
     };
     let result: Result<Vec<ReverseProxyConfig>, _> = (&app).try_into();
     assert!(result.is_err());
