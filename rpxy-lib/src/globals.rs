@@ -172,6 +172,14 @@ pub struct ReverseProxyConfig {
   pub upstream: Vec<UpstreamUri>,
   pub upstream_options: Option<Vec<String>>,
   pub load_balance: Option<String>,
+  /// Maximum number of concurrent requests forwarded to upstream.
+  /// When `Some(n)`, excess requests queue (FIFO) until an in-flight slot frees.
+  /// When `None` (default), concurrency is unlimited.
+  pub max_upstream_concurrency: Option<usize>,
+  /// Minimum interval between consecutive forwarded requests.
+  /// When `Some(d)`, ensures at least this duration elapses between the START of each forwarded request.
+  /// When `None` (default), no interval is enforced.
+  pub min_request_interval: Option<Duration>,
   #[cfg(feature = "health-check")]
   pub health_check: Option<HealthCheckConfig>,
 }

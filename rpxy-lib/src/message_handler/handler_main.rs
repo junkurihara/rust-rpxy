@@ -132,6 +132,28 @@ where
     let path = req.uri().path();
     let upstream_candidates = backend_app.path_manager.get(path).ok_or(HttpError::NoUpstreamCandidates)?;
 
+    /////////////////////////////////////////////////////
+    // Enforce maximum upstream concurrency (acquire permit first).
+    // This ensures interval-wait only happens for tasks that actually hold a concurrency slot.
+    // The permit is held until the function returns, covering the full forwarder.request() call.
+    // Queued tasks proceed in FIFO order.
+    let _concurrency_permit = match upstream_candidates.concurrency_limiter.as_ref() {
+      Some(sem) => Some(
+        sem
+          .acquire()
+          .await
+          .map_err(|e| HttpError::FailedToGetResponseFromBackend(format!("upstream concurrency semaphore closed: {e}")))?,
+      ),
+      None => None,
+    };
+
+    /////////////////////////////////////////////////////
+    // Enforce minimum request interval (rate limiting).
+    // Called AFTER acquiring the concurrency semaphore so only tasks with a slot pay the wait cost.
+    if let Some(tracker) = &upstream_candidates.min_request_interval {
+      tracker.enforce_interval().await;
+    }
+
     // Upgrade in request header
     let upgrade_in_request = extract_upgrade(req.headers());
     if upgrade_in_request.is_some() && req.version() != http::Version::HTTP_11 {

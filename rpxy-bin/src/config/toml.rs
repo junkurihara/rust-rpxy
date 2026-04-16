@@ -220,6 +220,10 @@ pub struct ReverseProxyOption {
   pub upstream: Vec<UpstreamParams>,
   pub upstream_options: Option<Vec<String>>,
   pub load_balance: Option<String>,
+  /// Maximum number of concurrent requests forwarded to upstream. Must be >= 1 if specified.
+  pub max_upstream_concurrency: Option<usize>,
+  /// Minimum interval (in milliseconds) between consecutive forwarded requests. Must be > 0 if specified.
+  pub min_request_interval_ms: Option<u64>,
   #[cfg(feature = "health-check")]
   pub health_check: Option<HealthCheckOption>,
 }
@@ -579,6 +583,36 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
       }
       let upstream = upstream_res.into_iter().map(|v| v.unwrap()).collect();
 
+      // Validate max_upstream_concurrency
+      if let Some(n) = rpo.max_upstream_concurrency {
+        ensure!(
+          n >= 1,
+          "[{}] max_upstream_concurrency must be >= 1, got {}",
+          &_server_name_string,
+          n
+        );
+      }
+
+      // Validate min_request_interval_ms
+      let min_request_interval = match rpo.min_request_interval_ms {
+        Some(ms) => {
+          ensure!(
+            ms > 0,
+            "[{}] min_request_interval_ms must be > 0, got {}",
+            &_server_name_string,
+            ms
+          );
+          ensure!(
+            ms <= 60_000,
+            "[{}] min_request_interval_ms must be <= 60000 (60s), got {}",
+            &_server_name_string,
+            ms
+          );
+          Some(Duration::from_millis(ms))
+        }
+        None => None,
+      };
+
       #[cfg(feature = "health-check")]
       let health_check = rpo
         .health_check
@@ -593,6 +627,8 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
         upstream,
         upstream_options: rpo.upstream_options.clone(),
         load_balance: rpo.load_balance.clone(),
+        max_upstream_concurrency: rpo.max_upstream_concurrency,
+        min_request_interval,
         #[cfg(feature = "health-check")]
         health_check,
       })
@@ -955,6 +991,8 @@ mod tests {
         upstream: vec![],
         upstream_options: None,
         load_balance: None,
+        max_upstream_concurrency: None,
+        min_request_interval_ms: None,
         #[cfg(feature = "health-check")]
         health_check: None,
       }]),
