@@ -6,7 +6,7 @@ use super::{
   utils_request::InspectParseHost,
 };
 use crate::{
-  backend::{BackendAppManager, LoadBalanceContext},
+  backend::{BackendAppManager, ConcurrencyLimiter, LoadBalanceContext},
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
@@ -136,15 +136,74 @@ where
     // Enforce maximum upstream concurrency (acquire permit first).
     // This ensures interval-wait only happens for tasks that actually hold a concurrency slot.
     // The permit is held until the function returns, covering the full forwarder.request() call.
-    // Queued tasks proceed in FIFO order.
-    let _concurrency_permit = match upstream_candidates.concurrency_limiter.as_ref() {
-      Some(sem) => Some(
-        sem
-          .acquire()
-          .await
-          .map_err(|e| HttpError::FailedToGetResponseFromBackend(format!("upstream concurrency semaphore closed: {e}")))?,
-      ),
-      None => None,
+    // Queued tasks proceed in FIFO order (Tokio Semaphore is fair).
+    let _concurrency_permit = if let Some(limiter) = upstream_candidates.concurrency_limiter.as_deref() {
+      // RAII guard: ensures leave_queue() is called even if this future is cancelled during acquire().
+      struct QueueGuard<'a> {
+        limiter: &'a ConcurrencyLimiter,
+        left: bool,
+      }
+      impl Drop for QueueGuard<'_> {
+        fn drop(&mut self) {
+          if !self.left {
+            self.limiter.leave_queue();
+          }
+        }
+      }
+
+      let queued = limiter.enter_queue();
+      debug!(
+        "Upstream concurrency [{}]: request queued, waiting={}, in_flight={}",
+        path,
+        queued,
+        limiter.in_flight()
+      );
+      let mut queue_guard = QueueGuard { limiter, left: false };
+
+      let permit = limiter
+        .acquire()
+        .await
+        .map_err(|e| HttpError::FailedToGetResponseFromBackend(format!("upstream concurrency semaphore closed: {e}")))?;
+
+      // Permit acquired — remove from the waiting count before forwarding.
+      queue_guard.left = true;
+      let waiting_now = limiter.leave_queue();
+      debug!(
+        "Upstream concurrency [{}]: permit acquired, waiting={}, in_flight={}",
+        path,
+        waiting_now,
+        limiter.in_flight()
+      );
+
+      // RAII permit guard: releases the semaphore permit and logs queue state when this request finishes.
+      // Note: for WebSocket upgrades the bidirectional copy runs in a spawned task beyond this scope,
+      // so serial enforcement covers only the HTTP handshake, not the full WebSocket session lifetime.
+      struct PermitGuard<'a> {
+        permit: std::mem::ManuallyDrop<tokio::sync::SemaphorePermit<'a>>,
+        limiter: &'a ConcurrencyLimiter,
+        path: String,
+      }
+      impl Drop for PermitGuard<'_> {
+        fn drop(&mut self) {
+          // Release the permit before reading counts so in_flight reflects the post-release state.
+          // SAFETY: permit is valid; this is the only drop site (completed=false path never runs twice).
+          unsafe { std::mem::ManuallyDrop::drop(&mut self.permit) };
+          debug!(
+            "Upstream concurrency [{}]: request finished, waiting={}, in_flight={}",
+            self.path,
+            self.limiter.waiting(),
+            self.limiter.in_flight()
+          );
+        }
+      }
+
+      Some(PermitGuard {
+        permit: std::mem::ManuallyDrop::new(permit),
+        limiter,
+        path: path.to_owned(),
+      })
+    } else {
+      None
     };
 
     /////////////////////////////////////////////////////

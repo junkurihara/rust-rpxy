@@ -19,8 +19,10 @@ use derive_builder::Builder;
 #[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
-#[cfg(feature = "health-check")]
-use std::sync::Arc;
+use std::sync::{
+  Arc,
+  atomic::{AtomicUsize, Ordering},
+};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -236,17 +238,97 @@ impl RequestIntervalTracker {
       }
     };
 
-    if let Some((wait, reserved, _prev_start)) = wait_duration {
+    if let Some((wait, reserved, prev_start)) = wait_duration {
+      // RAII guard: if this future is dropped (cancelled) during sleep, roll back our reservation.
+      // Without rollback, each cancellation advances `last_request_at` by `duration` with no actual
+      // request forwarded, causing unbounded drift that permanently blocks subsequent requests.
+      struct RollbackGuard<'a> {
+        tracker: &'a RequestIntervalTracker,
+        reserved: tokio::time::Instant,
+        prev: Option<tokio::time::Instant>,
+        completed: bool,
+      }
+      impl Drop for RollbackGuard<'_> {
+        fn drop(&mut self) {
+          if !self.completed {
+            // The mutex is not held at the sleep await point, so try_lock() will succeed.
+            if let Ok(mut last) = self.tracker.last_request_at.try_lock()
+              && *last == Some(self.reserved)
+            {
+              *last = self.prev;
+            }
+          }
+        }
+      }
+
+      let mut guard = RollbackGuard {
+        tracker: self,
+        reserved,
+        prev: Some(prev_start),
+        completed: false,
+      };
+
       tokio::time::sleep(wait).await;
-      // After waking, update to actual start time (may differ slightly from reserved due to scheduling).
-      // If the sleep was cancelled (future dropped), this line won't execute and we need to roll back.
+
+      // Not cancelled — update to actual start time (may differ slightly from reserved due to scheduling).
       let mut last = self.last_request_at.lock().await;
       if *last == Some(reserved) {
-        // Still our reservation — we weren't cancelled. Update to actual start time.
         *last = Some(tokio::time::Instant::now());
       }
-      // If the reservation was already overwritten (e.g. by a timeout rollback), do nothing.
+      guard.completed = true;
     }
+  }
+}
+
+/// Wraps a semaphore with a waiting-request counter to expose queue depth for observability.
+pub struct ConcurrencyLimiter {
+  sem: tokio::sync::Semaphore,
+  /// Number of requests currently queued waiting to acquire a permit.
+  waiting: AtomicUsize,
+  capacity: usize,
+}
+
+impl std::fmt::Debug for ConcurrencyLimiter {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("ConcurrencyLimiter")
+      .field("capacity", &self.capacity)
+      .field("waiting", &self.waiting())
+      .field("in_flight", &self.in_flight())
+      .finish()
+  }
+}
+
+impl ConcurrencyLimiter {
+  pub fn new(capacity: usize) -> Arc<Self> {
+    Arc::new(Self {
+      sem: tokio::sync::Semaphore::new(capacity),
+      waiting: AtomicUsize::new(0),
+      capacity,
+    })
+  }
+
+  /// Increments the waiting counter. Returns the updated (new) waiting count.
+  pub(crate) fn enter_queue(&self) -> usize {
+    self.waiting.fetch_add(1, Ordering::Relaxed) + 1
+  }
+
+  /// Decrements the waiting counter. Returns the updated (new) waiting count.
+  pub(crate) fn leave_queue(&self) -> usize {
+    self.waiting.fetch_sub(1, Ordering::Relaxed) - 1
+  }
+
+  /// Number of requests currently waiting (queued) to acquire a permit.
+  pub(crate) fn waiting(&self) -> usize {
+    self.waiting.load(Ordering::Relaxed)
+  }
+
+  /// Number of requests currently holding a permit (actively being forwarded).
+  pub(crate) fn in_flight(&self) -> usize {
+    self.capacity.saturating_sub(self.sem.available_permits())
+  }
+
+  pub(crate) async fn acquire(&self) -> Result<tokio::sync::SemaphorePermit<'_>, tokio::sync::AcquireError> {
+    self.sem.acquire().await
   }
 }
 
@@ -274,9 +356,9 @@ pub struct UpstreamCandidates {
   pub options: HashSet<UpstreamOption>,
 
   /// Limits concurrent in-flight requests to upstream.
-  /// `None` = unlimited (default). `Some(Arc<Semaphore>)` = FIFO queue.
+  /// `None` = unlimited (default). `Some(Arc<ConcurrencyLimiter>)` = FIFO queue.
   #[builder(setter(custom), default)]
-  pub concurrency_limiter: Option<Arc<tokio::sync::Semaphore>>,
+  pub concurrency_limiter: Option<Arc<ConcurrencyLimiter>>,
 
   /// Minimum interval between consecutive forwarded requests.
   /// When `Some`, ensures at least this duration elapses between the START of each forwarded request.
@@ -372,7 +454,7 @@ impl UpstreamCandidatesBuilder {
 
   /// Set the maximum upstream concurrency from optional permit count
   pub fn concurrency_limiter(&mut self, v: &Option<usize>) -> &mut Self {
-    self.concurrency_limiter = Some(v.as_ref().map(|n| Arc::new(tokio::sync::Semaphore::new(*n))));
+    self.concurrency_limiter = Some(v.as_ref().map(|n| ConcurrencyLimiter::new(*n)));
     self
   }
 
