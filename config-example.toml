@@ -46,6 +46,15 @@ max_concurrent_streams = 100
 # Optional. Counted in total for http1.1, 2, 3
 max_clients = 512
 
+# Optional. Trusted proxies whose incoming X-Forwarded-* / Forwarded headers are
+# recursively trusted. If omitted or empty, forwarding headers from upstream peers
+# are ignored and rebuilt from the immediate peer address.
+# Examples:
+# trusted_forwarded_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
+# trusted_forwarded_proxies = "0.0.0.0/0" # trust all IPv4 proxies (not recommended)
+# For full dual-stack trust-all, specify both "0.0.0.0/0" and "::/0".
+# trusted_forwarded_proxies = []
+
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # except for configured application.
 # Note that this is only for http.
@@ -121,7 +130,7 @@ upstream_options = [
   "upgrade_insecure_requests",
   "force_http11_upstream",
   "set_upstream_host",        # overwrite HOST value with upstream hostname (like www.yahoo.com)
-  "forwarded_header"          # add Forwarded header (by default, this is not added. However, if the incoming request has Forwarded header, it would be preserved and updated)
+  "forwarded_header"          # add Forwarded header (disabled by default. However, update one if already present.) Incoming Forwarded/X-Forwarded-* values are normalized according to trusted_forwarded_proxies before generation.
 ]
 ######################################################################
 

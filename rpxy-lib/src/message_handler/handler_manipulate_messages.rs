@@ -88,7 +88,14 @@ where
     // delete hop headers including header.connection
     remove_hop_header(headers);
     // X-Forwarded-For (and Forwarded if exists)
-    add_forwarding_header(headers, client_addr, listen_addr, tls_enabled, &original_uri)?;
+    add_forwarding_header(
+      headers,
+      client_addr,
+      listen_addr,
+      tls_enabled,
+      &original_uri,
+      &self.globals.proxy_config.trusted_forwarded_proxies,
+    )?;
 
     // Add te: trailer if te_trailer
     if contains_te_trailers {
@@ -127,7 +134,12 @@ where
     // apply upstream-specific headers given in upstream_option
     let headers = req.headers_mut();
     // apply upstream options to header, after X-Forwarded-For is added
-    apply_upstream_options_to_header(headers, &upstream_chosen.uri, upstream_candidates, &original_uri)?;
+    apply_upstream_options_to_header(
+      headers,
+      &upstream_chosen.uri,
+      upstream_candidates,
+      &self.globals.proxy_config.trusted_forwarded_proxies,
+    )?;
 
     // update uri in request
     ensure!(
