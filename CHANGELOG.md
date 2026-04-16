@@ -6,7 +6,7 @@
 
 ### Improvement
 
-- **Breaking: add `trusted_forwarded_proxies` global option.** This supports deployments where rpxy runs behind another load balancer or reverse proxy that adds `X-Forwarded-For` and related forwarding headers, and those headers should be trusted only when the immediate peer is within explicitly trusted proxy ranges. From this version, no proxy is trusted by default, so requests forwarded from rpxy to backend applications include only the immediate peer IP address in `X-Forwarded-For` and related headers. When `trusted_forwarded_proxies` is configured with trusted CIDR blocks, addresses learned through those trusted proxies are preserved and included in the normalized `X-Forwarded-For` chain.
+- **Breaking: add `trusted_forwarded_proxies` global option.** This supports deployments where rpxy runs behind another load balancer or reverse proxy that adds `X-Forwarded-For`, `Forwarded`, and related forwarding headers, and those headers should be trusted only when the immediate peer is within explicitly trusted proxy ranges. From this version, no proxy is trusted by default, so requests forwarded from rpxy to backend applications are rebuilt from the immediate peer only. When `trusted_forwarded_proxies` is configured with trusted CIDR blocks, rpxy preserves and normalizes forwarding information learned through those trusted proxies, rewrites outgoing `X-Forwarded-For` and related headers from that normalized chain, and falls back safely when the incoming forwarding view is malformed, inconsistent, or cannot be represented safely.
 
 - deps and refactor
 
