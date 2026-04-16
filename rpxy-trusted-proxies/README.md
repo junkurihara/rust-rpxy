@@ -47,5 +47,6 @@ Useful flags:
 - `--timeout-seconds 10` to change the fetch timeout
 
 This command fetches provider IP lists from their official endpoints and
-rewrites `src/snapshots.rs`. Normal config parsing and proxy startup still use
-the checked-in static snapshot data.
+rewrites `src/snapshots.rs` only when the rendered snapshot actually changes.
+Normal config parsing and proxy startup still use the checked-in static
+snapshot data.

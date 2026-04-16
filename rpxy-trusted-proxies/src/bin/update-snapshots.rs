@@ -4,7 +4,13 @@ use ipnet::IpNet;
 use reqwest::blocking::Client;
 use rpxy_trusted_proxies::{BuiltinTrustedProxyAlias, builtin_aliases};
 use serde::Deserialize;
-use std::{collections::BTreeMap, env, fs, path::PathBuf, time::Duration};
+use std::{
+  collections::{BTreeMap, BTreeSet},
+  env,
+  fs,
+  path::PathBuf,
+  time::Duration,
+};
 
 #[derive(Clone, Debug)]
 struct Args {
@@ -20,6 +26,14 @@ struct SnapshotData {
   cidrs: Vec<String>,
 }
 
+#[derive(Clone, Debug)]
+struct ProviderUpdateStatus {
+  alias: BuiltinTrustedProxyAlias,
+  changed: bool,
+  cidr_count: usize,
+  fetched_at: String,
+}
+
 fn main() -> Result<()> {
   let args = parse_args()?;
   let client = Client::builder()
@@ -29,16 +43,31 @@ fn main() -> Result<()> {
 
   let current_date = Utc::now().format("%Y-%m-%d").to_string();
   let mut snapshots = BTreeMap::new();
+  let mut statuses = Vec::new();
 
   for alias in builtin_aliases() {
     let data = if args.providers.contains(alias) {
-      fetch_snapshot(&client, *alias, &current_date)?
+      let fetched = fetch_snapshot(&client, *alias, &current_date)?;
+      let current = current_snapshot(*alias);
+      let changed = current.source_url != fetched.source_url || !same_cidrs(&current.cidrs, &fetched.cidrs);
+      let snapshot = if changed {
+        fetched
+      } else {
+        SnapshotData {
+          source_url: current.source_url,
+          fetched_at: current.fetched_at,
+          cidrs: current.cidrs,
+        }
+      };
+      statuses.push(ProviderUpdateStatus {
+        alias: *alias,
+        changed,
+        cidr_count: snapshot.cidrs.len(),
+        fetched_at: snapshot.fetched_at.clone(),
+      });
+      snapshot
     } else {
-      SnapshotData {
-        source_url: alias.source_url().to_string(),
-        fetched_at: alias.fetched_at().to_string(),
-        cidrs: alias.cidr_strings().iter().map(|cidr| (*cidr).to_string()).collect(),
-      }
+      current_snapshot(*alias)
     };
     snapshots.insert(*alias, data);
   }
@@ -55,16 +84,20 @@ fn main() -> Result<()> {
     bail!("snapshot file is outdated: {}", snapshots_path.display());
   }
 
-  fs::write(&snapshots_path, rendered)
-    .with_context(|| format!("failed to write snapshot file {}", snapshots_path.display()))?;
+  if existing == rendered {
+    println!("no snapshot changes detected");
+    return Ok(());
+  }
 
-  for alias in &args.providers {
-    let updated = snapshots.get(alias).expect("selected provider must exist");
+  fs::write(&snapshots_path, rendered).with_context(|| format!("failed to write snapshot file {}", snapshots_path.display()))?;
+
+  for status in &statuses {
     println!(
-      "updated {} snapshot: {} CIDRs ({})",
-      alias.as_str(),
-      updated.cidrs.len(),
-      updated.fetched_at
+      "{} {} snapshot: {} CIDRs ({})",
+      if status.changed { "updated" } else { "unchanged" },
+      status.alias.as_str(),
+      status.cidr_count,
+      status.fetched_at
     );
   }
 
@@ -80,9 +113,7 @@ fn parse_args() -> Result<Args> {
   while let Some(arg) = iter.next() {
     match arg.as_str() {
       "--provider" => {
-        let raw = iter
-          .next()
-          .ok_or_else(|| anyhow!("missing value for --provider"))?;
+        let raw = iter.next().ok_or_else(|| anyhow!("missing value for --provider"))?;
         if raw.eq_ignore_ascii_case("all") {
           providers = builtin_aliases().to_vec();
         } else {
@@ -94,9 +125,7 @@ fn parse_args() -> Result<Args> {
       }
       "--check" => check = true,
       "--timeout-seconds" => {
-        let raw = iter
-          .next()
-          .ok_or_else(|| anyhow!("missing value for --timeout-seconds"))?;
+        let raw = iter.next().ok_or_else(|| anyhow!("missing value for --timeout-seconds"))?;
         timeout_seconds = raw
           .parse::<u64>()
           .map_err(|e| anyhow!("invalid timeout seconds `{raw}`: {e}"))?;
@@ -121,7 +150,9 @@ fn parse_args() -> Result<Args> {
 }
 
 fn print_usage() {
-  println!("Usage: cargo run -p rpxy-trusted-proxies --bin update-snapshots -- [--provider <alias>|all] [--check] [--timeout-seconds <n>]");
+  println!(
+    "Usage: cargo run -p rpxy-trusted-proxies --bin update-snapshots -- [--provider <alias>|all] [--check] [--timeout-seconds <n>]"
+  );
 }
 
 fn fetch_snapshot(client: &Client, alias: BuiltinTrustedProxyAlias, fetched_at: &str) -> Result<SnapshotData> {
@@ -136,6 +167,14 @@ fn fetch_snapshot(client: &Client, alias: BuiltinTrustedProxyAlias, fetched_at: 
     fetched_at: fetched_at.to_string(),
     cidrs,
   })
+}
+
+fn current_snapshot(alias: BuiltinTrustedProxyAlias) -> SnapshotData {
+  SnapshotData {
+    source_url: alias.source_url().to_string(),
+    fetched_at: alias.fetched_at().to_string(),
+    cidrs: alias.cidr_strings().iter().map(|cidr| (*cidr).to_string()).collect(),
+  }
 }
 
 fn fetch_cloudflare_snapshot(client: &Client) -> Result<Vec<String>> {
@@ -230,6 +269,12 @@ fn normalize_cidrs(cidrs: Vec<String>) -> Result<Vec<String>> {
   Ok(parsed.into_iter().map(|cidr| cidr.to_string()).collect())
 }
 
+fn same_cidrs(current: &[String], fetched: &[String]) -> bool {
+  let current = current.iter().map(String::as_str).collect::<BTreeSet<_>>();
+  let fetched = fetched.iter().map(String::as_str).collect::<BTreeSet<_>>();
+  current == fetched
+}
+
 fn render_snapshots_module(snapshots: &BTreeMap<BuiltinTrustedProxyAlias, SnapshotData>) -> Result<String> {
   let mut output = String::from("use super::BuiltinTrustedProxyAlias;\n\n");
   output.push_str("// Generated by `cargo run -p rpxy-trusted-proxies --bin update-snapshots`.\n");
@@ -245,10 +290,7 @@ fn render_snapshots_module(snapshots: &BTreeMap<BuiltinTrustedProxyAlias, Snapsh
       .get(alias)
       .ok_or_else(|| anyhow!("missing snapshot data for {}", alias.as_str()))?;
     let prefix = constant_prefix(*alias);
-    output.push_str(&format!(
-      "pub const {prefix}_SOURCE_URL: &str = {:?};\n",
-      snapshot.source_url
-    ));
+    output.push_str(&format!("pub const {prefix}_SOURCE_URL: &str = {:?};\n", snapshot.source_url));
     output.push_str(&format!(
       "pub const {prefix}_FETCHED_AT: &str = {:?};\n\n",
       snapshot.fetched_at
