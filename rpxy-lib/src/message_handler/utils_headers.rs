@@ -23,8 +23,10 @@ const X_FORWARDED_SSL: &str = "x-forwarded-ssl";
 const X_ORIGINAL_URI: &str = "x-original-uri";
 const X_REAL_IP: &str = "x-real-ip";
 
-// ////////////////////////////////////////////////////
-// // Functions to manipulate headers
+/* --------------------------------------------------------------------------------------------------------- */
+// Functions to manipulate headers
+/* --------------------------------------------------------------------------------------------------------- */
+
 #[cfg(feature = "sticky-cookie")]
 /// Take sticky cookie header value from request header,
 /// and returns LoadBalanceContext to be forwarded to LB if exist and if needed.
@@ -191,6 +193,8 @@ pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
   }
   Ok(())
 }
+
+/* --------------------------------------------------------------------------------------------------------- */
 
 /// An entry in Forwarded header with only the parameters relevant for forwarding chain normalization and consistency check.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -401,7 +405,10 @@ fn parse_x_forwarded_for_header(headers: &HeaderMap) -> Result<Vec<ForwardedEntr
 fn parse_forwarded_header(headers: &HeaderMap) -> Result<Vec<ForwardedEntry>> {
   let forwarded = join_header_values(headers, header::FORWARDED)?.ok_or_else(|| anyhow!("forwarded header missing"))?;
   let mut chain = Vec::new();
-  for entry in split_respecting_quotes(&forwarded, b',').into_iter().filter(|entry| !entry.is_empty()) {
+  for entry in split_respecting_quotes(&forwarded, b',')
+    .into_iter()
+    .filter(|entry| !entry.is_empty())
+  {
     let forwarded_entry = parse_forwarded_header_entry(entry)?;
     chain.push(forwarded_entry);
   }
@@ -414,7 +421,10 @@ fn parse_forwarded_header_entry(entry: &str) -> Result<ForwardedEntry> {
   let mut proto = None;
   let mut host = None;
   let mut by = None;
-  for param in split_respecting_quotes(entry, b';').into_iter().filter(|param| !param.is_empty()) {
+  for param in split_respecting_quotes(entry, b';')
+    .into_iter()
+    .filter(|param| !param.is_empty())
+  {
     let Some((key, value)) = param.split_once('=') else {
       continue;
     };
@@ -451,7 +461,12 @@ fn parse_forwarded_header_entry(entry: &str) -> Result<ForwardedEntry> {
   let Some(for_node) = for_node else {
     return Err(anyhow!("forwarded header entry missing for= parameter"));
   };
-  Ok(ForwardedEntry { for_node, proto, host, by })
+  Ok(ForwardedEntry {
+    for_node,
+    proto,
+    host,
+    by,
+  })
 }
 
 /// Check consistency between Forwarded and X-Forwarded-* headers. This is a sanity check to prevent trusting a forged Forwarded header when X-Forwarded-For is also present and inconsistent.
@@ -480,6 +495,7 @@ fn forwarded_is_consistent(forwarded: &[ForwardedEntry], xff_chain: &[ForwardedE
   true
 }
 
+/// Get the first header value as string if exist
 fn first_header_value(headers: &HeaderMap, key: impl AsHeaderName) -> Result<Option<String>> {
   let Some(first) = headers.get(key) else {
     return Ok(None);
@@ -490,6 +506,7 @@ fn first_header_value(headers: &HeaderMap, key: impl AsHeaderName) -> Result<Opt
     .map_err(|e| anyhow!("invalid header value: {e}"))
 }
 
+/// Join multiple header values into a single comma-separated string, if exist
 fn join_header_values(headers: &HeaderMap, key: impl AsHeaderName) -> Result<Option<String>> {
   let values = headers
     .get_all(key)
@@ -504,6 +521,7 @@ fn join_header_values(headers: &HeaderMap, key: impl AsHeaderName) -> Result<Opt
   }
 }
 
+/// Split a header value by a delimiter while respecting quoted substrings.
 fn split_respecting_quotes(input: &str, delimiter: u8) -> Vec<&str> {
   let mut segments = Vec::new();
   let mut start = 0usize;
@@ -528,6 +546,7 @@ fn split_respecting_quotes(input: &str, delimiter: u8) -> Vec<&str> {
   segments
 }
 
+/// Unquote a quoted-string value and unescape quoted-pair according to RFC 7230.
 fn unquote_http_value(value: &str) -> Result<String> {
   let trimmed = value.trim();
   if !trimmed.starts_with('"') {
@@ -556,15 +575,15 @@ fn unquote_http_value(value: &str) -> Result<String> {
   Ok(result)
 }
 
+/// Parse a token in Forwarded header that is supposed to represent a client IP, which can be an IP address, "unknown", or obfuscated identifier.
 fn parse_forwarded_ip_token(token: &str) -> Result<IpAddr> {
   match parse_forwarded_node(token)? {
     ForwardedNode::Ip(ip, _) => Ok(ip),
-    ForwardedNode::Unknown(_) | ForwardedNode::Obfuscated(_, _) => {
-      Err(anyhow!("forwarded node `{token}` is not an IP address"))
-    }
+    ForwardedNode::Unknown(_) | ForwardedNode::Obfuscated(_, _) => Err(anyhow!("forwarded node `{token}` is not an IP address")),
   }
 }
 
+/// Parse the value of `for=` parameter in Forwarded header, which can be an IP address (with optional port), "unknown", or obfuscated identifier, according to RFC 7239.
 fn parse_forwarded_node(token: &str) -> Result<ForwardedNode> {
   let trimmed = unquote_http_value(token)?;
   if trimmed.eq_ignore_ascii_case("unknown") {
@@ -582,23 +601,25 @@ fn parse_forwarded_node(token: &str) -> Result<ForwardedNode> {
       return Ok(ForwardedNode::Obfuscated(node.to_string(), Some(port.to_string())));
     }
     if let Ok(ip) = IpAddr::from_str(node) {
-      return Ok(ForwardedNode::Ip(canonicalize_ip(ip), Some(parse_forwarded_port(port, token)?)));
+      return Ok(ForwardedNode::Ip(
+        canonicalize_ip(ip),
+        Some(parse_forwarded_port(port, token)?),
+      ));
     }
   }
 
   if let Some(inner) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-    let ip = IpAddr::from_str(inner)
-      .map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?;
+    let ip = IpAddr::from_str(inner).map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?;
     Ok(ForwardedNode::Ip(canonicalize_ip(ip), None))
   } else if trimmed.starts_with('_') {
     Ok(ForwardedNode::Obfuscated(trimmed, None))
   } else {
-    let ip = IpAddr::from_str(&trimmed)
-      .map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?;
+    let ip = IpAddr::from_str(&trimmed).map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?;
     Ok(ForwardedNode::Ip(canonicalize_ip(ip), None))
   }
 }
 
+/// Parse the port part of `for=` parameter in Forwarded header, ensuring it is a valid u16.
 fn parse_forwarded_port(port: &str, token: &str) -> Result<u16> {
   port
     .parse::<u16>()
@@ -610,6 +631,7 @@ fn canonicalize_ip(ip: IpAddr) -> IpAddr {
   SocketAddr::new(ip, 0).to_canonical().ip()
 }
 
+/// Build a ForwardedEntry for the immediate peer, which represents this proxy's authoritative view of the client connection. This is used as the basis for forwarding chain normalization and generation.
 fn build_peer_forwarded_entry(headers: &HeaderMap, peer_ip: IpAddr, tls: bool, original_uri: &Uri) -> ForwardedEntry {
   ForwardedEntry {
     for_node: ForwardedNode::Ip(peer_ip, None),
@@ -625,6 +647,7 @@ fn is_trusted_proxy(ip: &IpAddr, trusted_forwarded_proxies: &[IpNet]) -> bool {
   trusted_forwarded_proxies.iter().any(|net| net.contains(&canonical))
 }
 
+/// Check if the given forwarding entry represents a trusted proxy hop that can be skipped in the forwarding chain. This is true if the `for` parameter is an IP address that is in the trusted proxies list.
 fn entry_is_trusted_proxy(entry: &ForwardedEntry, trusted_forwarded_proxies: &[IpNet]) -> bool {
   entry
     .for_node
@@ -633,6 +656,7 @@ fn entry_is_trusted_proxy(entry: &ForwardedEntry, trusted_forwarded_proxies: &[I
     .unwrap_or(false)
 }
 
+/// Convert a forwarding chain of ForwardedEntry into a list of IP strings for X-Forwarded-For header. This returns None if any entry in the chain is not an IP address, which indicates that we cannot represent this chain in X-Forwarded-For and should fall back to a peer-only view.
 fn forwarded_chain_to_xff(chain: &[ForwardedEntry]) -> Option<Vec<String>> {
   chain
     .iter()
@@ -640,6 +664,7 @@ fn forwarded_chain_to_xff(chain: &[ForwardedEntry]) -> Option<Vec<String>> {
     .collect::<Option<Vec<_>>>()
 }
 
+/// Overwrite a header with a single value that is a comma-separated concatenation of the given values. This is used to update X-Forwarded-For with the normalized chain.
 fn overwrite_header_with_csv(headers: &mut HeaderMap, key: &str, values: &[String]) -> Result<()> {
   let name = HeaderName::from_bytes(key.as_bytes())?;
   headers.remove(&name);
@@ -691,6 +716,7 @@ fn format_forwarded_node(node: &ForwardedNode) -> Result<String> {
   }
 }
 
+/* --------------------------------------------------------------------------------------------------------- */
 /// Extract host from URI
 pub(super) fn host_from_uri_or_host_header(uri: &Uri, host_header_value: Option<header::HeaderValue>) -> Result<String> {
   // Prioritize uri host over host header
@@ -711,6 +737,7 @@ pub(super) fn host_from_uri_or_host_header(uri: &Uri, host_header_value: Option<
     .ok_or_else(|| anyhow!("No host found in URI or Host header"))
 }
 
+/* --------------------------------------------------------------------------------------------------------- */
 /// Remove connection header
 pub(super) fn remove_connection_header(headers: &mut HeaderMap) {
   if let Some(values) = headers.get(header::CONNECTION) {
@@ -761,6 +788,7 @@ pub(super) fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
   None
 }
 
+/* --------------------------------------------------------------------------------------------------------- */
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -1062,10 +1090,7 @@ mod tests {
     .unwrap();
 
     // proto should be assigned to 203.0.113.20 (the last valid entry), not lost
-    assert_eq!(
-      headers.get(X_FORWARDED_FOR).unwrap(),
-      "203.0.113.20, 10.1.2.3"
-    );
+    assert_eq!(headers.get(X_FORWARDED_FOR).unwrap(), "203.0.113.20, 10.1.2.3");
   }
 
   #[test]
@@ -1098,10 +1123,7 @@ mod tests {
   fn trusted_proxy_with_forwarded_unknown_falls_back_to_peer_only() {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
-    headers.insert(
-      header::FORWARDED,
-      HeaderValue::from_static("for=unknown, for=10.9.0.4"),
-    );
+    headers.insert(header::FORWARDED, HeaderValue::from_static("for=unknown, for=10.9.0.4"));
 
     add_forwarding_header(
       &mut headers,
