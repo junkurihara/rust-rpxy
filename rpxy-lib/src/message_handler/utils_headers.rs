@@ -358,10 +358,6 @@ fn reduce_trusted_proxy_chain(mut chain: Vec<ForwardedEntry>, trusted_forwarded_
     return chain;
   }
   let authoritative_idx = idx - 1;
-  if authoritative_idx >= chain.len() {
-    // return the last hop as the only authoritative entry
-    return vec![chain.pop().unwrap()];
-  }
   chain.drain(0..authoritative_idx);
   chain
 }
@@ -370,16 +366,14 @@ fn reduce_trusted_proxy_chain(mut chain: Vec<ForwardedEntry>, trusted_forwarded_
 fn parse_x_forwarded_for_header(headers: &HeaderMap) -> Result<Vec<ForwardedEntry>> {
   let xff = parse_single_header_value(headers, X_FORWARDED_FOR)?.ok_or_else(|| anyhow!("x-forwarded-for header missing"))?;
   let xf_proto = parse_single_header_value(headers, X_FORWARDED_PROTO)?.map(|s| s.trim().to_string());
-  let mut chain = Vec::new();
-  for (idx, ip) in xff.split(',').map(str::trim).filter(|s| !s.is_empty()).enumerate() {
+  let ips: Vec<&str> = xff.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+  let last_idx = ips.len().saturating_sub(1);
+  let mut chain = Vec::with_capacity(ips.len());
+  for (idx, ip) in ips.into_iter().enumerate() {
     let for_ip = parse_forwarded_ip_token(ip)?;
     chain.push(ForwardedEntry {
       for_ip,
-      proto: if idx == xff.split(',').count() - 1 {
-        xf_proto.clone()
-      } else {
-        None
-      },
+      proto: if idx == last_idx { xf_proto.clone() } else { None },
       host: None,
       by: None,
     });
@@ -797,6 +791,137 @@ mod tests {
     assert_eq!(
       headers.get(header::FORWARDED).unwrap(),
       "for=10.1.2.3;proto=http;host=app.example"
+    );
+  }
+
+  #[test]
+  fn ipv6_peer_produces_correctly_formatted_headers() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    add_forwarding_header(
+      &mut headers,
+      &"[2001:db8::1]:4321".parse().unwrap(),
+      &"[::1]:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &[],
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(X_FORWARDED_FOR).unwrap(), "2001:db8::1");
+    assert_eq!(headers.get(X_REAL_IP).unwrap(), "2001:db8::1");
+    assert!(!headers.contains_key(header::FORWARDED));
+  }
+
+  #[test]
+  fn ipv6_peer_with_forwarded_option_generates_quoted_bracket_for() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    add_forwarding_header(
+      &mut headers,
+      &"[2001:db8::1]:4321".parse().unwrap(),
+      &"[::1]:8080".parse().unwrap(),
+      true,
+      &Uri::from_static("/"),
+      &[],
+    )
+    .unwrap();
+
+    let normalized_chain = vec![ForwardedEntry {
+      for_ip: "2001:db8::1".parse().unwrap(),
+      proto: Some("https".into()),
+      host: Some("app.example".into()),
+      by: None,
+    }];
+    let forwarded = generate_forwarded_header(&normalized_chain).unwrap();
+    assert_eq!(forwarded, "for=\"[2001:db8::1]\";proto=https;host=app.example");
+  }
+
+  #[test]
+  fn ipv4_mapped_ipv6_peer_is_canonicalized() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    // ::ffff:10.1.2.3 should be canonicalized to 10.1.2.3
+    add_forwarding_header(
+      &mut headers,
+      &"[::ffff:10.1.2.3]:1234".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &[],
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(X_FORWARDED_FOR).unwrap(), "10.1.2.3");
+    assert_eq!(headers.get(X_REAL_IP).unwrap(), "10.1.2.3");
+  }
+
+  #[test]
+  fn ipv4_mapped_ipv6_matches_trusted_v4_cidr() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10"));
+
+    // Peer is ::ffff:10.1.2.3, trusted CIDR is 10.0.0.0/8 (IPv4)
+    add_forwarding_header(
+      &mut headers,
+      &"[::ffff:10.1.2.3]:1234".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &trusted(&["10.0.0.0/8"]),
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(X_FORWARDED_FOR).unwrap(), "198.51.100.10, 10.1.2.3");
+    assert_eq!(headers.get(X_REAL_IP).unwrap(), "198.51.100.10");
+  }
+
+  #[test]
+  fn trusted_proxy_parses_forwarded_with_ipv6() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+    headers.insert(
+      header::FORWARDED,
+      HeaderValue::from_static("for=\"[2001:db8::1]\";proto=https;host=app.example"),
+    );
+
+    add_forwarding_header(
+      &mut headers,
+      &"10.1.2.3:1234".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &trusted(&["10.0.0.0/8"]),
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(X_FORWARDED_FOR).unwrap(), "2001:db8::1, 10.1.2.3");
+    assert_eq!(headers.get(X_REAL_IP).unwrap(), "2001:db8::1");
+  }
+
+  #[test]
+  fn xff_with_empty_segments_assigns_proto_to_last_valid_entry() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10, , 203.0.113.20"));
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
+
+    add_forwarding_header(
+      &mut headers,
+      &"10.1.2.3:1234".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &trusted(&["10.0.0.0/8"]),
+    )
+    .unwrap();
+
+    // proto should be assigned to 203.0.113.20 (the last valid entry), not lost
+    assert_eq!(
+      headers.get(X_FORWARDED_FOR).unwrap(),
+      "203.0.113.20, 10.1.2.3"
     );
   }
 }
