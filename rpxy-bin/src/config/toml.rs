@@ -8,6 +8,7 @@ use rpxy_lib::{
   AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri,
   reexports::{IpNet, Uri},
 };
+use rpxy_trusted_proxies::resolve_trusted_proxy_entries;
 use serde::Deserialize;
 use std::{
   fs,
@@ -58,7 +59,7 @@ impl OneOrMany {
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
 /// - `max_clients`: Optional max client connections.
-/// - `trusted_forwarded_proxies`: Optional CIDR(s) whose incoming forwarding headers are trusted.
+/// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
 /// - `apps`: Optional application definitions.
 /// - `default_app`: Optional default application name.
 /// - `experimental`: Optional experimental features.
@@ -316,16 +317,8 @@ impl TryInto<ProxyConfig> for &ConfigToml {
     if let Some(c) = self.max_concurrent_streams {
       proxy_config.max_concurrent_streams = c;
     }
-    if let Some(cidrs) = &self.trusted_forwarded_proxies {
-      proxy_config.trusted_forwarded_proxies = cidrs
-        .clone()
-        .into_vec()
-        .into_iter()
-        .map(|s| {
-          s.parse::<IpNet>()
-            .map_err(|e| anyhow!("Invalid CIDR in trusted_forwarded_proxies: {s}: {e}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    if let Some(entries) = &self.trusted_forwarded_proxies {
+      proxy_config.trusted_forwarded_proxies = resolve_trusted_proxy_entries(entries.clone().into_vec())?.cidrs;
     }
 
     // experimental
@@ -918,6 +911,71 @@ mod tests {
     assert_eq!(
       proxy_config.trusted_forwarded_proxies[1],
       "192.168.0.0/16".parse::<IpNet>().unwrap()
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_builtin_aliases() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = "cloudflare"
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"173.245.48.0/20".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"2400:cb00::/32".parse::<IpNet>().unwrap())
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_cloudfront_alias() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = "cloudfront"
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"120.52.22.96/27".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"13.35.0.0/16".parse::<IpNet>().unwrap())
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_mixed_alias_and_cidr() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = ["fastly", "10.0.0.0/8"]
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"23.235.32.0/20".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"2a04:4e40::/32".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"10.0.0.0/8".parse::<IpNet>().unwrap())
     );
   }
 

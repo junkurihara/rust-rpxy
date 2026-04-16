@@ -51,6 +51,8 @@ max_clients = 512
 # are ignored and rebuilt from the immediate peer address.
 # Examples:
 # trusted_forwarded_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
+# trusted_forwarded_proxies = ["cloudflare", "fastly", "cloudfront"]
+# trusted_forwarded_proxies = ["cloudfront", "10.0.0.0/8"]
 # trusted_forwarded_proxies = "0.0.0.0/0" # trust all IPv4 proxies (not recommended)
 # For full dual-stack trust-all, specify both "0.0.0.0/0" and "::/0".
 # trusted_forwarded_proxies = []
