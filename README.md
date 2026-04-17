@@ -274,6 +274,34 @@ This example configuration demonstrates a very common path-based routing situati
 
 Since this is currently a work-in-progress project, we are frequently adding new options. We first add new option entries in `config-example.toml` as examples. Please refer to it for up-to-date options. We will prepare comprehensive documentation for all options.
 
+### Forwarding Headers and Trusted Proxies
+
+`rpxy` always rewrites the downstream-facing forwarding headers that backend applications commonly trust, including `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, `X-Forwarded-Port`, `X-Forwarded-SSL`, and `X-Original-URI`.
+
+By default, no preceding proxy is trusted. If `trusted_forwarded_proxies` is omitted or empty, any incoming `X-Forwarded-*` or `Forwarded` values from the client or an unknown preceding proxy are ignored, and `rpxy` rebuilds the outgoing forwarding view from the immediate peer address only.
+
+```toml
+# Global setting
+trusted_forwarded_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
+# trusted_forwarded_proxies = ["cloudflare", "fastly", "cloudfront"]
+```
+
+When `trusted_forwarded_proxies` is configured, `rpxy` trusts incoming forwarding-chain information only if the immediate peer matches one of those CIDR ranges or built-in aliases. In that case, it parses and normalizes incoming `Forwarded` and/or `X-Forwarded-For`, appends the immediate peer as the latest hop, trims trusted proxy hops from the right-hand side, and rewrites the outgoing headers from that normalized chain.
+
+`Forwarded` is handled slightly differently from `X-Forwarded-*`:
+
+- If a request already contains `Forwarded`, `rpxy` rewrites it into a normalized value.
+- If a request does not contain `Forwarded`, `rpxy` does not add it by default.
+- To always generate RFC 7239 `Forwarded`, add `forwarded_header` to `upstream_options`.
+
+```toml
+[[apps.app1.reverse_proxy]]
+upstream = [{ location = "app1.local:8080" }]
+upstream_options = ["forwarded_header"]
+```
+
+This setting is separate from inbound HAProxy PROXY protocol support. `trusted_forwarded_proxies` defines which immediate L7 peers may contribute `X-Forwarded-*` / `Forwarded` information, while `[experimental.tcp_recv_proxy_protocol].trusted_proxies` defines which L4 peers may send PROXY protocol headers.
+
 ## Using Docker Image
 
 You can also use the `docker` image hosted on [Docker Hub](https://hub.docker.com/r/jqtype/rpxy) and [GitHub Container Registry](https://github.com/junkurihara/rust-rpxy/pkgs/container/rust-rpxy) instead of directly executing the binary. See the [`./docker`](./docker/README.md) directory for more details.

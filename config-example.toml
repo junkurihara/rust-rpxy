@@ -47,7 +47,7 @@ max_concurrent_streams = 100
 max_clients = 512
 
 # Optional. Trusted proxies whose incoming X-Forwarded-* / Forwarded headers are
-# recursively trusted. If omitted or empty, forwarding headers from upstream peers
+# recursively trusted. If omitted or empty, forwarding headers from preceding peers
 # are ignored and rebuilt from the immediate peer address.
 # Examples:
 # trusted_forwarded_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
