@@ -270,19 +270,22 @@ impl RequestIntervalTracker {
 
       tokio::time::sleep(wait).await;
 
+      // Mark completed immediately after sleep so a cancellation between here and the lock below
+      // cannot incorrectly roll back a sleep that has already been honoured.
+      guard.completed = true;
+
       // Not cancelled — update to actual start time (may differ slightly from reserved due to scheduling).
       let mut last = self.last_request_at.lock().await;
       if *last == Some(reserved) {
         *last = Some(tokio::time::Instant::now());
       }
-      guard.completed = true;
     }
   }
 }
 
 /// Wraps a semaphore with a waiting-request counter to expose queue depth for observability.
 pub struct ConcurrencyLimiter {
-  sem: tokio::sync::Semaphore,
+  sem: Arc<tokio::sync::Semaphore>,
   /// Number of requests currently queued waiting to acquire a permit.
   waiting: AtomicUsize,
   capacity: usize,
@@ -301,7 +304,7 @@ impl std::fmt::Debug for ConcurrencyLimiter {
 impl ConcurrencyLimiter {
   pub fn new(capacity: usize) -> Arc<Self> {
     Arc::new(Self {
-      sem: tokio::sync::Semaphore::new(capacity),
+      sem: Arc::new(tokio::sync::Semaphore::new(capacity)),
       waiting: AtomicUsize::new(0),
       capacity,
     })
@@ -327,8 +330,10 @@ impl ConcurrencyLimiter {
     self.capacity.saturating_sub(self.sem.available_permits())
   }
 
-  pub(crate) async fn acquire(&self) -> Result<tokio::sync::SemaphorePermit<'_>, tokio::sync::AcquireError> {
-    self.sem.acquire().await
+  /// Acquires an owned permit. The returned permit is lifetime-free and can be stored in a
+  /// response body wrapper so the concurrency slot stays held until the body is fully consumed.
+  pub(crate) async fn acquire_owned(&self) -> Result<tokio::sync::OwnedSemaphorePermit, tokio::sync::AcquireError> {
+    Arc::clone(&self.sem).acquire_owned().await
   }
 }
 
