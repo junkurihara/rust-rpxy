@@ -1,4 +1,4 @@
-use super::{HttpMessageHandler, handler_main::HandlerContext, utils_headers::*, utils_request::update_request_line};
+use super::{HttpMessageHandler, handler_main::HandlerContext, header_ops::*, request_ops::update_request_line};
 use crate::{
   backend::{BackendApp, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
