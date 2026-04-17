@@ -1,0 +1,124 @@
+name: Trusted Proxy Snapshot Drift Check
+
+on:
+  schedule:
+    # Monthly at 00:00 UTC on the 1st
+    - cron: '2 1 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-snapshot-drift-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-snapshot-drift-
+
+      - name: Check snapshot drift
+        id: check
+        continue-on-error: true
+        run: |
+          cargo run -p rpxy-trusted-proxies --bin update-snapshots -- --check --provider all
+
+      - name: Capture drift diff
+        if: steps.check.outcome == 'failure'
+        run: |
+          cargo run -p rpxy-trusted-proxies --bin update-snapshots -- --provider all
+          git diff -- rpxy-trusted-proxies/src/snapshots.rs > /tmp/snapshot-drift.diff
+          git checkout -- rpxy-trusted-proxies/src/snapshots.rs
+
+      - name: Open or update tracking issue
+        if: steps.check.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const label = 'snapshot-drift';
+            const title = 'rpxy-trusted-proxies: provider snapshot drift detected';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const today = new Date().toISOString().slice(0, 10);
+
+            let diff = '';
+            try {
+              diff = fs.readFileSync('/tmp/snapshot-drift.diff', 'utf8');
+            } catch (_) {
+              diff = '(no diff captured)';
+            }
+            const maxLen = 50000;
+            const truncated = diff.length > maxLen
+              ? diff.slice(0, maxLen) + '\n... (truncated; see workflow logs for full diff)'
+              : diff;
+
+            const body = [
+              `Provider snapshot drift detected on **${today}** (workflow run: ${runUrl}).`,
+              '',
+              '### How to refresh',
+              '',
+              '```sh',
+              'cargo run -p rpxy-trusted-proxies --bin update-snapshots -- --provider all',
+              '```',
+              '',
+              'Inspect the resulting diff of `rpxy-trusted-proxies/src/snapshots.rs` carefully',
+              'before committing. Flag any unusual changes such as:',
+              '',
+              '- a large net change in CIDR count',
+              '- additions of RFC1918 / loopback / link-local ranges',
+              '- unexpected removal of entire provider IP blocks',
+              '',
+              '<details><summary>Detected diff</summary>',
+              '',
+              '```diff',
+              truncated,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+
+            if (existing.data.length > 0) {
+              const issueNumber = existing.data[0].number;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body,
+              });
+              core.info(`Appended drift comment to issue #${issueNumber}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: [label],
+              });
+              core.info(`Opened drift issue #${created.data.number}`);
+            }
+
+      - name: Fail workflow if drift detected
+        if: steps.check.outcome == 'failure'
+        run: exit 1
