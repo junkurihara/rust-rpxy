@@ -45,7 +45,6 @@ pub use crate::{constants::proxy_protocol as proxy_protocol_defaults, globals::T
 
 pub mod reexports {
   pub use hyper::Uri;
-  #[cfg(feature = "proxy-protocol")]
   pub use ipnet::IpNet;
 }
 
@@ -108,6 +107,13 @@ pub async fn entrypoint(
   }
   if !proxy_config.sni_consistency {
     info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
+  }
+  if !proxy_config.trusted_forwarded_proxies.is_empty() {
+    info!(
+      "Trusted forwarded proxies configured: {} CIDR(s)",
+      proxy_config.trusted_forwarded_proxies.len()
+    );
+    debug!("Trusted forwarded proxies: {:?}", proxy_config.trusted_forwarded_proxies);
   }
   #[cfg(feature = "cache")]
   if proxy_config.cache_enabled {

@@ -4,17 +4,23 @@ use crate::{
   log::warn,
 };
 use ahash::HashMap;
-use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
-#[cfg(feature = "health-check")]
-use rpxy_lib::{HealthCheckConfig, HealthCheckType, LOAD_BALANCE_PRIMARY_BACKUP};
-#[cfg(feature = "proxy-protocol")]
-use rpxy_lib::{TcpRecvProxyProtocolConfig, reexports::IpNet};
+use rpxy_lib::{
+  AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri,
+  reexports::{IpNet, Uri},
+};
+use rpxy_trusted_proxies::resolve_trusted_proxy_entries;
 use serde::Deserialize;
 use std::{
   fs,
   net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 use tokio::time::Duration;
+
+#[cfg(feature = "proxy-protocol")]
+use rpxy_lib::TcpRecvProxyProtocolConfig;
+
+#[cfg(feature = "health-check")]
+use rpxy_lib::{HealthCheckConfig, HealthCheckType, LOAD_BALANCE_PRIMARY_BACKUP};
 
 /// Helper type that accepts both a single string and an array of strings in TOML.
 ///
@@ -53,6 +59,7 @@ impl OneOrMany {
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
 /// - `max_clients`: Optional max client connections.
+/// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
 /// - `apps`: Optional application definitions.
 /// - `default_app`: Optional default application name.
 /// - `experimental`: Optional experimental features.
@@ -66,6 +73,7 @@ pub struct ConfigToml {
   pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
+  pub trusted_forwarded_proxies: Option<OneOrMany>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
   pub experimental: Option<Experimental>,
@@ -309,6 +317,9 @@ impl TryInto<ProxyConfig> for &ConfigToml {
     if let Some(c) = self.max_concurrent_streams {
       proxy_config.max_concurrent_streams = c;
     }
+    if let Some(entries) = &self.trusted_forwarded_proxies {
+      proxy_config.trusted_forwarded_proxies = resolve_trusted_proxy_entries(entries.clone().into_vec())?.cidrs;
+    }
 
     // experimental
     if let Some(exp) = &self.experimental {
@@ -382,9 +393,9 @@ impl TryInto<ProxyConfig> for &ConfigToml {
           .iter()
           .map(|s| {
             s.parse::<IpNet>()
-              .map_err(|e| anyhow!("Invalid CIDR in trusted_proxies: {}: {}", s, e))
+              .map_err(|e| anyhow!("Invalid CIDR in trusted_proxies: {s}: {e}"))
           })
-          .collect::<std::result::Result<Vec<_>, _>>()?;
+          .collect::<Result<Vec<_>, _>>()?;
         let timeout = match pp_option.timeout {
           None => Duration::from_millis(rpxy_lib::proxy_protocol_defaults::TIMEOUT_MSEC),
           Some(0) => Duration::ZERO,
@@ -863,6 +874,108 @@ mod tests {
     assert_eq!(
       config.listen_address_v6.unwrap().into_vec(),
       vec!["::1".to_string(), "fe80::1".to_string()]
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_default_to_empty() {
+    let toml_str = r#"
+      listen_port = 8080
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(proxy_config.trusted_forwarded_proxies.is_empty());
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_single_and_many() {
+    let single = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = "10.0.0.0/8"
+    "#;
+    let config: ConfigToml = toml::from_str(single).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.trusted_forwarded_proxies.len(), 1);
+    assert_eq!(
+      proxy_config.trusted_forwarded_proxies[0],
+      "10.0.0.0/8".parse::<IpNet>().unwrap()
+    );
+
+    let many = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
+    "#;
+    let config: ConfigToml = toml::from_str(many).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.trusted_forwarded_proxies.len(), 2);
+    assert_eq!(
+      proxy_config.trusted_forwarded_proxies[1],
+      "192.168.0.0/16".parse::<IpNet>().unwrap()
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_builtin_aliases() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = "cloudflare"
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"173.245.48.0/20".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"2400:cb00::/32".parse::<IpNet>().unwrap())
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_cloudfront_alias() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = "cloudfront"
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"120.52.22.96/27".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"13.35.0.0/16".parse::<IpNet>().unwrap())
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_mixed_alias_and_cidr() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = ["fastly", "10.0.0.0/8"]
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"23.235.32.0/20".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"2a04:4e40::/32".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"10.0.0.0/8".parse::<IpNet>().unwrap())
     );
   }
 

@@ -4,8 +4,8 @@ mod handler_manipulate_messages;
 mod http_log;
 mod http_result;
 mod synthetic_response;
-mod utils_headers;
-mod utils_request;
+mod header_ops;
+mod request_ops;
 
 pub use handler_main::HttpMessageHandlerBuilderError;
 pub(crate) use handler_main::{HttpMessageHandler, HttpMessageHandlerBuilder};

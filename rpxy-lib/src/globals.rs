@@ -1,5 +1,6 @@
 use crate::{constants::*, count::RequestCount};
 use hot_reload::ReloaderReceiver;
+use ipnet::IpNet;
 use rpxy_certs::ServerCryptoBase;
 use std::{net::SocketAddr, time::Duration};
 
@@ -60,6 +61,10 @@ pub struct ProxyConfig {
   /// SNI consistency check
   pub sni_consistency: bool, // Handler
 
+  /// Trusted source IPs/CIDRs allowed to influence incoming forwarding headers
+  /// such as X-Forwarded-For and Forwarded. Empty means trust none.
+  pub trusted_forwarded_proxies: Vec<IpNet>,
+
   #[cfg(feature = "proxy-protocol")]
   /// TCP inbound PROXY protocol receive configuration
   pub tcp_recv_proxy_protocol: Option<std::sync::Arc<TcpRecvProxyProtocolConfig>>,
@@ -114,6 +119,7 @@ impl Default for ProxyConfig {
       keepalive: true,
 
       sni_consistency: true,
+      trusted_forwarded_proxies: Vec::new(),
       connection_handling_timeout: None,
 
       #[cfg(feature = "proxy-protocol")]

@@ -47,6 +47,7 @@ health-check = ["rpxy-lib/health-check"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false }
+rpxy-trusted-proxies = { path = "../rpxy-trusted-proxies/" }
 
 
 anyhow = { version = "1.0.102" }

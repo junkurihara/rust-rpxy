@@ -1,0 +1,30 @@
+[package]
+name = "rpxy-trusted-proxies"
+description = "Trusted proxy alias resolver for rpxy"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# Enables the snapshot updater binary and its heavier networking/serialization deps.
+# Not required for library consumers such as rpxy-bin.
+update-snapshots = ["dep:chrono", "dep:reqwest", "dep:serde", "dep:serde_json"]
+
+[dependencies]
+anyhow = "1.0.102"
+ipnet = "2.12.0"
+chrono = { version = "0.4.42", default-features = false, features = ["clock"], optional = true }
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "json", "rustls"], optional = true }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
+serde_json = { version = "1.0.145", optional = true }
+
+[[bin]]
+name = "update-snapshots"
+path = "src/bin/update-snapshots.rs"
+required-features = ["update-snapshots"]

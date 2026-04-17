@@ -2,8 +2,8 @@ use super::{
   http_log::HttpMessageLog,
   http_result::{HttpError, HttpResult},
   synthetic_response::{secure_redirection_response, synthetic_error_response},
-  utils_headers::*,
-  utils_request::InspectParseHost,
+  header_ops::*,
+  request_ops::InspectParseHost,
 };
 use crate::{
   backend::{BackendAppManager, LoadBalanceContext},
