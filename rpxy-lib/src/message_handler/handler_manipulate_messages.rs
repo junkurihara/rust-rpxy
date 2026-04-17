@@ -82,6 +82,7 @@ where
     };
 
     let original_uri = req.uri().clone();
+    let original_host_header = req.headers().get(header::HOST).cloned();
     let headers = req.headers_mut();
     // delete headers specified in header.connection
     remove_connection_header(headers);
@@ -103,7 +104,7 @@ where
     }
 
     // by default, add "host" header of original server_name if not exist
-    if req.headers().get(header::HOST).is_none() {
+    if original_host_header.is_none() {
       let org_host = req.uri().host().ok_or_else(|| anyhow!("Invalid request"))?.to_owned();
       req.headers_mut().insert(header::HOST, HeaderValue::from_str(&org_host)?);
     };
@@ -136,6 +137,8 @@ where
     // apply upstream options to header, after X-Forwarded-For is added
     apply_upstream_options_to_header(
       headers,
+      &original_uri,
+      original_host_header,
       &upstream_chosen.uri,
       upstream_candidates,
       &self.globals.proxy_config.trusted_forwarded_proxies,

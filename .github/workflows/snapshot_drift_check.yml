@@ -2,7 +2,7 @@ name: Trusted Proxy Snapshot Drift Check
 
 on:
   schedule:
-    # Monthly at 00:00 UTC on the 1st
+    # Monthly at 01:02 UTC on the 1st
     - cron: '2 1 1 * *'
   workflow_dispatch:
 

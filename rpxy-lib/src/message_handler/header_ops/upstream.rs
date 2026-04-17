@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::{
-  common::add_header_entry_overwrite_if_exist,
+  common::{add_header_entry_overwrite_if_exist, host_from_uri_or_host_header},
   forwarding::{extract_forwarding_chain_from_headers, generate_forwarded_header, reduce_trusted_proxy_chain},
 };
 
@@ -32,6 +32,8 @@ fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &Uri) -> Res
 /// This function is called after almost all other headers has been set and updated.
 pub(in crate::message_handler) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
+  original_uri: &Uri,
+  original_host_header: Option<HeaderValue>,
   upstream_base_uri: &Uri,
   upstream: &UpstreamCandidates,
   trusted_forwarded_proxies: &[IpNet],
@@ -55,7 +57,8 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
         // This is called after X-Forwarded-For is added to generate RFC 7239 Forwarded header from it.
         // If Forwarded already exists, it has already been normalized by add_forwarding_header().
         if !headers.contains_key(header::FORWARDED) {
-          let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers)? else {
+          let authoritative_host = host_from_uri_or_host_header(original_uri, original_host_header.clone()).ok();
+          let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers, authoritative_host)? else {
             warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
             continue;
           };
@@ -76,4 +79,49 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
   }
 
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::backend::{LoadBalance, Upstream};
+  use ahash::HashSet;
+
+  #[test]
+  fn forwarded_header_generation_keeps_authoritative_host_on_last_hop() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example:8443"));
+    headers.insert("x-forwarded-for", HeaderValue::from_static("198.51.100.10"));
+    headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+
+    let upstream = Upstream {
+      uri: "http://backend.internal".parse().unwrap(),
+      #[cfg(feature = "health-check")]
+      health: None,
+    };
+    let upstream_candidates = UpstreamCandidates {
+      inner: vec![upstream],
+      path: "/".into(),
+      replace_path: None,
+      load_balance: LoadBalance::default(),
+      options: HashSet::from_iter([UpstreamOption::ForwardedHeader]),
+      #[cfg(feature = "health-check")]
+      health_check_config: None,
+    };
+
+    apply_upstream_options_to_header(
+      &mut headers,
+      &"/hello".parse::<Uri>().unwrap(),
+      Some(HeaderValue::from_static("app.example:8443")),
+      &"http://backend.internal".parse::<Uri>().unwrap(),
+      &upstream_candidates,
+      &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+      headers.get(header::FORWARDED).unwrap(),
+      "for=198.51.100.10;proto=https;host=\"app.example:8443\""
+    );
+  }
 }

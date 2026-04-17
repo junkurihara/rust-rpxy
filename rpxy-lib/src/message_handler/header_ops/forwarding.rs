@@ -155,7 +155,7 @@ fn normalize_forwarding_chain(
     return vec![peer_entry];
   }
 
-  let mut forwarding_chain = match extract_forwarding_chain_from_headers(headers) {
+  let mut forwarding_chain = match extract_forwarding_chain_from_headers(headers, None) {
     Ok(Some(chain)) if !chain.is_empty() => chain,
     Ok(_) => {
       return vec![peer_entry];
@@ -178,9 +178,12 @@ fn normalize_forwarding_chain(
 /// Extract forwarding information chain from Forwarded or X-Forwarded-For/Proto headers.
 /// Returns None if neither header is present.
 /// If both are present, prefer Forwarded only when it is consistent with the auxiliary X-Forwarded-* view.
-pub(super) fn extract_forwarding_chain_from_headers(headers: &HeaderMap) -> Result<Option<Vec<ForwardedEntry>>> {
+pub(super) fn extract_forwarding_chain_from_headers(
+  headers: &HeaderMap,
+  authoritative_host: Option<String>,
+) -> Result<Option<Vec<ForwardedEntry>>> {
   let xff_chain = if headers.contains_key(X_FORWARDED_FOR) {
-    Some(parse_x_forwarded_for_header(headers)?)
+    Some(parse_x_forwarded_for_header(headers, authoritative_host)?)
   } else {
     None
   };
@@ -212,7 +215,9 @@ pub(super) fn extract_forwarding_chain_from_headers(headers: &HeaderMap) -> Resu
   }
 }
 
-/// Reduce the forwarding chain by removing trusted proxy hops from the end.
+/// Use the trusted suffix at the end of the chain to locate the trust boundary.
+/// This keeps the last non-trusted hop together with the trusted suffix after it,
+/// and discards any earlier prefix to the left of that boundary.
 /// We assume the immediate peer is always appended as the last hop.
 pub(super) fn reduce_trusted_proxy_chain(
   mut chain: Vec<ForwardedEntry>,
@@ -236,7 +241,7 @@ pub(super) fn reduce_trusted_proxy_chain(
 /* --------------------------------------------------------------------------------------------------------- */
 
 /// Extract IP addresses from X-Forwarded-For header
-fn parse_x_forwarded_for_header(headers: &HeaderMap) -> Result<Vec<ForwardedEntry>> {
+fn parse_x_forwarded_for_header(headers: &HeaderMap, authoritative_host: Option<String>) -> Result<Vec<ForwardedEntry>> {
   let xff = join_header_values(headers, X_FORWARDED_FOR)?.ok_or_else(|| anyhow!("x-forwarded-for header missing"))?;
   let xf_proto = first_header_value(headers, X_FORWARDED_PROTO)?.map(|s| s.trim().to_string());
   let ips: Vec<&str> = xff.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
@@ -251,7 +256,7 @@ fn parse_x_forwarded_for_header(headers: &HeaderMap) -> Result<Vec<ForwardedEntr
         raw: ForwardedNodeRaw::Ip,
       },
       proto: if idx == last_idx { xf_proto.clone() } else { None },
-      host: None,
+      host: if idx == last_idx { authoritative_host.clone() } else { None },
       by: None,
     });
   }
