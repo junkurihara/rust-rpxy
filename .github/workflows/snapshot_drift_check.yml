@@ -36,12 +36,12 @@ jobs:
         id: check
         continue-on-error: true
         run: |
-          cargo run -p rpxy-trusted-proxies --bin update-snapshots -- --check --provider all
+          cargo run -p rpxy-trusted-proxies --features update-snapshots --bin update-snapshots -- --check --provider all
 
       - name: Capture drift diff
         if: steps.check.outcome == 'failure'
         run: |
-          cargo run -p rpxy-trusted-proxies --bin update-snapshots -- --provider all
+          cargo run -p rpxy-trusted-proxies --features update-snapshots --bin update-snapshots -- --provider all
           git diff -- rpxy-trusted-proxies/src/snapshots.rs > /tmp/snapshot-drift.diff
           git checkout -- rpxy-trusted-proxies/src/snapshots.rs
 
@@ -73,7 +73,7 @@ jobs:
               '### How to refresh',
               '',
               '```sh',
-              'cargo run -p rpxy-trusted-proxies --bin update-snapshots -- --provider all',
+              'cargo run -p rpxy-trusted-proxies --features update-snapshots --bin update-snapshots -- --provider all',
               '```',
               '',
               'Inspect the resulting diff of `rpxy-trusted-proxies/src/snapshots.rs` carefully',

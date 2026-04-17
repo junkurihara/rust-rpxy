@@ -109,7 +109,11 @@ pub async fn entrypoint(
     info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
   }
   if !proxy_config.trusted_forwarded_proxies.is_empty() {
-    info!("Trusted forwarded proxies: {:?}", proxy_config.trusted_forwarded_proxies);
+    info!(
+      "Trusted forwarded proxies configured: {} CIDR(s)",
+      proxy_config.trusted_forwarded_proxies.len()
+    );
+    debug!("Trusted forwarded proxies: {:?}", proxy_config.trusted_forwarded_proxies);
   }
   #[cfg(feature = "cache")]
   if proxy_config.cache_enabled {

@@ -455,35 +455,44 @@ fn parse_forwarded_node(token: &str) -> Result<ForwardedNode> {
       raw: ForwardedNodeRaw::Unknown,
     });
   }
-  if let Some((node, port)) = trimmed.rsplit_once(':') {
-    if let Some(inner) = node.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-      let ip = canonicalize_ip(IpAddr::from_str(inner).map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?);
-      return Ok(ForwardedNode {
-        ip: Some(ip),
-        port: Some(parse_forwarded_port(port, token)?.to_string()),
-        raw: ForwardedNodeRaw::Ip,
-      });
+  // RFC 7239 requires IPv6 literals with a port to be bracketed (e.g. `[2001:db8::1]:443`).
+  // Applying rsplit_once(':') unconditionally would mis-parse an unbracketed IPv6 such as
+  // `2001:db8::4711` as `ip=2001:db8::` + `port=4711`. So only split on ':' when the token
+  // is bracketed, or when it contains exactly one ':' (IPv4 / unknown / obfuscated).
+  if trimmed.starts_with('[') {
+    if let Some((node, port)) = trimmed.rsplit_once(':') {
+      if let Some(inner) = node.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        let ip = canonicalize_ip(IpAddr::from_str(inner).map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?);
+        return Ok(ForwardedNode {
+          ip: Some(ip),
+          port: Some(parse_forwarded_port(port, token)?.to_string()),
+          raw: ForwardedNodeRaw::Ip,
+        });
+      }
     }
-    if node.eq_ignore_ascii_case("unknown") {
-      return Ok(ForwardedNode {
-        ip: None,
-        port: Some(port.to_string()),
-        raw: ForwardedNodeRaw::Unknown,
-      });
-    }
-    if node.starts_with('_') {
-      return Ok(ForwardedNode {
-        ip: None,
-        port: Some(port.to_string()),
-        raw: ForwardedNodeRaw::Obfuscated(node.to_string()),
-      });
-    }
-    if let Ok(ip) = IpAddr::from_str(node) {
-      return Ok(ForwardedNode {
-        ip: Some(canonicalize_ip(ip)),
-        port: Some(parse_forwarded_port(port, token)?.to_string()),
-        raw: ForwardedNodeRaw::Ip,
-      });
+  } else if trimmed.matches(':').count() == 1 {
+    if let Some((node, port)) = trimmed.rsplit_once(':') {
+      if node.eq_ignore_ascii_case("unknown") {
+        return Ok(ForwardedNode {
+          ip: None,
+          port: Some(port.to_string()),
+          raw: ForwardedNodeRaw::Unknown,
+        });
+      }
+      if node.starts_with('_') {
+        return Ok(ForwardedNode {
+          ip: None,
+          port: Some(port.to_string()),
+          raw: ForwardedNodeRaw::Obfuscated(node.to_string()),
+        });
+      }
+      if let Ok(ip) = IpAddr::from_str(node) {
+        return Ok(ForwardedNode {
+          ip: Some(canonicalize_ip(ip)),
+          port: Some(parse_forwarded_port(port, token)?.to_string()),
+          raw: ForwardedNodeRaw::Ip,
+        });
+      }
     }
   }
 
@@ -586,19 +595,46 @@ pub(super) fn generate_forwarded_header(normalized_forwarding_chain: &[Forwarded
     .map(|entry| {
       let mut parts = vec![format!("for={}", format_forwarded_node(&entry.for_node)?)];
       if let Some(proto) = &entry.proto {
-        parts.push(format!("proto={proto}"));
+        parts.push(format!("proto={}", format_forwarded_param_value(proto)));
       }
       if let Some(host) = &entry.host {
-        parts.push(format!("host={host}"));
+        parts.push(format!("host={}", format_forwarded_param_value(host)));
       }
       if let Some(by) = &entry.by {
-        parts.push(format!("by={by}"));
+        parts.push(format!("by={}", format_forwarded_param_value(by)));
       }
       Ok(parts.join(";"))
     })
     .collect::<Result<Vec<_>>>()?;
 
   Ok(elements.join(", "))
+}
+
+/// Return true if `c` is an RFC 7230 tchar, i.e. may appear unquoted in a token.
+fn is_tchar(c: char) -> bool {
+  matches!(
+    c,
+    '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '.' | '^' | '_' | '`' | '|' | '~'
+  ) || c.is_ascii_alphanumeric()
+}
+
+/// Format a Forwarded parameter value (proto/host/by). If the value contains any
+/// non-tchar byte (e.g. `:` for ports, `[`/`]` for IPv6 literals), wrap it in a
+/// quoted-string and escape `\` and `"` as RFC 7230 quoted-pair. Otherwise emit as-is.
+fn format_forwarded_param_value(value: &str) -> String {
+  if !value.is_empty() && value.chars().all(is_tchar) {
+    return value.to_string();
+  }
+  let mut out = String::with_capacity(value.len() + 2);
+  out.push('"');
+  for ch in value.chars() {
+    if ch == '\\' || ch == '"' {
+      out.push('\\');
+    }
+    out.push(ch);
+  }
+  out.push('"');
+  out
 }
 
 /// Format the for= value in Forwarded header according to RFC 7239, which may require quoting and bracketing for IPv6 addresses.
@@ -971,6 +1007,81 @@ mod tests {
     assert_eq!(
       headers.get(header::FORWARDED).unwrap(),
       "for=10.1.2.3;proto=http;host=app.example"
+    );
+  }
+
+  #[test]
+  fn parse_forwarded_node_accepts_unbracketed_ipv6_without_port() {
+    // An unbracketed IPv6 literal must not be mis-parsed as `ip + :port`:
+    // the trailing `::4711` is a valid hextet, not a port.
+    let node = parse_forwarded_node("2001:db8::4711").unwrap();
+    assert_eq!(node.ip, Some("2001:db8::4711".parse::<IpAddr>().unwrap()));
+    assert_eq!(node.port, None);
+    assert_eq!(node.raw, ForwardedNodeRaw::Ip);
+  }
+
+  #[test]
+  fn parse_forwarded_node_accepts_bracketed_ipv6_with_port() {
+    // RFC 7239 requires IPv6 addresses with a port to be bracketed.
+    let node = parse_forwarded_node("\"[2001:db8::1]:443\"").unwrap();
+    assert_eq!(node.ip, Some("2001:db8::1".parse::<IpAddr>().unwrap()));
+    assert_eq!(node.port.as_deref(), Some("443"));
+    assert_eq!(node.raw, ForwardedNodeRaw::Ip);
+  }
+
+  #[test]
+  fn parse_forwarded_node_rejects_unbracketed_ipv6_with_port() {
+    // Without brackets, the trailing colon-number must not be treated as a port.
+    // `2001:db8::1:443` is itself a valid IPv6 literal and should parse as such.
+    let node = parse_forwarded_node("2001:db8::1:443").unwrap();
+    assert_eq!(node.ip, Some("2001:db8::1:443".parse::<IpAddr>().unwrap()));
+    assert_eq!(node.port, None);
+  }
+
+  #[test]
+  fn parse_forwarded_node_still_parses_ipv4_with_port() {
+    let node = parse_forwarded_node("192.0.2.1:443").unwrap();
+    assert_eq!(node.ip, Some("192.0.2.1".parse::<IpAddr>().unwrap()));
+    assert_eq!(node.port.as_deref(), Some("443"));
+  }
+
+  #[test]
+  fn format_forwarded_param_value_leaves_token_unquoted() {
+    assert_eq!(format_forwarded_param_value("https"), "https");
+    assert_eq!(format_forwarded_param_value("example.com"), "example.com");
+  }
+
+  #[test]
+  fn format_forwarded_param_value_quotes_host_with_port() {
+    // `:` is not a tchar, so `host=example.com:8443` must be emitted as quoted-string.
+    assert_eq!(format_forwarded_param_value("example.com:8443"), "\"example.com:8443\"");
+  }
+
+  #[test]
+  fn format_forwarded_param_value_quotes_ipv6_literal() {
+    assert_eq!(format_forwarded_param_value("[2001:db8::1]"), "\"[2001:db8::1]\"");
+  }
+
+  #[test]
+  fn format_forwarded_param_value_escapes_quote_and_backslash() {
+    assert_eq!(format_forwarded_param_value("a\"b\\c"), "\"a\\\"b\\\\c\"");
+  }
+
+  #[test]
+  fn generate_forwarded_header_quotes_host_with_port() {
+    let chain = vec![ForwardedEntry {
+      for_node: ForwardedNode {
+        ip: Some("192.0.2.1".parse().unwrap()),
+        port: None,
+        raw: ForwardedNodeRaw::Ip,
+      },
+      proto: Some("https".into()),
+      host: Some("example.com:8443".into()),
+      by: None,
+    }];
+    assert_eq!(
+      generate_forwarded_header(&chain).unwrap(),
+      "for=192.0.2.1;proto=https;host=\"example.com:8443\""
     );
   }
 }

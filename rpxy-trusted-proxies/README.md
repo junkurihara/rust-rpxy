@@ -36,8 +36,13 @@ configuration parsing.
 The built-in provider snapshots can be refreshed explicitly with:
 
 ```sh
-cargo run -p rpxy-trusted-proxies --bin update-snapshots --
+cargo run -p rpxy-trusted-proxies --features update-snapshots --bin update-snapshots --
 ```
+
+The `update-snapshots` feature is required because the updater pulls in heavier
+networking / serialization dependencies (`reqwest`, `chrono`, `serde`,
+`serde_json`) that the runtime resolver itself does not need. Regular rpxy
+builds consume only the lightweight resolver and are unaffected.
 
 Useful flags:
 
