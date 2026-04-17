@@ -585,10 +585,10 @@ fn overwrite_header_with_csv(headers: &mut HeaderMap, key: &str, values: &[Strin
   Ok(())
 }
 
-/// Generate RFC 7239 Forwarded header from X-Forwarded-For
-/// This function assumes that the X-Forwarded-For header is present and well-formed.
-/// Earlier hops are emitted as `for=` only, and the last hop carries this proxy's
-/// authoritative `proto` and `host` parameters.
+/// Generate an RFC 7239 `Forwarded` header from the normalized forwarding chain.
+/// This function assumes that the forwarding chain is present and well-formed.
+/// Each hop is emitted with a `for=` parameter, and may additionally include
+/// `proto=`, `host=`, and `by=` parameters when those fields are present.
 pub(super) fn generate_forwarded_header(normalized_forwarding_chain: &[ForwardedEntry]) -> Result<String> {
   if normalized_forwarding_chain.is_empty() {
     return Err(anyhow!("No forwarding chain found for Forwarded generation"));
@@ -854,7 +854,7 @@ mod tests {
   }
 
   #[test]
-  fn ipv6_peer_with_forwarded_option_generates_quoted_bracket_for() {
+  fn generate_forwarded_header_quotes_bracketed_ipv6_for_node() {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
