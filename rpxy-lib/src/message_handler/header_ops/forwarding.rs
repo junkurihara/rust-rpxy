@@ -10,18 +10,9 @@ use crate::log::*;
 
 use super::{
   super::canonical_address::ToCanonical,
-  common::{
-    add_header_entry_overwrite_if_exist, add_header_entry_overwrite_if_exist_name, host_from_uri_or_host_header,
-    make_cookie_single_line,
-  },
+  common::{add_header_entry_overwrite_if_exist, host_from_uri_or_host_header, make_cookie_single_line},
+  header_defs::*,
 };
-
-const X_FORWARDED_FOR: &str = "x-forwarded-for";
-const X_FORWARDED_PROTO: &str = "x-forwarded-proto";
-const X_FORWARDED_PORT: &str = "x-forwarded-port";
-const X_FORWARDED_SSL: &str = "x-forwarded-ssl";
-const X_ORIGINAL_URI: &str = "x-original-uri";
-const X_REAL_IP: &str = "x-real-ip";
 
 /* --------------------------------------------------------------------------------------------------------- */
 /* Forwarding header normalization model                                                                   */
@@ -113,7 +104,7 @@ pub(in crate::message_handler) fn add_forwarding_header(
   // Forwarded generation, apply_upstream_options_to_header() will regenerate it later.
   if has_forwarded {
     match generate_forwarded_header(&normalized_chain) {
-      Ok(forwarded_value) => add_header_entry_overwrite_if_exist_name(headers, header::FORWARDED, forwarded_value)?,
+      Ok(forwarded_value) => add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?,
       Err(e) => warn!("Failed to update existing Forwarded header for consistency: {}", e),
     }
   } else {
@@ -136,7 +127,7 @@ pub(in crate::message_handler) fn add_forwarding_header(
   // x-original-uri
   add_header_entry_overwrite_if_exist(headers, X_ORIGINAL_URI, original_uri.to_string())?;
   // proxy
-  add_header_entry_overwrite_if_exist(headers, "proxy", "")?;
+  add_header_entry_overwrite_if_exist(headers, PROXY, "")?;
 
   Ok(())
 }
@@ -581,10 +572,9 @@ fn forwarded_chain_to_xff(chain: &[ForwardedEntry]) -> Option<Vec<String>> {
 }
 
 /// Overwrite a header with a single value that is a comma-separated concatenation of the given values. This is used to update X-Forwarded-For with the normalized chain.
-fn overwrite_header_with_csv(headers: &mut HeaderMap, key: &str, values: &[String]) -> Result<()> {
-  let name = HeaderName::from_bytes(key.as_bytes())?;
-  headers.remove(&name);
-  headers.insert(name, HeaderValue::from_str(&values.join(", "))?);
+fn overwrite_header_with_csv(headers: &mut HeaderMap, key: HeaderName, values: &[String]) -> Result<()> {
+  headers.remove(&key);
+  headers.insert(key, HeaderValue::from_str(&values.join(", "))?);
   Ok(())
 }
 

@@ -173,7 +173,7 @@ where
       req.version(),
       req.headers()
     );
-    log_data.xff(&req.headers().get("x-forwarded-for"));
+    log_data.xff(&req.headers().get(header_defs::X_FORWARDED_FOR));
     log_data.upstream(req.uri());
     //////
 

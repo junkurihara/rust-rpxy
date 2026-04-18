@@ -9,8 +9,9 @@ use crate::{
 };
 
 use super::{
-  common::{add_header_entry_overwrite_if_exist, add_header_entry_overwrite_if_exist_name, host_from_uri_or_host_header},
+  common::{add_header_entry_overwrite_if_exist, host_from_uri_or_host_header},
   forwarding::{extract_forwarding_chain_from_headers, generate_forwarded_header, reduce_trusted_proxy_chain},
+  header_defs::X_FORWARDED_HOST,
 };
 
 /// overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
@@ -48,10 +49,10 @@ pub(in crate::message_handler) fn apply_default_app_fallback_rewrite(
 ) -> Result<()> {
   match host_from_uri_or_host_header(original_uri, original_host_header) {
     Ok(original_host) => {
-      add_header_entry_overwrite_if_exist(headers, "x-forwarded-host", original_host)?;
+      add_header_entry_overwrite_if_exist(headers, X_FORWARDED_HOST, original_host)?;
     }
     Err(_) => {
-      headers.remove("x-forwarded-host");
+      headers.remove(X_FORWARDED_HOST);
     }
   }
   headers.insert(header::HOST, HeaderValue::from_bytes(authoritative_host.as_ref())?);
@@ -95,7 +96,7 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
           let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
           match generate_forwarded_header(&normalized_chain) {
             Ok(forwarded_value) => {
-              add_header_entry_overwrite_if_exist_name(headers, header::FORWARDED, forwarded_value)?;
+              add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
             }
             Err(e) => {
               // Log warning but don't fail the request if Forwarded generation fails
@@ -121,8 +122,14 @@ mod tests {
   fn forwarded_header_generation_keeps_authoritative_host_on_last_hop() {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example:8443"));
-    headers.insert("x-forwarded-for", HeaderValue::from_static("198.51.100.10"));
-    headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+    headers.insert(
+      http::HeaderName::from_static("x-forwarded-for"),
+      HeaderValue::from_static("198.51.100.10"),
+    );
+    headers.insert(
+      http::HeaderName::from_static("x-forwarded-proto"),
+      HeaderValue::from_static("https"),
+    );
 
     let upstream = Upstream {
       uri: "http://backend.internal".parse().unwrap(),
@@ -161,7 +168,7 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("attacker.example"));
     // A client-supplied X-Forwarded-Host must be dropped, not preserved.
-    headers.insert("x-forwarded-host", HeaderValue::from_static("spoofed.example"));
+    headers.insert(X_FORWARDED_HOST, HeaderValue::from_static("spoofed.example"));
 
     let original_host = HeaderValue::from_static("attacker.example");
     apply_default_app_fallback_rewrite(
@@ -173,7 +180,7 @@ mod tests {
     .unwrap();
 
     assert_eq!(headers.get(header::HOST).unwrap(), "default.app.example");
-    assert_eq!(headers.get("x-forwarded-host").unwrap(), "attacker.example");
+    assert_eq!(headers.get(X_FORWARDED_HOST).unwrap(), "attacker.example");
   }
 
   #[test]
@@ -193,13 +200,13 @@ mod tests {
 
     assert_eq!(headers.get(header::HOST).unwrap(), "default.app.example");
     // URI authority wins over Host header per host_from_uri_or_host_header semantics.
-    assert_eq!(headers.get("x-forwarded-host").unwrap(), "uri-authority.example:8080");
+    assert_eq!(headers.get(X_FORWARDED_HOST).unwrap(), "uri-authority.example:8080");
   }
 
   #[test]
   fn fallback_rewrite_clears_xfh_when_no_original_host_is_available() {
     let mut headers = HeaderMap::new();
-    headers.insert("x-forwarded-host", HeaderValue::from_static("spoofed.example"));
+    headers.insert(X_FORWARDED_HOST, HeaderValue::from_static("spoofed.example"));
 
     // Neither URI authority nor Host header present.
     apply_default_app_fallback_rewrite(
@@ -211,6 +218,6 @@ mod tests {
     .unwrap();
 
     assert_eq!(headers.get(header::HOST).unwrap(), "default.app.example");
-    assert!(headers.get("x-forwarded-host").is_none());
+    assert!(headers.get(X_FORWARDED_HOST).is_none());
   }
 }

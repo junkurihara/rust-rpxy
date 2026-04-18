@@ -2,26 +2,8 @@ use anyhow::{Result, anyhow};
 use http::{HeaderMap, HeaderName, HeaderValue, Uri, header};
 use std::borrow::Cow;
 
-/// Overwrite header entry if exist
-pub(in crate::message_handler) fn add_header_entry_overwrite_if_exist(
-  headers: &mut HeaderMap,
-  key: impl Into<Cow<'static, str>>,
-  value: impl Into<Cow<'static, str>>,
-) -> Result<()> {
-  match headers.entry(HeaderName::from_bytes(key.into().as_bytes())?) {
-    header::Entry::Vacant(entry) => {
-      entry.insert(value.into().parse::<HeaderValue>()?);
-    }
-    header::Entry::Occupied(mut entry) => {
-      entry.insert(HeaderValue::from_bytes(value.into().as_bytes())?);
-    }
-  }
-
-  Ok(())
-}
-
 /// Overwrite header entry if exist, taking a pre-built header name.
-pub(in crate::message_handler) fn add_header_entry_overwrite_if_exist_name(
+pub(in crate::message_handler) fn add_header_entry_overwrite_if_exist(
   headers: &mut HeaderMap,
   key: HeaderName,
   value: impl Into<Cow<'static, str>>,

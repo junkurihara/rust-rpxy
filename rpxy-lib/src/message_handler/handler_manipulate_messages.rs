@@ -24,7 +24,7 @@ where
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
-    add_header_entry_overwrite_if_exist_name(headers, header::SERVER, RESPONSE_HEADER_SERVER)?;
+    add_header_entry_overwrite_if_exist(headers, header::SERVER, RESPONSE_HEADER_SERVER)?;
 
     #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
@@ -35,7 +35,7 @@ where
         && backend_app.mutual_tls.as_ref().is_some_and(|v| !v)
       {
         if let Some(port) = self.globals.proxy_config.https_redirection_port {
-          add_header_entry_overwrite_if_exist_name(
+          add_header_entry_overwrite_if_exist(
             headers,
             header::ALT_SVC,
             format!("h3=\":{}\"; ma={}", port, self.globals.proxy_config.h3_alt_svc_max_age),
