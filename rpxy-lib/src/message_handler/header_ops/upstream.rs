@@ -5,6 +5,7 @@ use ipnet::IpNet;
 use crate::{
   backend::{UpstreamCandidates, UpstreamOption},
   log::*,
+  name_exp::ServerName,
 };
 
 use super::{
@@ -28,12 +29,27 @@ fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &Uri) -> Res
   Ok(())
 }
 
+/// Apply the `default_app` host rewrite to request headers.
+///
+/// Called when the request was matched via the `default_app` fallback path: the incoming `Host`
+/// did not match any configured `server_name`, so it is untrusted by definition.
+///
+/// - `Host` is force-overwritten with `authoritative_host` (the default app's configured `server_name`).
+///   This wins against `keep_original_host` / `set_upstream_host` upstream options.
+pub(in crate::message_handler) fn apply_default_app_host_rewrite(
+  headers: &mut HeaderMap,
+  authoritative_host: &ServerName,
+) -> Result<()> {
+  headers.insert(header::HOST, HeaderValue::from_bytes(authoritative_host.as_ref())?);
+  Ok(())
+}
+
 /// Apply options to request header, which are specified in the configuration
 /// This function is called after almost all other headers has been set and updated.
 pub(in crate::message_handler) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
   original_uri: &Uri,
-  original_host_header: Option<HeaderValue>,
+  original_host_header: Option<&HeaderValue>,
   upstream_base_uri: &Uri,
   upstream: &UpstreamCandidates,
   trusted_forwarded_proxies: &[IpNet],
@@ -57,7 +73,7 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
         // This is called after X-Forwarded-For is added to generate RFC 7239 Forwarded header from it.
         // If Forwarded already exists, it has already been normalized by add_forwarding_header().
         if !headers.contains_key(header::FORWARDED) {
-          let authoritative_host = host_from_uri_or_host_header(original_uri, original_host_header.clone()).ok();
+          let authoritative_host = host_from_uri_or_host_header(original_uri, original_host_header).ok();
           let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers, authoritative_host)? else {
             warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
             continue;
@@ -65,7 +81,7 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
           let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
           match generate_forwarded_header(&normalized_chain) {
             Ok(forwarded_value) => {
-              add_header_entry_overwrite_if_exist(headers, header::FORWARDED.as_str(), forwarded_value)?;
+              add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
             }
             Err(e) => {
               // Log warning but don't fail the request if Forwarded generation fails
@@ -91,8 +107,14 @@ mod tests {
   fn forwarded_header_generation_keeps_authoritative_host_on_last_hop() {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example:8443"));
-    headers.insert("x-forwarded-for", HeaderValue::from_static("198.51.100.10"));
-    headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+    headers.insert(
+      http::HeaderName::from_static("x-forwarded-for"),
+      HeaderValue::from_static("198.51.100.10"),
+    );
+    headers.insert(
+      http::HeaderName::from_static("x-forwarded-proto"),
+      HeaderValue::from_static("https"),
+    );
 
     let upstream = Upstream {
       uri: "http://backend.internal".parse().unwrap(),
@@ -109,10 +131,11 @@ mod tests {
       health_check_config: None,
     };
 
+    let original_host = HeaderValue::from_static("app.example:8443");
     apply_upstream_options_to_header(
       &mut headers,
       &"/hello".parse::<Uri>().unwrap(),
-      Some(HeaderValue::from_static("app.example:8443")),
+      Some(&original_host),
       &"http://backend.internal".parse::<Uri>().unwrap(),
       &upstream_candidates,
       &[],
@@ -123,5 +146,101 @@ mod tests {
       headers.get(header::FORWARDED).unwrap(),
       "for=198.51.100.10;proto=https;host=\"app.example:8443\""
     );
+  }
+
+  #[test]
+  fn default_app_host_rewrite_forces_host() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("attacker.example"));
+
+    apply_default_app_host_rewrite(&mut headers, &ServerName::from("default.app.example")).unwrap();
+
+    assert_eq!(headers.get(header::HOST).unwrap(), "default.app.example");
+  }
+
+  #[test]
+  fn default_app_host_rewrite_does_not_depend_on_uri_authority() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("host-header.example"));
+
+    apply_default_app_host_rewrite(&mut headers, &ServerName::from("default.app.example")).unwrap();
+
+    assert_eq!(headers.get(header::HOST).unwrap(), "default.app.example");
+  }
+
+  #[test]
+  fn default_app_host_rewrite_works_without_original_host_information() {
+    let mut headers = HeaderMap::new();
+    apply_default_app_host_rewrite(&mut headers, &ServerName::from("default.app.example")).unwrap();
+
+    assert_eq!(headers.get(header::HOST).unwrap(), "default.app.example");
+  }
+
+  #[test]
+  fn set_upstream_host_rewrites_host() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    let upstream = Upstream {
+      uri: "http://backend.internal:8080".parse().unwrap(),
+      #[cfg(feature = "health-check")]
+      health: None,
+    };
+    let upstream_candidates = UpstreamCandidates {
+      inner: vec![upstream],
+      path: "/".into(),
+      replace_path: None,
+      load_balance: LoadBalance::default(),
+      options: HashSet::from_iter([UpstreamOption::SetUpstreamHost]),
+      #[cfg(feature = "health-check")]
+      health_check_config: None,
+    };
+
+    let original_host = HeaderValue::from_static("app.example");
+    apply_upstream_options_to_header(
+      &mut headers,
+      &"/hello".parse::<Uri>().unwrap(),
+      Some(&original_host),
+      &"http://backend.internal:8080".parse::<Uri>().unwrap(),
+      &upstream_candidates,
+      &[],
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(header::HOST).unwrap(), "backend.internal:8080");
+  }
+
+  #[test]
+  fn keep_original_host_prevents_set_upstream_host_rewrite() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    let upstream = Upstream {
+      uri: "http://backend.internal:8080".parse().unwrap(),
+      #[cfg(feature = "health-check")]
+      health: None,
+    };
+    let upstream_candidates = UpstreamCandidates {
+      inner: vec![upstream],
+      path: "/".into(),
+      replace_path: None,
+      load_balance: LoadBalance::default(),
+      options: HashSet::from_iter([UpstreamOption::SetUpstreamHost, UpstreamOption::KeepOriginalHost]),
+      #[cfg(feature = "health-check")]
+      health_check_config: None,
+    };
+
+    let original_host = HeaderValue::from_static("app.example");
+    apply_upstream_options_to_header(
+      &mut headers,
+      &"/hello".parse::<Uri>().unwrap(),
+      Some(&original_host),
+      &"http://backend.internal:8080".parse::<Uri>().unwrap(),
+      &upstream_candidates,
+      &[],
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(header::HOST).unwrap(), "app.example");
   }
 }

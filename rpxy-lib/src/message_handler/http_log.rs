@@ -30,8 +30,7 @@ impl<T> From<&http::Request<T>> for HttpMessageLog {
         .map_or_else(|| "", |s| s.to_str().unwrap_or(""))
         .to_string()
     };
-    let host =
-      header_ops::host_from_uri_or_host_header(req.uri(), req.headers().get(header::HOST).cloned()).unwrap_or_default();
+    let host = header_ops::host_from_uri_or_host_header(req.uri(), req.headers().get(header::HOST)).unwrap_or_default();
 
     Self {
       // tls_server_name: "".to_string(),
@@ -43,7 +42,7 @@ impl<T> From<&http::Request<T>> for HttpMessageLog {
       scheme: req.uri().scheme_str().unwrap_or("").to_string(),
       path: req.uri().path().to_string(),
       ua: header_mapper(header::USER_AGENT),
-      xff: header_mapper(header::HeaderName::from_static("x-forwarded-for")),
+      xff: header_mapper(header_ops::header_defs::X_FORWARDED_FOR),
       forwarded: header_mapper(header::FORWARDED),
       status: "".to_string(),
       upstream: "".to_string(),

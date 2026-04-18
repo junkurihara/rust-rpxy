@@ -153,7 +153,19 @@ server_name = "app2.example.org"
 #...
 ```
 
-Note that by specifying a `default_app` entry, *HTTP* requests will be served by the specified application if the HOST header or URL in the Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since a secure connection cannot be established for an unknown server name.
+> [!NOTE]
+> Note that by specifying a `default_app` entry, *HTTP* requests will be served by the specified application if the HOST header or URL in the Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since a secure connection cannot be established for an unknown server name. [^https-default-app-rejection]
+
+<details>
+<summary>Request Header Rewriting for Default Application</summary>
+When a request falls through to the `default_app`, `rpxy` rewrites the outgoing request headers to prevent the untrusted `Host` from reaching the backend:
+
+- The `Host` header sent upstream is **force-overwritten** with the default application's configured `server_name`. This overwrite is stronger than the `keep_original_host` / `set_upstream_host` upstream options, because the incoming `Host` is, by definition, unknown to `rpxy` on this path.
+- Observational forwarding headers such as `X-Forwarded-Host` are rebuilt separately by the general forwarding-header policy. On the fallback path, this means the backend sees an authoritative rewritten `Host` together with forwarding metadata that still reflects the original client-visible host.
+- As elsewhere in `rpxy`, `X-Forwarded-Host` and `Forwarded: host=` are observational only and MUST NOT be used for security decisions (tenant routing, trusted-host allowlists, absolute URL generation, etc.).
+</details>
+
+[^https-default-app-rejection]: This rejection is unconditional and does not depend on `sni_consistency`.
 
 #### HTTPS to Backend Application
 
@@ -276,7 +288,7 @@ Since this is currently a work-in-progress project, we are frequently adding new
 
 ### Forwarding Headers and Trusted Proxies
 
-`rpxy` always rewrites the downstream-facing forwarding headers that backend applications commonly trust, including `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, `X-Forwarded-Port`, `X-Forwarded-SSL`, and `X-Original-URI`.
+`rpxy` always rewrites the downstream-facing forwarding headers that backend applications commonly trust, including `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-SSL`, and `X-Original-URI`.
 
 By default, no preceding proxy is trusted. If `trusted_forwarded_proxies` is omitted or empty, any incoming `X-Forwarded-*` or `Forwarded` values from the client or an unknown preceding proxy are ignored, and `rpxy` rebuilds the outgoing forwarding view from the immediate peer address only.
 

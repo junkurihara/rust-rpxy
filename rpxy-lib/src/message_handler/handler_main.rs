@@ -1,9 +1,9 @@
 use super::{
+  header_ops::*,
   http_log::HttpMessageLog,
   http_result::{HttpError, HttpResult},
-  synthetic_response::{secure_redirection_response, synthetic_error_response},
-  header_ops::*,
   request_ops::InspectParseHost,
+  synthetic_response::{secure_redirection_response, synthetic_error_response},
 };
 use crate::{
   backend::{BackendAppManager, LoadBalanceContext},
@@ -101,17 +101,22 @@ where
       }
     }
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
+    // `default_app` fallback is plaintext-HTTP only (see README and backend_main.rs). TLS requests
+    // with an unknown host are rejected regardless of `sni_consistency`.
+    let mut fallback_to_default_app = false;
     let backend_app = match self.app_manager.apps.get(&server_name) {
       Some(backend_app) => backend_app,
-      None => {
+      None if !tls_enabled => {
         let default_server_name = self
           .app_manager
           .default_server_name
           .as_ref()
           .ok_or(HttpError::NoMatchingBackendApp)?;
         debug!("Serving by default app");
+        fallback_to_default_app = true;
         self.app_manager.apps.get(default_server_name).unwrap()
       }
+      None => return Err(HttpError::NoMatchingBackendApp),
     };
 
     // Redirect to https if !tls_enabled and redirect_to_https is true
@@ -143,6 +148,11 @@ where
     // let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
     let req_on_upgrade = hyper::upgrade::on(&mut req);
 
+    // If this request was matched via the `default_app` fallback, the incoming `Host` is untrusted.
+    // Pass the matched backend's configured server_name through without allocating so that
+    // `generate_request_forwarded` can force-overwrite `Host` after the usual header pass.
+    let fallback_host = fallback_to_default_app.then_some(&backend_app.server_name);
+
     // Build request from destination information
     let _context = self
       .generate_request_forwarded(
@@ -152,6 +162,7 @@ where
         &upgrade_in_request,
         upstream_candidates,
         tls_enabled,
+        fallback_host,
       )
       .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
 
@@ -162,7 +173,7 @@ where
       req.version(),
       req.headers()
     );
-    log_data.xff(&req.headers().get("x-forwarded-for"));
+    log_data.xff(&req.headers().get(header_defs::X_FORWARDED_FOR));
     log_data.upstream(req.uri());
     //////
 
