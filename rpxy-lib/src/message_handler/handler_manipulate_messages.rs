@@ -56,7 +56,11 @@ where
   }
 
   #[allow(clippy::too_many_arguments)]
-  /// Manipulate a request message sent from a client to forward upstream to a backend application
+  /// Manipulate a request message sent from a client to forward upstream to a backend application.
+  ///
+  /// `fallback_host`: set to `Some(server_name)` when the request was matched via the `default_app`
+  /// fallback path. In that case the incoming `Host` is untrusted and will be force-overwritten
+  /// with the given authoritative value; the original client-visible host is moved to `X-Forwarded-Host`.
   pub(super) fn generate_request_forwarded<B>(
     &self,
     client_addr: &SocketAddr,
@@ -65,6 +69,7 @@ where
     upgrade: &Option<String>,
     upstream_candidates: &UpstreamCandidates,
     tls_enabled: bool,
+    fallback_host: Option<&str>,
   ) -> Result<HandlerContext> {
     trace!("Generate request to be forwarded");
 
@@ -138,11 +143,18 @@ where
     apply_upstream_options_to_header(
       headers,
       &original_uri,
-      original_host_header,
+      original_host_header.as_ref(),
       &upstream_chosen.uri,
       upstream_candidates,
       &self.globals.proxy_config.trusted_forwarded_proxies,
     )?;
+
+    // Default-app fallback hardening: when the request was matched via the `default_app`
+    // path, the incoming `Host` is untrusted. Force-overwrite it with the default app's
+    // authoritative server_name and expose the original client-visible host via `X-Forwarded-Host`.
+    if let Some(authoritative_host) = fallback_host {
+      apply_default_app_fallback_rewrite(headers, &original_uri, original_host_header.as_ref(), authoritative_host)?;
+    }
 
     // update uri in request
     ensure!(

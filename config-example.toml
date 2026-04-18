@@ -59,9 +59,13 @@ max_clients = 512
 
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # except for configured application.
-# Note that this is only for http.
-# Note that nothing is served for requests via https since secure channel cannot be
-# established for non-configured server_name, and they are always rejected by checking SNI.
+# Note that this is only for http. Https requests with an unknown server_name are rejected
+# unconditionally (independent of `sni_consistency`).
+# On fallback to `default_app`, rpxy force-overwrites the outgoing `Host` header with the
+# default app's configured `server_name` (wins against `keep_original_host` / `set_upstream_host`),
+# and exposes the untrusted original client-visible host in `X-Forwarded-Host` (and in
+# `Forwarded: host=` when the `forwarded_header` option is set). Backends MUST treat
+# `X-Forwarded-Host` / `Forwarded: host=` as untrusted observational data on this path.
 default_app = 'another_localhost'
 
 ###################################

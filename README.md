@@ -153,7 +153,19 @@ server_name = "app2.example.org"
 #...
 ```
 
-Note that by specifying a `default_app` entry, *HTTP* requests will be served by the specified application if the HOST header or URL in the Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since a secure connection cannot be established for an unknown server name.
+> [!NOTE]
+> Note that by specifying a `default_app` entry, *HTTP* requests will be served by the specified application if the HOST header or URL in the Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since a secure connection cannot be established for an unknown server name. [^https-default-app-rejection]
+
+<details>
+<summary>Request Header Rewriting for Default Application</summary>
+When a request falls through to the `default_app`, `rpxy` rewrites the outgoing request headers to prevent the untrusted `Host` from reaching the backend:
+
+- The `Host` header sent upstream is **force-overwritten** with the default application's configured `server_name`. This overwrite is stronger than the `keep_original_host` / `set_upstream_host` upstream options, because the incoming `Host` is, by definition, unknown to `rpxy` on this path.
+- The original client-visible host (URI authority if absolute-form, otherwise the original `Host` header) is copied to `X-Forwarded-Host`, overwriting any client-supplied value. If `forwarded_header` is enabled for the upstream, the same value also appears in the `Forwarded: host=` parameter.
+- `X-Forwarded-Host` and `Forwarded: host=` on this path carry the **untrusted original** and are provided for observability / logging only. Backends MUST NOT use them for security decisions (tenant routing, trusted-host allowlists, absolute URL generation, etc.).
+</details>
+
+[^https-default-app-rejection]: This rejection is unconditional and does not depend on `sni_consistency`.
 
 #### HTTPS to Backend Application
 

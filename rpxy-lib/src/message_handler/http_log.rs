@@ -31,7 +31,7 @@ impl<T> From<&http::Request<T>> for HttpMessageLog {
         .to_string()
     };
     let host =
-      header_ops::host_from_uri_or_host_header(req.uri(), req.headers().get(header::HOST).cloned()).unwrap_or_default();
+      header_ops::host_from_uri_or_host_header(req.uri(), req.headers().get(header::HOST)).unwrap_or_default();
 
     Self {
       // tls_server_name: "".to_string(),

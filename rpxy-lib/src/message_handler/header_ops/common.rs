@@ -37,10 +37,13 @@ pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
   Ok(())
 }
 
-/// Extract host from URI
+/// Extract host from URI, falling back to the `Host` header.
+///
+/// Takes the `Host` header by reference; callers that already own an `Option<HeaderValue>` can
+/// pass `.as_ref()` to avoid cloning on the hot path.
 pub(in crate::message_handler) fn host_from_uri_or_host_header(
   uri: &Uri,
-  host_header_value: Option<header::HeaderValue>,
+  host_header_value: Option<&header::HeaderValue>,
 ) -> Result<String> {
   // Prioritize uri host over host header
   let uri_host = uri.host().map(|host| {

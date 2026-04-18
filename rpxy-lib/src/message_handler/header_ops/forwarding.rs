@@ -549,7 +549,7 @@ fn build_peer_forwarded_entry(headers: &HeaderMap, peer_ip: IpAddr, tls: bool, o
       raw: ForwardedNodeRaw::Ip,
     },
     proto: if tls { Some("https".into()) } else { Some("http".into()) },
-    host: host_from_uri_or_host_header(original_uri, headers.get(header::HOST).cloned()).ok(),
+    host: host_from_uri_or_host_header(original_uri, headers.get(header::HOST)).ok(),
     by: None,
   }
 }
