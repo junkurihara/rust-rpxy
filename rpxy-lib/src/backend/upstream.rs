@@ -19,8 +19,11 @@ use derive_builder::Builder;
 #[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
-#[cfg(feature = "health-check")]
-use std::sync::Arc;
+use std::sync::{
+  Arc,
+  atomic::{AtomicUsize, Ordering},
+};
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 /// Handler for given path to route incoming request to path's corresponding upstream server(s).
@@ -58,7 +61,9 @@ impl TryFrom<&AppConfig> for PathManager {
         .path(&rpc.path)
         .replace_path(&rpc.replace_path)
         .load_balance(&rpc.load_balance, &upstream_vec, &app_config.server_name, &rpc.path)
-        .options(&rpc.upstream_options);
+        .options(&rpc.upstream_options)
+        .concurrency_limiter(&rpc.max_upstream_concurrency)
+        .min_request_interval(&rpc.min_request_interval);
 
       #[cfg(feature = "health-check")]
       builder.health_check_config(&rpc.health_check);
@@ -169,6 +174,169 @@ impl Upstream {
     general_purpose::URL_SAFE_NO_PAD.encode(digest)
   }
 }
+/// Tracks the minimum interval between consecutive forwarded requests.
+///
+/// Uses a "reserve timestamp" pattern: when a task needs to wait, it immediately
+/// reserves a future slot so the next task can compute its correct wait time,
+/// preventing thundering-herd issues when multiple tasks arrive simultaneously.
+///
+/// If the task is cancelled while sleeping, the reserved timestamp is rolled back
+/// to prevent unbounded drift that would block subsequent requests.
+pub struct RequestIntervalTracker {
+  /// The configured minimum interval duration
+  duration: Duration,
+  /// Timestamp of the last (or reserved) forwarded request start; `None` until the first request
+  last_request_at: tokio::sync::Mutex<Option<tokio::time::Instant>>,
+}
+
+impl std::fmt::Debug for RequestIntervalTracker {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("RequestIntervalTracker")
+      .field("duration", &self.duration)
+      .finish()
+  }
+}
+
+impl RequestIntervalTracker {
+  pub fn new(duration: Duration) -> Self {
+    Self {
+      duration,
+      last_request_at: tokio::sync::Mutex::new(None),
+    }
+  }
+
+  /// Enforces the minimum interval between consecutive forwarded requests.
+  ///
+  /// Must be called AFTER acquiring any concurrency semaphore and BEFORE forwarding.
+  /// The interval is measured between the *start* of each forwarded request.
+  ///
+  /// Cancellation-safe: if the caller's future is dropped while sleeping, the reserved
+  /// timestamp is rolled back so subsequent requests are not blocked by a phantom reservation.
+  pub async fn enforce_interval(&self) {
+    let wait_duration = {
+      let mut last = self.last_request_at.lock().await;
+      let now = tokio::time::Instant::now();
+      match *last {
+        Some(prev_start) => {
+          let earliest_start = prev_start + self.duration;
+          if now >= earliest_start {
+            // Enough time has elapsed — proceed immediately
+            *last = Some(now);
+            None
+          } else {
+            // Need to wait. Reserve our slot so next caller sees the correct timestamp.
+            let wait = earliest_start - now;
+            *last = Some(earliest_start);
+            Some((wait, earliest_start, prev_start))
+          }
+        }
+        None => {
+          // First request ever — no waiting needed
+          *last = Some(now);
+          None
+        }
+      }
+    };
+
+    if let Some((wait, reserved, prev_start)) = wait_duration {
+      // RAII guard: if this future is dropped (cancelled) during sleep, roll back our reservation.
+      // Without rollback, each cancellation advances `last_request_at` by `duration` with no actual
+      // request forwarded, causing unbounded drift that permanently blocks subsequent requests.
+      struct RollbackGuard<'a> {
+        tracker: &'a RequestIntervalTracker,
+        reserved: tokio::time::Instant,
+        prev: Option<tokio::time::Instant>,
+        completed: bool,
+      }
+      impl Drop for RollbackGuard<'_> {
+        fn drop(&mut self) {
+          if !self.completed {
+            // The mutex is not held at the sleep await point, so try_lock() will succeed.
+            if let Ok(mut last) = self.tracker.last_request_at.try_lock()
+              && *last == Some(self.reserved)
+            {
+              *last = self.prev;
+            }
+          }
+        }
+      }
+
+      let mut guard = RollbackGuard {
+        tracker: self,
+        reserved,
+        prev: Some(prev_start),
+        completed: false,
+      };
+
+      tokio::time::sleep(wait).await;
+
+      // Mark completed immediately after sleep so a cancellation between here and the lock below
+      // cannot incorrectly roll back a sleep that has already been honoured.
+      guard.completed = true;
+
+      // Not cancelled — update to actual start time (may differ slightly from reserved due to scheduling).
+      let mut last = self.last_request_at.lock().await;
+      if *last == Some(reserved) {
+        *last = Some(tokio::time::Instant::now());
+      }
+    }
+  }
+}
+
+/// Wraps a semaphore with a waiting-request counter to expose queue depth for observability.
+pub struct ConcurrencyLimiter {
+  sem: Arc<tokio::sync::Semaphore>,
+  /// Number of requests currently queued waiting to acquire a permit.
+  waiting: AtomicUsize,
+  capacity: usize,
+}
+
+impl std::fmt::Debug for ConcurrencyLimiter {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("ConcurrencyLimiter")
+      .field("capacity", &self.capacity)
+      .field("waiting", &self.waiting())
+      .field("in_flight", &self.in_flight())
+      .finish()
+  }
+}
+
+impl ConcurrencyLimiter {
+  pub fn new(capacity: usize) -> Arc<Self> {
+    Arc::new(Self {
+      sem: Arc::new(tokio::sync::Semaphore::new(capacity)),
+      waiting: AtomicUsize::new(0),
+      capacity,
+    })
+  }
+
+  /// Increments the waiting counter. Returns the updated (new) waiting count.
+  pub(crate) fn enter_queue(&self) -> usize {
+    self.waiting.fetch_add(1, Ordering::Relaxed) + 1
+  }
+
+  /// Decrements the waiting counter. Returns the updated (new) waiting count.
+  pub(crate) fn leave_queue(&self) -> usize {
+    self.waiting.fetch_sub(1, Ordering::Relaxed) - 1
+  }
+
+  /// Number of requests currently waiting (queued) to acquire a permit.
+  pub(crate) fn waiting(&self) -> usize {
+    self.waiting.load(Ordering::Relaxed)
+  }
+
+  /// Number of requests currently holding a permit (actively being forwarded).
+  pub(crate) fn in_flight(&self) -> usize {
+    self.capacity.saturating_sub(self.sem.available_permits())
+  }
+
+  /// Acquires an owned permit. The returned permit is lifetime-free and can be stored in a
+  /// response body wrapper so the concurrency slot stays held until the body is fully consumed.
+  pub(crate) async fn acquire_owned(&self) -> Result<tokio::sync::OwnedSemaphorePermit, tokio::sync::AcquireError> {
+    Arc::clone(&self.sem).acquire_owned().await
+  }
+}
+
 #[derive(Debug, Clone, Builder)]
 /// Struct serving multiple upstream servers for, e.g., load balancing.
 pub struct UpstreamCandidates {
@@ -191,6 +359,16 @@ pub struct UpstreamCandidates {
   #[builder(setter(custom), default)]
   /// Activated upstream options defined in [[UpstreamOption]]
   pub options: HashSet<UpstreamOption>,
+
+  /// Limits concurrent in-flight requests to upstream.
+  /// `None` = unlimited (default). `Some(Arc<ConcurrencyLimiter>)` = FIFO queue.
+  #[builder(setter(custom), default)]
+  pub concurrency_limiter: Option<Arc<ConcurrencyLimiter>>,
+
+  /// Minimum interval between consecutive forwarded requests.
+  /// When `Some`, ensures at least this duration elapses between the START of each forwarded request.
+  #[builder(setter(custom), default)]
+  pub min_request_interval: Option<Arc<RequestIntervalTracker>>,
 
   #[cfg(feature = "health-check")]
   #[builder(setter(custom), default)]
@@ -276,6 +454,18 @@ impl UpstreamCandidatesBuilder {
       },
     );
     self.options = Some(opts);
+    self
+  }
+
+  /// Set the maximum upstream concurrency from optional permit count
+  pub fn concurrency_limiter(&mut self, v: &Option<usize>) -> &mut Self {
+    self.concurrency_limiter = Some(v.as_ref().map(|n| ConcurrencyLimiter::new(*n)));
+    self
+  }
+
+  /// Set the minimum request interval from optional duration
+  pub fn min_request_interval(&mut self, v: &Option<Duration>) -> &mut Self {
+    self.min_request_interval = Some(v.as_ref().map(|d| Arc::new(RequestIntervalTracker::new(*d))));
     self
   }
 }

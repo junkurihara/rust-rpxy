@@ -11,7 +11,7 @@ pub(crate) use self::load_balance::{StickyCookie, StickyCookieValue};
 #[allow(unused)]
 pub(crate) use self::{
   load_balance::{LoadBalance, LoadBalanceContext},
-  upstream::{PathManager, Upstream, UpstreamCandidates},
+  upstream::{ConcurrencyLimiter, PathManager, Upstream, UpstreamCandidates},
   upstream_opts::UpstreamOption,
 };
 pub(crate) use backend_main::{BackendApp, BackendAppBuilderError, BackendAppManager};

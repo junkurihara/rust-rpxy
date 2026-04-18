@@ -49,7 +49,7 @@ pub type UnboundedStreamBody = StreamBody<UnboundedReceiver<Result<Frame<bytes::
 #[allow(unused)]
 /// Response body use in this project
 /// - Incoming: just a type that only forwards the upstream response body to downstream.
-/// - Boxed: a type that is generated from cache or synthetic response body, e.g.,, small byte object.
+/// - Boxed: a type that is generated from cache or synthetic response body, e.g., small byte object.
 /// - Streamed: another type that is generated from stream, e.g., large byte object.
 pub enum ResponseBody {
   Incoming(Incoming),
@@ -66,10 +66,9 @@ impl Body for ResponseBody {
     cx: &mut std::task::Context<'_>,
   ) -> std::task::Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
     match self.get_mut() {
-      ResponseBody::Incoming(incoming) => Pin::new(incoming).poll_frame(cx),
-      ResponseBody::Boxed(boxed) => Pin::new(boxed).poll_frame(cx),
-      ResponseBody::Streamed(streamed) => Pin::new(streamed).poll_frame(cx),
+      ResponseBody::Incoming(incoming) => Pin::new(incoming).poll_frame(cx).map_err(RpxyError::HyperBodyError),
+      ResponseBody::Boxed(boxed) => Pin::new(boxed).poll_frame(cx).map_err(RpxyError::HyperBodyError),
+      ResponseBody::Streamed(streamed) => Pin::new(streamed).poll_frame(cx).map_err(RpxyError::HyperBodyError),
     }
-    .map_err(RpxyError::HyperBodyError)
   }
 }
