@@ -5,10 +5,11 @@ use ipnet::IpNet;
 use crate::{
   backend::{UpstreamCandidates, UpstreamOption},
   log::*,
+  name_exp::ServerName,
 };
 
 use super::{
-  common::{add_header_entry_overwrite_if_exist, host_from_uri_or_host_header},
+  common::{add_header_entry_overwrite_if_exist, add_header_entry_overwrite_if_exist_name, host_from_uri_or_host_header},
   forwarding::{extract_forwarding_chain_from_headers, generate_forwarded_header, reduce_trusted_proxy_chain},
 };
 
@@ -43,7 +44,7 @@ pub(in crate::message_handler) fn apply_default_app_fallback_rewrite(
   headers: &mut HeaderMap,
   original_uri: &Uri,
   original_host_header: Option<&HeaderValue>,
-  authoritative_host: &str,
+  authoritative_host: &ServerName,
 ) -> Result<()> {
   match host_from_uri_or_host_header(original_uri, original_host_header) {
     Ok(original_host) => {
@@ -53,7 +54,7 @@ pub(in crate::message_handler) fn apply_default_app_fallback_rewrite(
       headers.remove("x-forwarded-host");
     }
   }
-  headers.insert(header::HOST, HeaderValue::from_str(authoritative_host)?);
+  headers.insert(header::HOST, HeaderValue::from_bytes(authoritative_host.as_ref())?);
   Ok(())
 }
 
@@ -94,7 +95,7 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
           let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
           match generate_forwarded_header(&normalized_chain) {
             Ok(forwarded_value) => {
-              add_header_entry_overwrite_if_exist(headers, header::FORWARDED.as_str(), forwarded_value)?;
+              add_header_entry_overwrite_if_exist_name(headers, header::FORWARDED, forwarded_value)?;
             }
             Err(e) => {
               // Log warning but don't fail the request if Forwarded generation fails
@@ -167,7 +168,7 @@ mod tests {
       &mut headers,
       &"/path".parse::<Uri>().unwrap(),
       Some(&original_host),
-      "default.app.example",
+      &ServerName::from("default.app.example"),
     )
     .unwrap();
 
@@ -186,7 +187,7 @@ mod tests {
       &mut headers,
       &"http://uri-authority.example:8080/path".parse::<Uri>().unwrap(),
       Some(&original_host),
-      "default.app.example",
+      &ServerName::from("default.app.example"),
     )
     .unwrap();
 
@@ -205,7 +206,7 @@ mod tests {
       &mut headers,
       &"/relative".parse::<Uri>().unwrap(),
       None,
-      "default.app.example",
+      &ServerName::from("default.app.example"),
     )
     .unwrap();
 

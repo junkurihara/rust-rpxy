@@ -20,6 +20,24 @@ pub(in crate::message_handler) fn add_header_entry_overwrite_if_exist(
   Ok(())
 }
 
+/// Overwrite header entry if exist, taking a pre-built header name.
+pub(in crate::message_handler) fn add_header_entry_overwrite_if_exist_name(
+  headers: &mut HeaderMap,
+  key: HeaderName,
+  value: impl Into<Cow<'static, str>>,
+) -> Result<()> {
+  match headers.entry(key) {
+    header::Entry::Vacant(entry) => {
+      entry.insert(value.into().parse::<HeaderValue>()?);
+    }
+    header::Entry::Occupied(mut entry) => {
+      entry.insert(HeaderValue::from_bytes(value.into().as_bytes())?);
+    }
+  }
+
+  Ok(())
+}
+
 /// Align cookie values in single line
 /// Sometimes violates [RFC6265](https://www.rfc-editor.org/rfc/rfc6265#section-5.4) (for http/1.1).
 /// This is allowed in RFC7540 (for http/2) as mentioned [here](https://stackoverflow.com/questions/4843556/in-http-specification-what-is-the-string-that-separates-cookies).

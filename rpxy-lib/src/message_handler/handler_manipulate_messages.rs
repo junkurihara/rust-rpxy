@@ -3,6 +3,7 @@ use crate::{
   backend::{BackendApp, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
   log::*,
+  name_exp::ServerName,
 };
 use anyhow::{Result, anyhow, ensure};
 use http::{HeaderValue, Request, Response, Uri, header};
@@ -23,7 +24,7 @@ where
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
-    add_header_entry_overwrite_if_exist(headers, "server", RESPONSE_HEADER_SERVER)?;
+    add_header_entry_overwrite_if_exist_name(headers, header::SERVER, RESPONSE_HEADER_SERVER)?;
 
     #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
@@ -34,21 +35,21 @@ where
         && backend_app.mutual_tls.as_ref().is_some_and(|v| !v)
       {
         if let Some(port) = self.globals.proxy_config.https_redirection_port {
-          add_header_entry_overwrite_if_exist(
+          add_header_entry_overwrite_if_exist_name(
             headers,
-            header::ALT_SVC.as_str(),
+            header::ALT_SVC,
             format!("h3=\":{}\"; ma={}", port, self.globals.proxy_config.h3_alt_svc_max_age),
           )?;
         }
       } else {
         // remove alt-svc to disallow requests via http3
-        headers.remove(header::ALT_SVC.as_str());
+        headers.remove(header::ALT_SVC);
       }
     }
     #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
     {
       if self.globals.proxy_config.https_port.is_some() {
-        headers.remove(header::ALT_SVC.as_str());
+        headers.remove(header::ALT_SVC);
       }
     }
 
@@ -69,7 +70,7 @@ where
     upgrade: &Option<String>,
     upstream_candidates: &UpstreamCandidates,
     tls_enabled: bool,
-    fallback_host: Option<&str>,
+    fallback_host: Option<&ServerName>,
   ) -> Result<HandlerContext> {
     trace!("Generate request to be forwarded");
 

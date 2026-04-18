@@ -149,16 +149,9 @@ where
     let req_on_upgrade = hyper::upgrade::on(&mut req);
 
     // If this request was matched via the `default_app` fallback, the incoming `Host` is untrusted.
-    // Build the authoritative replacement value from the matched backend's configured server_name
-    // so that `generate_request_forwarded` can force-overwrite `Host` after the usual header pass.
-    let fallback_host = fallback_to_default_app
-      .then(|| {
-        let host_string: Result<String, HttpError> = (&backend_app.server_name)
-          .try_into()
-          .map_err(|_| HttpError::FailedToGenerateUpstreamRequest("invalid default_app server_name".to_string()));
-        host_string
-      })
-      .transpose()?;
+    // Pass the matched backend's configured server_name through without allocating so that
+    // `generate_request_forwarded` can force-overwrite `Host` after the usual header pass.
+    let fallback_host = fallback_to_default_app.then_some(&backend_app.server_name);
 
     // Build request from destination information
     let _context = self
@@ -169,7 +162,7 @@ where
         &upgrade_in_request,
         upstream_candidates,
         tls_enabled,
-        fallback_host.as_deref(),
+        fallback_host,
       )
       .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
 

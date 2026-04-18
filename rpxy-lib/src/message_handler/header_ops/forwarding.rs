@@ -10,7 +10,10 @@ use crate::log::*;
 
 use super::{
   super::canonical_address::ToCanonical,
-  common::{add_header_entry_overwrite_if_exist, host_from_uri_or_host_header, make_cookie_single_line},
+  common::{
+    add_header_entry_overwrite_if_exist, add_header_entry_overwrite_if_exist_name, host_from_uri_or_host_header,
+    make_cookie_single_line,
+  },
 };
 
 const X_FORWARDED_FOR: &str = "x-forwarded-for";
@@ -110,7 +113,7 @@ pub(in crate::message_handler) fn add_forwarding_header(
   // Forwarded generation, apply_upstream_options_to_header() will regenerate it later.
   if has_forwarded {
     match generate_forwarded_header(&normalized_chain) {
-      Ok(forwarded_value) => add_header_entry_overwrite_if_exist(headers, header::FORWARDED.as_str(), forwarded_value)?,
+      Ok(forwarded_value) => add_header_entry_overwrite_if_exist_name(headers, header::FORWARDED, forwarded_value)?,
       Err(e) => warn!("Failed to update existing Forwarded header for consistency: {}", e),
     }
   } else {
