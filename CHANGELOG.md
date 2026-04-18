@@ -11,6 +11,8 @@
 - **Breaking: harden `default_app` fallback against untrusted `Host` headers.** When a request matches the `default_app` fallback (i.e., its `Host` does not match any configured `server_name`), rpxy now force-overwrites the outgoing `Host` header with the default app's configured `server_name` regardless of the `keep_original_host` / `set_upstream_host` upstream options. In addition, the `default_app` fallback is now strictly limited to plaintext HTTP; TLS requests with an unknown server name are rejected unconditionally (independent of `sni_consistency`).
 - Rebuild `X-Forwarded-Host` as part of the general forwarding-header policy. rpxy no longer forwards a client-supplied `X-Forwarded-Host` value as-is; instead it rebuilds `X-Forwarded-Host` from the original client-visible host, alongside the other authoritative `X-Forwarded-*` headers. As with `Forwarded: host=`, this value is observational only and must not be used for security decisions.
 
+### Improvement
+
 - deps and refactor
 
 ## 0.11.3
