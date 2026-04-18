@@ -14,6 +14,19 @@ use super::{
   header_defs::*,
 };
 
+fn overwrite_x_forwarded_host_from_original(
+  headers: &mut HeaderMap,
+  original_uri: &Uri,
+) -> Result<()> {
+  match host_from_uri_or_host_header(original_uri, headers.get(header::HOST)) {
+    Ok(original_host) => add_header_entry_overwrite_if_exist(headers, X_FORWARDED_HOST, original_host)?,
+    Err(_) => {
+      headers.remove(X_FORWARDED_HOST);
+    }
+  }
+  Ok(())
+}
+
 /* --------------------------------------------------------------------------------------------------------- */
 /* Forwarding header normalization model                                                                   */
 /* --------------------------------------------------------------------------------------------------------- */
@@ -126,6 +139,8 @@ pub(in crate::message_handler) fn add_forwarding_header(
   add_header_entry_overwrite_if_exist(headers, X_FORWARDED_SSL, if tls { "on" } else { "off" })?;
   // x-original-uri
   add_header_entry_overwrite_if_exist(headers, X_ORIGINAL_URI, original_uri.to_string())?;
+  // x-forwarded-host
+  overwrite_x_forwarded_host_from_original(headers, original_uri)?;
   // proxy
   add_header_entry_overwrite_if_exist(headers, PROXY, "")?;
 
@@ -665,6 +680,7 @@ mod tests {
     headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("1.2.3.4"));
     headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
     headers.insert(X_FORWARDED_PORT, HeaderValue::from_static("443"));
+    headers.insert(X_FORWARDED_HOST, HeaderValue::from_static("spoofed.example"));
     headers.insert(
       header::FORWARDED,
       HeaderValue::from_static("for=1.2.3.4;proto=https;host=app.example"),
@@ -684,6 +700,7 @@ mod tests {
     assert_eq!(headers.get(X_REAL_IP).unwrap(), "203.0.113.10");
     assert_eq!(headers.get(X_FORWARDED_PROTO).unwrap(), "http");
     assert_eq!(headers.get(X_FORWARDED_PORT).unwrap(), "8080");
+    assert_eq!(headers.get(X_FORWARDED_HOST).unwrap(), "app.example");
     assert_eq!(
       headers.get(header::FORWARDED).unwrap(),
       "for=203.0.113.10;proto=http;host=app.example"
@@ -843,7 +860,45 @@ mod tests {
 
     assert_eq!(headers.get(X_FORWARDED_FOR).unwrap(), "2001:db8::1");
     assert_eq!(headers.get(X_REAL_IP).unwrap(), "2001:db8::1");
+    assert_eq!(headers.get(X_FORWARDED_HOST).unwrap(), "app.example");
     assert!(!headers.contains_key(header::FORWARDED));
+  }
+
+  #[test]
+  fn x_forwarded_host_uses_uri_authority_for_absolute_form() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("host-header.example"));
+    headers.insert(X_FORWARDED_HOST, HeaderValue::from_static("spoofed.example"));
+
+    add_forwarding_header(
+      &mut headers,
+      &"203.0.113.10:4321".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &"http://uri-authority.example:8080/demo?q=1".parse::<Uri>().unwrap(),
+      &[],
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(X_FORWARDED_HOST).unwrap(), "uri-authority.example:8080");
+  }
+
+  #[test]
+  fn x_forwarded_host_is_cleared_when_original_host_is_unavailable() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_HOST, HeaderValue::from_static("spoofed.example"));
+
+    add_forwarding_header(
+      &mut headers,
+      &"203.0.113.10:4321".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/demo?q=1"),
+      &[],
+    )
+    .unwrap();
+
+    assert!(headers.get(X_FORWARDED_HOST).is_none());
   }
 
   #[test]

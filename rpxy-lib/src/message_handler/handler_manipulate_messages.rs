@@ -61,7 +61,8 @@ where
   ///
   /// `fallback_host`: set to `Some(server_name)` when the request was matched via the `default_app`
   /// fallback path. In that case the incoming `Host` is untrusted and will be force-overwritten
-  /// with the given authoritative value; the original client-visible host is moved to `X-Forwarded-Host`.
+  /// with the given authoritative value. `X-Forwarded-Host` is rebuilt separately by
+  /// `add_forwarding_header()` as part of the general forwarding-header policy.
   pub(super) fn generate_request_forwarded<B>(
     &self,
     client_addr: &SocketAddr,
@@ -152,9 +153,10 @@ where
 
     // Default-app fallback hardening: when the request was matched via the `default_app`
     // path, the incoming `Host` is untrusted. Force-overwrite it with the default app's
-    // authoritative server_name and expose the original client-visible host via `X-Forwarded-Host`.
+    // authoritative server_name. Observational forwarding headers such as
+    // `X-Forwarded-Host` are rebuilt earlier by `add_forwarding_header()`.
     if let Some(authoritative_host) = fallback_host {
-      apply_default_app_fallback_rewrite(headers, &original_uri, original_host_header.as_ref(), authoritative_host)?;
+      apply_default_app_host_rewrite(headers, authoritative_host)?;
     }
 
     // update uri in request

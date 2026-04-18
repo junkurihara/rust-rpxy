@@ -135,7 +135,7 @@ load_balance = "random" # or "round_robin" or "sticky" (sticky session) or "none
 upstream_options = [
   "upgrade_insecure_requests",
   "force_http11_upstream",
-  "set_upstream_host",        # overwrite HOST value with upstream hostname (like www.yahoo.com)
+  "set_upstream_host",        # overwrite HOST value with upstream hostname (like www.yahoo.com). rpxy always overwrites X-Forwarded-Host with the original client-visible host and never forwards a client-supplied X-Forwarded-Host as-is.
   "forwarded_header"          # add Forwarded header (disabled by default. However, update one if already present.) Incoming Forwarded/X-Forwarded-* values are normalized according to trusted_forwarded_proxies before generation.
 ]
 ######################################################################
