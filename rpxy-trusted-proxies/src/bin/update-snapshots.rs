@@ -76,14 +76,14 @@ fn main() -> Result<()> {
   let existing = fs::read_to_string(&snapshots_path).unwrap_or_default();
 
   if args.check {
-    if existing == rendered {
+    if existing.trim_end() == rendered.trim_end() {
       println!("snapshots are up to date");
       return Ok(());
     }
     bail!("snapshot file is outdated: {}", snapshots_path.display());
   }
 
-  if existing == rendered {
+  if existing.trim_end() == rendered.trim_end() {
     println!("no snapshot changes detected");
     return Ok(());
   }
