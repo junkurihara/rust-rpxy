@@ -18,6 +18,7 @@ pub(super) type DynCryptoSource = dyn CryptoSource<Error = RpxyCertError> + Send
 /// Reloader service for certificates and keys for TLS
 pub struct CryptoReloader {
   inner: HashMap<ServerNameBytes, Arc<Box<DynCryptoSource>>>,
+  tls_0rtt: bool,
 }
 
 impl<T> Extend<(ServerNameBytes, T)> for CryptoReloader
@@ -32,18 +33,24 @@ where
   }
 }
 
+pub struct ServerCryptoSource {
+  pub(super) inner: HashMap<ServerNameBytes, Arc<Box<DynCryptoSource>>>,
+  pub(super) tls_0rtt: bool,
+}
+
 #[async_trait]
 impl Reload<ServerCryptoBase> for CryptoReloader {
-  type Source = HashMap<ServerNameBytes, Arc<Box<DynCryptoSource>>>;
+  type Source = ServerCryptoSource;
 
   async fn new(source: &Self::Source) -> Result<Self, ReloaderError<ServerCryptoBase>> {
     let mut inner = HashMap::default();
-    inner.extend(source.clone());
-    Ok(Self { inner })
+    inner.extend(source.inner.clone());
+    Ok(Self { inner, tls_0rtt: source.tls_0rtt, })
   }
 
   async fn reload(&self) -> Result<Option<ServerCryptoBase>, ReloaderError<ServerCryptoBase>> {
     let mut server_crypto_base = ServerCryptoBase::default();
+    server_crypto_base.tls_0rtt = self.tls_0rtt;
 
     for (server_name_bytes, crypto_source) in self.inner.iter() {
       let certs_keys = match crypto_source.read().await {
@@ -72,7 +79,8 @@ mod tests {
     let tls_cert_key_path = "../example-certs/server.key";
     let client_ca_cert_path = Some("../example-certs/client.ca.crt");
 
-    let mut crypto_reloader = CryptoReloader::new(&HashMap::default()).await.unwrap();
+    let server_crypto_source = ServerCryptoSource { inner: HashMap::default(), tls_0rtt: false };
+    let mut crypto_reloader = CryptoReloader::new(&server_crypto_source).await.unwrap();
     let crypto_source = CryptoFileSourceBuilder::default()
       .tls_cert_path(tls_cert_path)
       .tls_cert_key_path(tls_cert_key_path)
@@ -83,5 +91,6 @@ mod tests {
 
     let server_crypto_base = crypto_reloader.reload().await.unwrap().unwrap();
     assert_eq!(server_crypto_base.inner.len(), 1);
+    assert_eq!(server_crypto_base.tls_0rtt, false);
   }
 }

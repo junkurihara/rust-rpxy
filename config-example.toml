@@ -37,6 +37,9 @@ listen_ipv6 = false
 # Otherwise, the server sends Alt-SVC and 301 with the same port as `listen_port_tls`.
 # https_redirection_port = 443
 
+# Optional. Reduce reconnection round trip time (RTT) by one trip during TLS connection. TLS 0-RTT is enabled by default.
+# tls_0rtt = false
+
 # Optional for h2 and http1.1
 tcp_listen_backlog = 1024
 

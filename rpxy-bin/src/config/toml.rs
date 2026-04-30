@@ -56,6 +56,7 @@ impl OneOrMany {
 /// - `listen_address_v6`: Optional IPv6 address(es) to bind (default: ::). Accepts a single string or an array.
 /// - `listen_ipv6`: Enable IPv6 listening. If listen_address_v6 is not specified, binds to '::' when true, and disables IPv6 when false (default: false).
 /// - `https_redirection_port`: Optional port for HTTP to HTTPS redirection.
+/// - `tls_0rtt`: Enable TLS 0-RTT
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
 /// - `max_clients`: Optional max client connections.
@@ -70,6 +71,7 @@ pub struct ConfigToml {
   pub listen_address_v6: Option<OneOrMany>,
   pub listen_ipv6: Option<bool>,
   pub https_redirection_port: Option<u16>,
+  pub tls_0rtt: Option<bool>,
   pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
@@ -276,6 +278,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       } else {
         self.listen_port_tls
       },
+      tls_0rtt: self.tls_0rtt.unwrap_or(true),
       ..Default::default()
     };
     ensure!(
@@ -1093,5 +1096,27 @@ mod tests {
       healthy_threshold: 2,
     });
     assert!(validate_lb_health_check("example.com", Some(LOAD_BALANCE_PRIMARY_BACKUP), &health_check).is_ok());
+  }
+
+  #[test]
+  fn tls_0rtt_enabled() {
+    let alias = r#"
+      listen_port = 8080
+      tls_0rtt = true
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.tls_0rtt, true);
+  }
+
+  #[test]
+  fn tls_0rtt_disabled() {
+    let alias = r#"
+      listen_port = 8080
+      tls_0rtt = false
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.tls_0rtt, false);
   }
 }

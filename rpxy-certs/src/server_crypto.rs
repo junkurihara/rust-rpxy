@@ -29,11 +29,22 @@ pub struct ServerCrypto {
 
 /* ------------------------------------------------ */
 /// Reloader target for the certificate reloader service
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ServerCryptoBase {
   /// Map of server name to certs and keys
   pub(super) inner: HashMap<ServerNameBytes, SingleServerCertsKeys>,
+  pub(super) tls_0rtt: bool,
 }
+
+impl Default for ServerCryptoBase {
+  fn default() -> Self {
+    Self {
+      tls_0rtt: true,
+      inner: Default::default(),
+    }
+  }
+}
+
 
 impl TryInto<Arc<ServerCrypto>> for &ServerCryptoBase {
   type Error = RpxyCertError;
@@ -77,6 +88,14 @@ impl ServerCryptoBase {
           .with_no_client_auth()
           .with_cert_resolver(Arc::new(resolver_local));
 
+        if self.tls_0rtt {
+          // Limit up to 1000 bytes for early data
+          server_crypto_local.max_early_data_size = 1000;
+        } else {
+          // TLS 0-RTT is disabled by setting this to zero
+          server_crypto_local.max_early_data_size = 0;
+        }
+
         #[cfg(feature = "http3")]
         {
           server_crypto_local.alpn_protocols = vec![b"h3".to_vec(), b"h2".to_vec(), b"http/1.1".to_vec()];
@@ -108,6 +127,15 @@ impl ServerCryptoBase {
         .with_safe_default_protocol_versions()?
         .with_client_cert_verifier(client_cert_verifier)
         .with_cert_resolver(Arc::new(resolver_local));
+
+      if self.tls_0rtt {
+        // Limit up to 1000 bytes for early data
+        server_crypto_local.max_early_data_size = 1000;
+      } else {
+        // TLS 0-RTT is disabled by setting this to zero
+        server_crypto_local.max_early_data_size = 0;
+      }
+
       server_crypto_local.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
       server_crypto_map.insert(server_name_bytes.clone(), Arc::new(server_crypto_local));
     }
@@ -144,6 +172,14 @@ impl ServerCryptoBase {
       .with_safe_default_protocol_versions()?
       .with_no_client_auth()
       .with_cert_resolver(Arc::new(resolver_global));
+
+    if self.tls_0rtt {
+      // Limit up to 1000 bytes for early data
+      server_crypto_global.max_early_data_size = 1000;
+    } else {
+      // TLS 0-RTT is disabled by setting this to zero
+      server_crypto_global.max_early_data_size = 0;
+    }
 
     #[cfg(feature = "http3")]
     {
@@ -205,5 +241,7 @@ mod tests {
         vec![b"h2".to_vec(), b"http/1.1".to_vec()]
       );
     }
+
+    assert_eq!(server_crypto.aggregated_config_no_client_auth.max_early_data_size, 1000);
   }
 }

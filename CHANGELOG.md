@@ -2,6 +2,10 @@
 
 ## 0.12.1 or 0.13.0 (Unreleased)
 
+### Important Changes
+
+- **Breaking: enable TLS 0-RTT by default** This improves security by encrypting the Server Name Indication (SNI) value used in TLS handshake for repeat visitors. This value contains the server / website hostname. You can disable this by setting the `tls_0rtt` option to `false`.
+
 ## 0.12.0 (To be released shortly)
 
 ### Important Changes

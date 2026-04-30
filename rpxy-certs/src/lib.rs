@@ -9,7 +9,7 @@ mod log {
   pub(super) use tracing::{debug, error, info, warn};
 }
 
-use crate::{error::*, log::*, reloader_service::DynCryptoSource};
+use crate::{error::*, log::*, reloader_service::{DynCryptoSource, ServerCryptoSource}};
 use ahash::HashMap;
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use rustls::crypto::CryptoProvider;
@@ -36,6 +36,7 @@ type ReloaderServiceResultInner = (
 /// Build certificate reloader service, which accepts a map of server names to `CryptoSource` instances
 pub async fn build_cert_reloader<T>(
   crypto_source_map: &HashMap<String, T>,
+  tls_0rtt: bool,
   certs_watch_period: Option<u32>,
 ) -> Result<ReloaderServiceResultInner, RpxyCertError>
 where
@@ -48,7 +49,7 @@ where
   #[cfg(feature = "post-quantum")]
   let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
-  let source = crypto_source_map
+  let inner = crypto_source_map
     .iter()
     .map(|(k, v)| {
       let server_name_bytes = k.as_bytes().to_vec().to_ascii_lowercase();
@@ -56,6 +57,11 @@ where
       (server_name_bytes, dyn_crypto_source)
     })
     .collect::<HashMap<_, _>>();
+
+  let source = ServerCryptoSource {
+      inner,
+      tls_0rtt,
+  };
 
   let certs_watch_period = certs_watch_period.unwrap_or(DEFAULT_CERTS_WATCH_DELAY_SECS);
 

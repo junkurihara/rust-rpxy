@@ -104,6 +104,8 @@ pub async fn build_cert_manager(
     return Ok(None);
   }
 
+  let tls_0rtt = config.tls_0rtt.unwrap_or(true);
+
   #[cfg(feature = "acme")]
   let acme_option = config.experimental.as_ref().and_then(|v| v.acme.clone());
   #[cfg(feature = "acme")]
@@ -138,7 +140,7 @@ pub async fn build_cert_manager(
       crypto_source_map.insert(server_name.to_owned(), crypto_file_source);
     }
   }
-  let res = build_cert_reloader(&crypto_source_map, None).await?;
+  let res = build_cert_reloader(&crypto_source_map, tls_0rtt, None).await?;
   Ok(Some(res))
 }
 

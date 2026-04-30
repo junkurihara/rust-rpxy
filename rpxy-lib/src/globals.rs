@@ -73,6 +73,9 @@ pub struct ProxyConfig {
   /// timeout to handle a connection, total time of receive request, serve, and send response. this might limits the max length of response.
   pub connection_handling_timeout: Option<Duration>,
 
+  /// TLS 0-RTT
+  pub tls_0rtt: bool,
+
   #[cfg(feature = "cache")]
   pub cache_enabled: bool,
   #[cfg(feature = "cache")]
@@ -121,6 +124,8 @@ impl Default for ProxyConfig {
       sni_consistency: true,
       trusted_forwarded_proxies: Vec::new(),
       connection_handling_timeout: None,
+
+      tls_0rtt: true,
 
       #[cfg(feature = "proxy-protocol")]
       tcp_recv_proxy_protocol: None,

@@ -21,11 +21,16 @@ where
     // first set as null config server
     // AWS LC provider by default
     let provider = rustls::crypto::CryptoProvider::get_default().ok_or(RpxyError::NoDefaultCryptoProvider)?;
-    let rustls_server_config = ServerConfig::builder_with_provider(provider.clone())
+    let mut rustls_server_config = ServerConfig::builder_with_provider(provider.clone())
       .with_protocol_versions(&[&rustls::version::TLS13])
       .map_err(|e| RpxyError::FailedToBuildServerConfig(format!("TLS 1.3 server config failed: {e}")))?
       .with_no_client_auth()
       .with_cert_resolver(Arc::new(rustls::server::ResolvesServerCertUsingSni::new()));
+    rustls_server_config.max_early_data_size = if self.globals.proxy_config.tls_0rtt {
+        1000 // Limit up to 1000 bytes fo early data
+    } else {
+        0 // TLS 0-RTT is disabled by setting this to zero
+    };
     let quinn_server_config_crypto = QuicServerConfig::try_from(Arc::new(rustls_server_config)).unwrap();
 
     let mut transport_config_quic = TransportConfig::default();
