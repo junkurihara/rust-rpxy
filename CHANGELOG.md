@@ -2,6 +2,10 @@
 
 ## 0.12.1 or 0.13.0 (Unreleased)
 
+### Improvement
+
+- Remove dependency on the `rustls_post_quantum` crate in favour of the `prefer-post-quantum` feature of rustls.
+
 ## 0.12.0 (To be released shortly)
 
 ### Important Changes

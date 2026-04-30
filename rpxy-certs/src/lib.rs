@@ -42,11 +42,9 @@ where
   T: CryptoSource<Error = RpxyCertError> + Send + Sync + Clone + 'static,
 {
   info!("Building certificate reloader service");
-  #[cfg(not(feature = "post-quantum"))]
-  // Install aws_lc_rs as default crypto provider for rustls
+  // Install aws_lc_rs as default crypto provider for rustls. Post-quantum cryptography is enabled
+  // by default with this provider.
   let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
-  #[cfg(feature = "post-quantum")]
-  let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
   let source = crypto_source_map
     .iter()

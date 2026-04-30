@@ -12,7 +12,7 @@ publish.workspace = true
 
 [features]
 default = ["http3"]
-post-quantum = ["rustls-post-quantum"]
+post-quantum = ["rustls/prefer-post-quantum"]
 http3 = []
 
 [dependencies]
@@ -30,7 +30,6 @@ rustls-webpki = { version = "0.103.13", default-features = false, features = [
   "std",
   "aws-lc-rs",
 ] }
-rustls-post-quantum = { version = "0.2.4", optional = true }
 x509-parser = { version = "0.18.1" }
 
 [dev-dependencies]

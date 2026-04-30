@@ -11,7 +11,7 @@ edition.workspace = true
 publish.workspace = true
 
 [features]
-post-quantum = ["rustls-post-quantum"]
+post-quantum = ["rustls/prefer-post-quantum"]
 
 [dependencies]
 url = { version = "2.5.8" }
@@ -33,7 +33,6 @@ rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, f
   "aws-lc-rs",
   "webpki-roots",
 ] }
-rustls-post-quantum = { version = "0.2.4", optional = true }
 tokio = { version = "1.52.1", default-features = false, features = [
   "rt",
   "macros",

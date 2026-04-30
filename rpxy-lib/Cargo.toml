@@ -31,7 +31,7 @@ rustls-backend = ["hyper-rustls"]
 webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
 acme = ["rpxy-acme"]
 post-quantum = [
-  "rustls-post-quantum",
+  "rustls/prefer-post-quantum",
   "rpxy-acme/post-quantum",
   "rpxy-certs/post-quantum",
   "s2n-quic-rustls/post-quantum",
@@ -83,7 +83,6 @@ hyper-rustls = { version = "0.27.9", default-features = false, features = [
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.3.6"
 rustls = { version = "0.23.40", default-features = false }
-rustls-post-quantum = { version = "0.2.4", optional = true }
 tokio-rustls = { version = "0.26.4", features = ["early-data"] }
 
 # acme
