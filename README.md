@@ -37,7 +37,7 @@ The supported features are summarized as follows:
 
 [^acme]: `rpxy` supports the automatic issuance and renewal of certificates via [TLS-ALPN-01 (RFC8737)](https://www.rfc-editor.org/rfc/rfc8737) of [ACME protocol (RFC8555)](https://www.rfc-editor.org/rfc/rfc8555) thanks to [`rustls-acme`](https://github.com/FlorianUekermann/rustls-acme).
 
-[^kyber]: `rpxy` supports the hybridized post-quantum key exchange [`X25519MLKEM768`](https://www.ietf.org/archive/id/draft-kwiatkowski-tls-ecdhe-mlkem-02.html)[^kyber] for TLS/QUIC incoming and outgoing initiation thanks to [`rustls-post-quantum`](https://docs.rs/rustls-post-quantum/latest/rustls_post_quantum/). This is already a default feature.  Also note that `X25519MLKEM768` is still a draft version yet this is widely used on the Internet.
+[^kyber]: `rpxy` supports the hybridized post-quantum key exchange [`X25519MLKEM768`](https://www.ietf.org/archive/id/draft-kwiatkowski-tls-ecdhe-mlkem-02.html)[^kyber] for TLS/QUIC incoming and outgoing initiation thanks to [`rustls`](https://docs.rs/rustls/latest/rustls/). This is already a default feature.  Also note that `X25519MLKEM768` is still a draft version yet this is widely used on the Internet.
 
 [^sanitization]: By default, `rpxy` provides *TLS connection sanitization* by correctly binding a certificate used to establish a secure channel with the backend application. Specifically, it always maintains consistency between the given SNI (server name indication) in `ClientHello` of the underlying TLS and the domain name given by the overlaid HTTP HOST header (or URL in Request line). We should note that NGINX doesn't guarantee such consistency by default. To achieve this, you have to add an `if` statement in the NGINX configuration file.
 
