@@ -47,7 +47,7 @@ where
     // To reuse address
     let udp_socket = bind_udp_socket(&self.listener_spec.listening_on)?;
     let runtime =
-      quinn::default_runtime().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No async runtime found"))?;
+      quinn::default_runtime().ok_or_else(|| std::io::Error::other("No async runtime found"))?;
     let endpoint = Endpoint::new(quinn::EndpointConfig::default(), Some(server_config_h3), udp_socket, runtime)?;
 
     let mut server_crypto: Option<Arc<ServerCrypto>> = None;
