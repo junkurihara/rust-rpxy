@@ -358,10 +358,9 @@ fn forwarded_is_consistent(forwarded: &[ForwardedEntry], xff_chain: &[ForwardedE
 
   // Optional proto check for the last entry, if proto is present in both headers. This is a sanity check to prevent trusting a forged Forwarded header when X-Forwarded-Proto is also present and inconsistent.
   let proto = xff_chain.last().and_then(|entry| entry.proto.as_deref());
-  if let (Some(forwarded_proto), Some(proto)) = (forwarded.last().and_then(|entry| entry.proto.as_deref()), proto) {
-    if !forwarded_proto.eq_ignore_ascii_case(proto.trim()) {
-      return false;
-    }
+  let forwarded_proto = forwarded.last().and_then(|entry| entry.proto.as_deref());
+  if let Some(fp) = forwarded_proto && let Some(p) = proto && !fp.eq_ignore_ascii_case(p.trim()) {
+    return false;
   }
 
   true
