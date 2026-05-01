@@ -1,3 +1,14 @@
+//! Internal representation of the forwarding chain used by rpxy.
+//!
+//! The flow is:
+//! 1. Parse `Forwarded` and/or `X-Forwarded-*` into `ForwardedEntry`
+//! 2. Append the immediate peer as rpxy's authoritative latest hop
+//! 3. Trim trusted proxy hops from the right-hand side
+//! 4. Regenerate outgoing `X-Forwarded-*` / `Forwarded` from the normalized chain
+//!
+//! Keeping this representation in one place makes the trust-boundary logic
+//! easier to audit than passing partially parsed headers across multiple helpers.
+
 use anyhow::{Result, anyhow};
 use http::{HeaderMap, HeaderName, HeaderValue, Uri, header, header::AsHeaderName};
 use ipnet::IpNet;
@@ -30,17 +41,6 @@ fn overwrite_x_forwarded_host_from_original(
 /* --------------------------------------------------------------------------------------------------------- */
 /* Forwarding header normalization model                                                                   */
 /* --------------------------------------------------------------------------------------------------------- */
-
-/// Internal representation of the forwarding chain used by rpxy.
-///
-/// The flow is:
-/// 1. Parse `Forwarded` and/or `X-Forwarded-*` into `ForwardedEntry`
-/// 2. Append the immediate peer as rpxy's authoritative latest hop
-/// 3. Trim trusted proxy hops from the right-hand side
-/// 4. Regenerate outgoing `X-Forwarded-*` / `Forwarded` from the normalized chain
-///
-/// Keeping this representation in one place makes the trust-boundary logic
-/// easier to audit than passing partially parsed headers across multiple helpers.
 
 /// An entry in Forwarded header with only the parameters relevant for forwarding chain normalization and consistency check.
 #[derive(Clone, Debug, PartialEq, Eq)]
