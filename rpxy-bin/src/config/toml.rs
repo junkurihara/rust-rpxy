@@ -1,6 +1,6 @@
 use crate::{
   constants::*,
-  error::{anyhow, ensure},
+  error::{anyhow, bail, ensure},
   log::warn,
 };
 use ahash::HashMap;
@@ -278,16 +278,20 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       },
       ..Default::default()
     };
-    ensure!(
-      proxy_config.http_port.is_some() || proxy_config.https_port.is_some(),
-      anyhow!("Either/Both of http_port or https_port must be specified")
-    );
-    if proxy_config.http_port.is_some() && proxy_config.https_port.is_some() {
-      ensure!(
-        proxy_config.http_port.unwrap() != proxy_config.https_port.unwrap(),
-        anyhow!("http_port and https_port must be different")
-      );
+
+    match (proxy_config.http_port, proxy_config.https_port) {
+      (None, None) => {
+        bail!("Either/Both of http_port or https_port must be specified")
+      }
+      (Some(http_port), Some(https_port)) => {
+        ensure!(
+          http_port != https_port,
+          anyhow!("http_port and https_port must be different")
+        );
+      }
+      _ => {}
     }
+
     if self.https_redirection_port.is_some() {
       ensure!(
         proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
