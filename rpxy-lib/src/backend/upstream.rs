@@ -268,7 +268,7 @@ impl UpstreamCandidatesBuilder {
   /// Set the activated upstream options defined in [[UpstreamOption]]
   pub fn options(&mut self, v: &Option<Vec<String>>) -> &mut Self {
     let opts = v.as_ref().map_or_else(
-      || Default::default(),
+      Default::default,
       |opts| {
         opts
           .iter()
