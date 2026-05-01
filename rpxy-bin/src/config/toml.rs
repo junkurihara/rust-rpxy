@@ -546,11 +546,8 @@ impl Application {
         }
       }
 
-      let https_redirection = if tls.https_redirection.is_none() {
-        true // Default true
-      } else {
-        tls.https_redirection.unwrap()
-      };
+      // Default true
+      let https_redirection = tls.https_redirection.unwrap_or(true);
 
       Some(TlsConfig {
         mutual_tls: tls.client_ca_cert_path.is_some(),
