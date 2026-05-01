@@ -4,13 +4,17 @@ use crate::log::*;
 
 /// Remove connection header
 pub(in crate::message_handler) fn remove_connection_header(headers: &mut HeaderMap) {
-  if let Some(values) = headers.get(header::CONNECTION) {
-    if let Ok(v) = values.clone().to_str() {
-      let keys = v.split(',').map(|m| m.trim()).filter(|m| !m.is_empty());
-      for m in keys {
-        headers.remove(m);
-      }
-    }
+  let Some(values) = headers.get(header::CONNECTION).cloned() else {
+    return;
+  };
+
+  let Ok(v) = values.to_str() else {
+    return;
+  };
+
+  let keys = v.split(',').map(|m| m.trim()).filter(|m| !m.is_empty());
+  for m in keys {
+    headers.remove(m);
   }
 }
 
