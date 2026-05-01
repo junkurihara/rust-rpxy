@@ -195,10 +195,11 @@ impl LoadBalanceWithPointer for LoadBalancePrimaryBackup {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// Load Balancing Option
 pub enum LoadBalance {
   /// Fix to the first upstream. Use if only one upstream destination is specified
+  #[default]
   FixToFirst,
   /// Randomly chose one upstream server
   Random(LoadBalanceRandom),
@@ -210,11 +211,6 @@ pub enum LoadBalance {
   #[cfg(feature = "health-check")]
   /// Primary/Backup: always prefer the lowest-indexed healthy upstream
   PrimaryBackup(LoadBalancePrimaryBackup),
-}
-impl Default for LoadBalance {
-  fn default() -> Self {
-    Self::FixToFirst
-  }
 }
 
 impl LoadBalance {
