@@ -531,9 +531,7 @@ impl Application {
       .try_for_each(|rpc| validate_lb_health_check(server_name_string, rpc.load_balance.as_deref(), &rpc.health_check))?;
 
     // tls settings
-    let tls_config = if self.tls.is_some() {
-      let tls = self.tls.as_ref().unwrap();
-
+    let tls_config = if let Some(tls) = self.tls.as_ref() {
       #[cfg(not(feature = "acme"))]
       ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
 
