@@ -56,12 +56,10 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
 ) -> Result<()> {
   for opt in upstream.options.iter() {
     match opt {
-      UpstreamOption::SetUpstreamHost => {
-        // prioritize KeepOriginalHost
-        if !upstream.options.contains(&UpstreamOption::KeepOriginalHost) {
-          // overwrite host header, this removes all the HOST header values
-          override_host_header(headers, upstream_base_uri)?;
-        }
+      // prioritize KeepOriginalHost
+      UpstreamOption::SetUpstreamHost if !upstream.options.contains(&UpstreamOption::KeepOriginalHost) => {
+        // overwrite host header, this removes all the HOST header values
+        override_host_header(headers, upstream_base_uri)?;
       }
       UpstreamOption::UpgradeInsecureRequests => {
         // add upgrade-insecure-requests in request header if not exist
