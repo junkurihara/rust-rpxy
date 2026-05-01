@@ -135,20 +135,20 @@ async fn parse_v2_inbound(
   // PROXY command - extract source address
   match header.addresses {
     ppp::v2::Addresses::IPv4(ipv4) => {
-      let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::from(ipv4.source_address)), ipv4.source_port);
+      let src = SocketAddr::new(IpAddr::V4(ipv4.source_address), ipv4.source_port);
       trace!(
         "Parsed PROXY v2 IPv4 header: src={}, dst={}",
         src,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::from(ipv4.destination_address)), ipv4.destination_port)
+        SocketAddr::new(IpAddr::V4(ipv4.destination_address), ipv4.destination_port)
       );
       Ok(Some(src))
     }
     ppp::v2::Addresses::IPv6(ipv6) => {
-      let src = SocketAddr::new(IpAddr::V6(Ipv6Addr::from(ipv6.source_address)), ipv6.source_port);
+      let src = SocketAddr::new(IpAddr::V6(ipv6.source_address), ipv6.source_port);
       trace!(
         "Parsed PROXY v2 IPv6 header: src={}, dst={}",
         src,
-        SocketAddr::new(IpAddr::V6(Ipv6Addr::from(ipv6.destination_address)), ipv6.destination_port)
+        SocketAddr::new(IpAddr::V6(ipv6.destination_address), ipv6.destination_port)
       );
       Ok(Some(src))
     }
