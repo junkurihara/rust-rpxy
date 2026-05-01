@@ -4,7 +4,7 @@
 
 ### Important Changes
 
-- **Breaking: enable TLS 0-RTT by default** This improves security by encrypting the Server Name Indication (SNI) value used in TLS handshake for repeat visitors. This value contains the server / website hostname. You can disable this by setting the `tls_0rtt` option to `false`.
+- **Breaking: enable TLS 0-RTT by default** This improves performance by reducing round trips required during a TLS handshake from three to two for repeat visitors. However, this comes at the cost of a enabling a replay attack. Any web application should be idempotent to address this issue. You can disable this by setting the `tls_0rtt` option to `false`.
 
 ## 0.12.0 (To be released shortly)
 
