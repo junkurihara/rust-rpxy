@@ -62,7 +62,12 @@ pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> RpxyResult<TcpSocket
 /// Bind UDP socket to the given `SocketAddr`, and returns the UDP socket with `SO_REUSEADDR` and `SO_REUSEPORT` options.
 /// This option is required to re-bind the socket address when the proxy instance is reconstructed.
 pub(super) fn bind_udp_socket(listening_on: &SocketAddr) -> RpxyResult<UdpSocket> {
-  let domain = listening_on.is_ipv6().then(|| Domain::IPV6).unwrap_or(Domain::IPV4);
+  let domain = if listening_on.is_ipv6() {
+    Domain::IPV6
+  } else {
+    Domain::IPV4
+  };
+
   let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
   // address binding without dual stack
   if listening_on.is_ipv6() {
