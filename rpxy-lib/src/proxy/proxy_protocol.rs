@@ -1,5 +1,5 @@
 use crate::globals::TcpRecvProxyProtocolConfig;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use tokio::{io::AsyncReadExt, net::TcpStream};
 use tracing::{debug, trace};
 
