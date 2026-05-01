@@ -99,13 +99,14 @@ impl PathManager {
       .inner
       .iter()
       .filter(|(route_bytes, _)| {
-        path_name.starts_with(route_bytes) && {
-          route_bytes.len() == 1 // route = '/', i.e., default
-            || path_name.get(route_bytes.len()).map_or(
-              true, // exact case
-              |p| p == &b'/'
-            ) // sub-path case
-        }
+        let path_starts_with_route = path_name.starts_with(route_bytes);
+        let route_captures_path = route_bytes.len() == 1 // route = '/', i.e., default
+          // .get() returns None if path matches route exactly
+          || path_name.get(route_bytes.len()).is_none_or(
+            |p| p == &b'/' // sub-path case, path begins with '/' after route match
+          );
+
+        path_starts_with_route && route_captures_path
       })
       .max_by_key(|(route_bytes, _)| route_bytes.len());
     matched_upstream.map(|(path, u)| {
