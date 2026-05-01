@@ -113,11 +113,9 @@ impl Body for IncomingLike {
   fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
     self.want_tx.send(WANT_READY);
 
-    if !self.data_rx.is_terminated() {
-      if let Some(chunk) = ready!(Pin::new(&mut self.data_rx).poll_next(cx)?) {
-        self.content_length.sub_if(chunk.len() as u64);
-        return Poll::Ready(Some(Ok(Frame::data(chunk))));
-      }
+    if !self.data_rx.is_terminated() && let Some(chunk) = ready!(Pin::new(&mut self.data_rx).poll_next(cx)?) {
+      self.content_length.sub_if(chunk.len() as u64);
+      return Poll::Ready(Some(Ok(Frame::data(chunk))));
     }
 
     // check trailers after data is terminated
