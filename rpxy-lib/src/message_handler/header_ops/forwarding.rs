@@ -468,12 +468,12 @@ fn parse_forwarded_node(token: &str) -> Result<ForwardedNode> {
       raw: ForwardedNodeRaw::Unknown,
     });
   }
-  // RFC 7239 requires IPv6 literals with a port to be bracketed (e.g. `[2001:db8::1]:443`).
-  // Applying rsplit_once(':') unconditionally would mis-parse an unbracketed IPv6 such as
-  // `2001:db8::4711` as `ip=2001:db8::` + `port=4711`. So only split on ':' when the token
-  // is bracketed, or when it contains exactly one ':' (IPv4 / unknown / obfuscated).
-  if trimmed.starts_with('[') {
-    if let Some((node, port)) = trimmed.rsplit_once(':') {
+  if let Some((node, port)) = trimmed.rsplit_once(':') {
+    // RFC 7239 requires IPv6 literals with a port to be bracketed (e.g. `[2001:db8::1]:443`).
+    // Applying rsplit_once(':') unconditionally would mis-parse an unbracketed IPv6 such as
+    // `2001:db8::4711` as `ip=2001:db8::` + `port=4711`. So only split on ':' when the token
+    // is bracketed, or when it contains exactly one ':' (IPv4 / unknown / obfuscated).
+    if trimmed.starts_with('[') {
       if let Some(inner) = node.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
         let ip = canonicalize_ip(IpAddr::from_str(inner).map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?);
         return Ok(ForwardedNode {
@@ -482,9 +482,7 @@ fn parse_forwarded_node(token: &str) -> Result<ForwardedNode> {
           raw: ForwardedNodeRaw::Ip,
         });
       }
-    }
-  } else if trimmed.matches(':').count() == 1 {
-    if let Some((node, port)) = trimmed.rsplit_once(':') {
+    } else if trimmed.matches(':').count() == 1 {
       if node.eq_ignore_ascii_case("unknown") {
         return Ok(ForwardedNode {
           ip: None,
