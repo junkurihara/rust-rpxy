@@ -167,12 +167,10 @@ impl RpxyCache {
         hash: hash_bytes,
       };
 
-      if let Some((k, v)) = cache_manager.push(&cache_key, &cache_object)? {
-        if k != cache_key {
-          info!("Over the cache capacity. Evict least recent used entry");
-          if let CacheFileOrOnMemory::File(path) = v.target {
-            file_store.evict(&path).await;
-          }
+      if let Some((k, v)) = cache_manager.push(&cache_key, &cache_object)? && k != cache_key {
+        info!("Over the cache capacity. Evict least recent used entry");
+        if let CacheFileOrOnMemory::File(path) = v.target {
+          file_store.evict(&path).await;
         }
       }
       // store cache object to file
