@@ -594,7 +594,7 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
       let health_check = rpo
         .health_check
         .as_ref()
-        .map(|hc| build_health_check_config(hc, &_server_name_string))
+        .map(|hc| build_health_check_config(hc, _server_name_string))
         .transpose()?
         .flatten();
 
