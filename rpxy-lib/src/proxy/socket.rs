@@ -9,7 +9,12 @@ use tokio::net::TcpSocket;
 /// This option is required to re-bind the socket address when the proxy instance is reconstructed.
 /// Mostly imported from tokio::net::tcp::socket::TcpSocket
 pub(super) fn bind_tcp_socket(listening_on: &SocketAddr) -> RpxyResult<TcpSocket> {
-  let domain = listening_on.is_ipv6().then(|| Domain::IPV6).unwrap_or(Domain::IPV4);
+  let domain = if listening_on.is_ipv6() {
+    Domain::IPV6
+  } else {
+    Domain::IPV4
+  };
+
   let ty = Type::STREAM;
   #[cfg(any(
     target_os = "android",
