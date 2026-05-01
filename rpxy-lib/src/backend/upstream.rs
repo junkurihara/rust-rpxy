@@ -145,7 +145,7 @@ impl Upstream {
   pub fn is_healthy(&self) -> bool {
     #[cfg(feature = "health-check")]
     {
-      self.health.as_ref().map_or(true, |h| h.is_healthy())
+      self.health.as_ref().is_none_or(|h| h.is_healthy())
     }
     #[cfg(not(feature = "health-check"))]
     {
