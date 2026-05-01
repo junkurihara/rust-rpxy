@@ -170,10 +170,8 @@ pub async fn build_acme_manager(
     .0
     .values()
     .filter_map(|app| {
-      if let Some(tls) = app.tls.as_ref() {
-        if let Some(true) = tls.acme {
-          return Some(app.server_name.as_ref().unwrap().to_owned());
-        }
+      if let Some(tls) = app.tls.as_ref() && tls.acme == Some(true) {
+        return Some(app.server_name.as_ref().unwrap().to_owned());
       }
       None
     })
