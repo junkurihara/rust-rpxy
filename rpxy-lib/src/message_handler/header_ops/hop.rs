@@ -36,18 +36,20 @@ pub(in crate::message_handler) fn remove_hop_header(headers: &mut HeaderMap) {
 
 /// Extract upgrade header value if exist
 pub(in crate::message_handler) fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
-  if let Some(c) = headers.get(header::CONNECTION) {
-    if c
-      .to_str()
-      .unwrap_or("")
-      .split(',')
-      .any(|w| w.trim().eq_ignore_ascii_case(header::UPGRADE.as_str()))
-    {
-      if let Some(Ok(m)) = headers.get(header::UPGRADE).map(|u| u.to_str()) {
-        debug!("Upgrade in request header: {}", m);
-        return Some(m.to_owned());
-      }
-    }
+  let Ok(connection_header) = headers.get(header::CONNECTION)?.to_str() else {
+      return None;
+  };
+
+  let connection_header_contains_upgrade = connection_header.split(',')
+    .any(|w| w.trim().eq_ignore_ascii_case(header::UPGRADE.as_str()));
+  if !connection_header_contains_upgrade {
+      return None;
   }
+
+  if let Ok(m) = headers.get(header::UPGRADE)?.to_str() {
+    debug!("Upgrade in request header: {}", m);
+    return Some(m.to_owned());
+  }
+
   None
 }
