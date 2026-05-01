@@ -250,7 +250,7 @@ pub async fn entrypoint(
     .collect();
 
   #[cfg(feature = "health-check")]
-  let handles = health_checker_handles.into_iter().chain(proxy_handles.into_iter());
+  let handles = health_checker_handles.into_iter().chain(proxy_handles);
   #[cfg(not(feature = "health-check"))]
   let handles = proxy_handles.into_iter();
 
