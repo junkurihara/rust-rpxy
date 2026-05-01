@@ -69,24 +69,22 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
           .entry(header::UPGRADE_INSECURE_REQUESTS)
           .or_insert(HeaderValue::from_bytes(b"1").unwrap());
       }
-      UpstreamOption::ForwardedHeader => {
+      UpstreamOption::ForwardedHeader if !headers.contains_key(header::FORWARDED) => {
         // This is called after X-Forwarded-For is added to generate RFC 7239 Forwarded header from it.
         // If Forwarded already exists, it has already been normalized by add_forwarding_header().
-        if !headers.contains_key(header::FORWARDED) {
-          let authoritative_host = host_from_uri_or_host_header(original_uri, original_host_header).ok();
-          let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers, authoritative_host)? else {
-            warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
-            continue;
-          };
-          let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
-          match generate_forwarded_header(&normalized_chain) {
-            Ok(forwarded_value) => {
-              add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
-            }
-            Err(e) => {
-              // Log warning but don't fail the request if Forwarded generation fails
-              warn!("Failed to generate Forwarded header: {}", e);
-            }
+        let authoritative_host = host_from_uri_or_host_header(original_uri, original_host_header).ok();
+        let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers, authoritative_host)? else {
+          warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
+          continue;
+        };
+        let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
+        match generate_forwarded_header(&normalized_chain) {
+          Ok(forwarded_value) => {
+            add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
+          }
+          Err(e) => {
+            // Log warning but don't fail the request if Forwarded generation fails
+            warn!("Failed to generate Forwarded header: {}", e);
           }
         }
       }
