@@ -41,6 +41,20 @@ impl Body for RequestBody {
       RequestBody::IncomingLike(incoming_like) => Pin::new(incoming_like).poll_frame(cx),
     }
   }
+
+  fn is_end_stream(&self) -> bool {
+    match self {
+      RequestBody::Incoming(b) => b.is_end_stream(),
+      RequestBody::IncomingLike(b) => b.is_end_stream(),
+    }
+  }
+
+  fn size_hint(&self) -> hyper::body::SizeHint {
+    match self {
+      RequestBody::Incoming(b) => b.size_hint(),
+      RequestBody::IncomingLike(b) => b.size_hint(),
+    }
+  }
 }
 
 /* ------------------------------------ */

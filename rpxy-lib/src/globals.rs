@@ -184,6 +184,8 @@ pub struct ReverseProxyConfig {
   pub failover_on_connection_failure: Option<bool>,
   /// Maximum retry attempts (default: number of upstreams - 1)
   pub max_failover_retries: Option<usize>,
+  /// Opt-in to retry POST/PATCH methods (default false; only idempotent methods retry).
+  pub failover_non_idempotent_methods: Option<bool>,
   #[cfg(feature = "health-check")]
   pub health_check: Option<HealthCheckConfig>,
 }

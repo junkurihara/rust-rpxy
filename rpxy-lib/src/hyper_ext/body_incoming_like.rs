@@ -33,7 +33,7 @@ type TrailersSender = oneshot::Sender<HeaderMap>;
 
 const MAX_LEN: u64 = u64::MAX - 2;
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct DecodedLength(u64);
+pub(crate) struct DecodedLength(u64);
 impl DecodedLength {
   pub(crate) const CLOSE_DELIMITED: DecodedLength = DecodedLength(u64::MAX);
   pub(crate) const CHUNKED: DecodedLength = DecodedLength(u64::MAX - 1);

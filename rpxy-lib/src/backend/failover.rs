@@ -1,5 +1,8 @@
 use ahash::HashSet;
 
+/// Default HTTP status codes that trigger failover when no list is configured.
+const DEFAULT_TRIGGER_STATUSES: &[u16] = &[502, 503, 504];
+
 /// Configuration for failover behavior when upstreams return errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailoverConfig {
@@ -9,16 +12,10 @@ pub struct FailoverConfig {
   pub on_connection_failure: bool,
   /// Maximum number of retry attempts (default: number of upstreams - 1)
   pub max_retries: usize,
-}
-
-impl Default for FailoverConfig {
-  fn default() -> Self {
-    Self {
-      trigger_statuses: vec![502, 503, 504].into_iter().collect(),
-      on_connection_failure: true,
-      max_retries: 0,
-    }
-  }
+  /// Opt-in: retry non-idempotent methods (POST, PATCH). Default `false`. RFC 9110 §9.2.2 only
+  /// guarantees idempotency for GET/HEAD/PUT/DELETE/OPTIONS/TRACE; retrying others risks
+  /// double-write side effects when an upstream processes the request then fails the response.
+  pub retry_non_idempotent: bool,
 }
 
 impl FailoverConfig {
@@ -28,14 +25,16 @@ impl FailoverConfig {
     trigger_statuses: Option<Vec<u16>>,
     on_connection_failure: Option<bool>,
     max_retries: Option<usize>,
+    retry_non_idempotent: Option<bool>,
     num_upstreams: usize,
   ) -> Self {
-    let default_max_retries = num_upstreams.saturating_sub(1);
-
     Self {
-      trigger_statuses: trigger_statuses.unwrap_or_else(|| vec![502, 503, 504]).into_iter().collect(),
+      trigger_statuses: trigger_statuses
+        .map(|v| v.into_iter().collect())
+        .unwrap_or_else(|| DEFAULT_TRIGGER_STATUSES.iter().copied().collect()),
       on_connection_failure: on_connection_failure.unwrap_or(true),
-      max_retries: max_retries.unwrap_or(default_max_retries),
+      max_retries: max_retries.unwrap_or_else(|| num_upstreams.saturating_sub(1)),
+      retry_non_idempotent: retry_non_idempotent.unwrap_or(false),
     }
   }
 
@@ -97,44 +96,46 @@ mod tests {
   use super::*;
 
   #[test]
-  fn test_failover_config_default() {
-    let config = FailoverConfig::default();
+  fn test_failover_config_defaults() {
+    let config = FailoverConfig::new(None, None, None, None, 3);
     assert_eq!(config.trigger_statuses.len(), 3);
     assert!(config.trigger_statuses.contains(&502));
     assert!(config.trigger_statuses.contains(&503));
     assert!(config.trigger_statuses.contains(&504));
     assert!(config.on_connection_failure);
-    assert_eq!(config.max_retries, 0);
+    assert_eq!(config.max_retries, 2);
+    assert!(!config.retry_non_idempotent);
   }
 
   #[test]
-  fn test_failover_config_new() {
-    let config = FailoverConfig::new(Some(vec![404, 502]), Some(false), Some(2), 3);
+  fn test_failover_config_new_overrides() {
+    let config = FailoverConfig::new(Some(vec![404, 502]), Some(false), Some(2), Some(true), 3);
     assert_eq!(config.trigger_statuses.len(), 2);
     assert!(config.trigger_statuses.contains(&404));
     assert!(config.trigger_statuses.contains(&502));
     assert!(!config.on_connection_failure);
     assert_eq!(config.max_retries, 2);
+    assert!(config.retry_non_idempotent);
   }
 
   #[test]
-  fn test_failover_config_default_max_retries() {
-    let config = FailoverConfig::new(None, None, None, 3);
+  fn test_failover_config_default_max_retries_from_upstream_count() {
+    let config = FailoverConfig::new(None, None, None, None, 3);
     assert_eq!(config.max_retries, 2);
 
-    let config_zero = FailoverConfig::new(None, None, None, 0);
+    let config_zero = FailoverConfig::new(None, None, None, None, 0);
     assert_eq!(config_zero.max_retries, 0);
   }
 
   #[test]
   fn test_failover_config_validate() {
-    let valid = FailoverConfig::new(Some(vec![404, 502, 503]), None, None, 2);
+    let valid = FailoverConfig::new(Some(vec![404, 502, 503]), None, None, None, 2);
     assert!(valid.validate().is_ok());
 
-    let invalid_low = FailoverConfig::new(Some(vec![200, 502]), None, None, 2);
+    let invalid_low = FailoverConfig::new(Some(vec![200, 502]), None, None, None, 2);
     assert!(invalid_low.validate().is_err());
 
-    let invalid_high = FailoverConfig::new(Some(vec![600]), None, None, 2);
+    let invalid_high = FailoverConfig::new(Some(vec![600]), None, None, None, 2);
     assert!(invalid_high.validate().is_err());
   }
 

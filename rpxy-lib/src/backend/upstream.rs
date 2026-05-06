@@ -66,6 +66,7 @@ impl TryFrom<&AppConfig> for PathManager {
           &rpc.failover_on_statuses,
           &rpc.failover_on_connection_failure,
           &rpc.max_failover_retries,
+          &rpc.failover_non_idempotent_methods,
           upstream_vec.len(),
         );
 
@@ -300,11 +301,19 @@ impl UpstreamCandidatesBuilder {
     statuses: &Option<Vec<u16>>,
     on_connection_failure: &Option<bool>,
     max_retries: &Option<usize>,
+    retry_non_idempotent: &Option<bool>,
     num_upstreams: usize,
   ) -> &mut Self {
-    let any_option_specified = statuses.is_some() || on_connection_failure.is_some() || max_retries.is_some();
+    let any_option_specified =
+      statuses.is_some() || on_connection_failure.is_some() || max_retries.is_some() || retry_non_idempotent.is_some();
     if num_upstreams > 1 && any_option_specified {
-      let cfg = FailoverConfig::new(statuses.clone(), *on_connection_failure, *max_retries, num_upstreams);
+      let cfg = FailoverConfig::new(
+        statuses.clone(),
+        *on_connection_failure,
+        *max_retries,
+        *retry_non_idempotent,
+        num_upstreams,
+      );
       match cfg.validate() {
         Ok(()) => self.failover_config = Some(Some(cfg)),
         Err(e) => {
@@ -320,19 +329,25 @@ impl UpstreamCandidatesBuilder {
 }
 
 impl UpstreamCandidates {
-  /// Get an enabled option of load balancing [[LoadBalance]]
-  pub fn get(&self, context_to_lb: &Option<LoadBalanceContext>) -> (Option<&Upstream>, Option<LoadBalanceContext>) {
+  /// Pick an upstream via the configured load balancer, returning the chosen index, the
+  /// upstream itself, and the LB-emitted context (only meaningful for sticky-cookie LB,
+  /// which encodes the picked upstream into a Set-Cookie payload).
+  pub(crate) fn get_with_index(
+    &self,
+    context_to_lb: &Option<LoadBalanceContext>,
+  ) -> Option<(usize, &Upstream, Option<LoadBalanceContext>)> {
     let pointer_to_upstream = self.load_balance.get_context(context_to_lb, &self.inner);
     trace!("Upstream of index {} is chosen.", pointer_to_upstream.ptr);
     trace!("Context to LB (Cookie in Request): {:?}", context_to_lb);
     trace!("Context from LB (Set-Cookie in Response): {:?}", pointer_to_upstream.context);
-    (self.inner.get(pointer_to_upstream.ptr), pointer_to_upstream.context)
+    let upstream = self.inner.get(pointer_to_upstream.ptr)?;
+    Some((pointer_to_upstream.ptr, upstream, pointer_to_upstream.context))
   }
 
   /// Get the next untried upstream during failover. Iterates sequentially starting from
   /// `failover_ctx.initial_upstream_idx`, wrapping around. Returns `None` when every
   /// upstream has been tried.
-  pub fn get_next(&self, failover_ctx: &mut super::failover::FailoverContext) -> Option<(usize, &Upstream)> {
+  pub(crate) fn get_next(&self, failover_ctx: &mut super::failover::FailoverContext) -> Option<(usize, &Upstream)> {
     let len = self.inner.len();
     for offset in 0..len {
       let idx = (failover_ctx.initial_upstream_idx + offset) % len;
@@ -344,9 +359,17 @@ impl UpstreamCandidates {
     None
   }
 
-  /// Find the index of a given upstream in the candidates list (matched by URI).
-  pub fn find_upstream_index(&self, upstream: &Upstream) -> Option<usize> {
-    self.inner.iter().position(|u| u.uri == upstream.uri)
+  /// Build a load-balancer context (sticky-cookie payload) bound to a specific upstream
+  /// index. Used by the failover path to fix up Set-Cookie when failover redirects to a
+  /// different upstream than the cookie originally pinned. Returns `None` for non-sticky
+  /// load balancers (which don't emit Set-Cookie at all).
+  #[cfg(feature = "sticky-cookie")]
+  pub(crate) fn build_lb_context_for_index(&self, idx: usize) -> Option<LoadBalanceContext> {
+    if let LoadBalance::StickyRoundRobin(lb) = &self.load_balance {
+      lb.build_lb_context_for_index(idx)
+    } else {
+      None
+    }
   }
 }
 

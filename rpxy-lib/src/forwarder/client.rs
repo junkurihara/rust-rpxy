@@ -5,6 +5,7 @@ use crate::{
   hyper_ext::{body::ResponseBody, rt::LocalExecutor},
   log::*,
 };
+use ahash::HashSet;
 use async_trait::async_trait;
 use http::{Request, Response, Version};
 use hyper::body::{Body, Incoming};
@@ -13,6 +14,13 @@ use hyper_util::client::legacy::{
   connect::{Connect, HttpConnector},
 };
 use std::sync::Arc;
+
+/// Request extension marker carrying status codes whose responses must NOT be stored in
+/// the response cache. Used by the failover path to prevent caching of trigger statuses
+/// (e.g. 502/503/504) which would otherwise defeat retries on subsequent requests.
+#[derive(Clone)]
+#[allow(dead_code)] // only read when `cache` feature is enabled
+pub(crate) struct NoCacheStatuses(pub(crate) Arc<HashSet<u16>>);
 
 #[cfg(feature = "cache")]
 use super::cache::{RpxyCache, get_policy_if_cacheable};
@@ -46,6 +54,10 @@ where
     // TODO: cache handling
     #[cfg(feature = "cache")]
     {
+      // Snapshot the request's no-cache-statuses extension before consuming the request.
+      // The failover path inserts this so the cache layer skips storing trigger statuses
+      // (e.g. 502/503/504) — otherwise a poisoned cache would defeat retries.
+      let no_cache_statuses = req.extensions().get::<NoCacheStatuses>().cloned();
       let mut synth_req = None;
       if self.cache.is_some() {
         // try reading from cache
@@ -68,6 +80,16 @@ where
       let Ok(Some(cache_policy)) = get_policy_if_cacheable(synth_req.as_ref(), res.as_ref().ok()) else {
         return res.map(|inner| inner.map(ResponseBody::Incoming));
       };
+      // Skip cache storage if this response's status is in the request's no-cache list.
+      if let (Some(NoCacheStatuses(statuses)), Ok(response)) = (no_cache_statuses.as_ref(), res.as_ref())
+        && statuses.contains(&response.status().as_u16())
+      {
+        debug!(
+          "Skipping cache store for status {} (failover trigger status)",
+          response.status()
+        );
+        return res.map(|inner| inner.map(ResponseBody::Incoming));
+      }
       let (parts, body) = res.unwrap().into_parts();
 
       // Get streamed body without waiting for the arrival of the body,

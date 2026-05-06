@@ -107,6 +107,15 @@ impl<'a> LoadBalanceSticky {
       context: new_context,
     }
   }
+
+  /// Build a fresh sticky-cookie context bound to the given upstream index. Used by the
+  /// failover path to ensure the Set-Cookie returned to the client encodes the upstream
+  /// that actually served the response, not the one originally picked from the cookie.
+  pub(crate) fn build_lb_context_for_index(&self, idx: usize) -> Option<LoadBalanceContext> {
+    let upstream_id = self.upstream_maps.upstream_index_map.get(idx)?.to_owned();
+    let cookie = self.sticky_config.build_sticky_cookie(upstream_id).ok()?;
+    Some(LoadBalanceContext { sticky_cookie: cookie })
+  }
 }
 impl LoadBalanceWithPointer for LoadBalanceSticky {
   /// Get the pointer to the upstream server to serve the incoming request.

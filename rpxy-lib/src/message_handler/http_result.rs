@@ -38,8 +38,6 @@ pub enum HttpError {
   // NoUpgradeExtensionInResponse,
   #[error("All upstreams failed during failover")]
   AllUpstreamsFailed,
-  #[error("Request body too large to buffer for failover retry")]
-  RequestBodyTooLargeForRetry,
   #[error(transparent)]
   Other(#[from] anyhow::Error),
 }
@@ -61,7 +59,6 @@ impl From<HttpError> for StatusCode {
       // HttpError::NoUpgradeExtensionInRequest => StatusCode::BAD_REQUEST,
       // HttpError::NoUpgradeExtensionInResponse => StatusCode::BAD_GATEWAY,
       HttpError::AllUpstreamsFailed => StatusCode::BAD_GATEWAY,
-      HttpError::RequestBodyTooLargeForRetry => StatusCode::BAD_GATEWAY,
       _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
   }

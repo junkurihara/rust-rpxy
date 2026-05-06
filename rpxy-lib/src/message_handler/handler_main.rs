@@ -8,25 +8,39 @@ use super::{
 use crate::{
   backend::{BackendAppManager, FailoverContext, LoadBalanceContext, UpstreamCandidates},
   error::*,
-  forwarder::{ForwardRequest, Forwarder},
+  forwarder::{ForwardRequest, Forwarder, NoCacheStatuses},
   globals::Globals,
   hyper_ext::body::{DecodedLength, IncomingLike, RequestBody, ResponseBody},
   log::*,
   name_exp::ServerName,
 };
+use ahash::HashSet;
 use derive_builder::Builder;
-use http::{Request, Response, StatusCode, header};
-use http_body_util::BodyExt;
-use hyper::body::Bytes;
+use http::{HeaderMap, Method, Request, Response, StatusCode, header};
+use http_body_util::{BodyExt, Limited};
+use hyper::body::{Body, Bytes};
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
 
+/// Captured request body and trailers after buffering. Used by the failover loop to
+/// reconstruct a fresh request for each attempt.
+enum BufferedBody {
+  /// No body to buffer (e.g. GET, HEAD, DELETE without body).
+  Empty,
+  /// Body fully captured. Trailers preserved so gRPC and other trailer-bearing requests
+  /// don't lose data on replay.
+  Replayable { bytes: Bytes, trailers: Option<HeaderMap> },
+}
+
 #[allow(dead_code)]
 #[derive(Debug)]
-/// Context object to handle sticky cookies at HTTP message handler
+/// Context object returned by `generate_request_forwarded`. Carries:
+/// - `context_lb`: sticky-cookie context to set as Set-Cookie on the response (None for non-sticky LB).
+/// - `chosen_upstream_idx`: which upstream slot was selected, so the failover path can track tried upstreams without round-tripping through URI matching.
 pub(super) struct HandlerContext {
   pub(super) context_lb: Option<LoadBalanceContext>,
+  pub(super) chosen_upstream_idx: usize,
 }
 
 #[derive(Clone, Builder)]
@@ -155,22 +169,27 @@ where
     // `generate_request_forwarded` can force-overwrite `Host` after the usual header pass.
     let fallback_host = fallback_to_default_app.then_some(&backend_app.server_name);
 
-    // Determine whether failover is eligible for this request. Failover requires the request
-    // body (if any) to be small and replayable; we therefore disable it for HTTP upgrades
-    // (WebSocket / H2C) and for requests whose body is chunked or larger than the buffer cap.
-    let body_too_large_or_chunked = is_body_unbufferable(&req);
-    let should_use_failover = upstream_candidates.failover_config.is_some()
+    // Determine whether failover is eligible for this request. Failover requires:
+    // - failover config present, multiple upstreams, no HTTP upgrade in flight
+    // - the request method must be idempotent unless explicitly opted into via
+    //   `failover_non_idempotent_methods` (RFC 9110 §9.2.2)
+    // - the body must be replayable (size_hint upper bounded and within `MAX_BUFFERED_BODY_SIZE`)
+    // Cheap checks come first so we only scan headers / size hints when the route is a candidate.
+    let should_use_failover = upstream_candidates
+      .failover_config
+      .as_ref()
+      .is_some_and(|cfg| cfg.retry_non_idempotent || is_idempotent_method(req.method()))
       && upstream_candidates.inner.len() > 1
       && upgrade_in_request.is_none()
-      && !body_too_large_or_chunked;
+      && !is_body_unbufferable(&req);
 
     let (mut res_backend, _context_lb) = if should_use_failover {
       debug!("Failover eligible for this request");
-      let (req_parts, buffered_body) = self.buffer_request_body(req).await?;
+      let (req_parts, buffered) = self.buffer_request_body(req).await?;
       self
         .request_with_failover(
           req_parts,
-          buffered_body,
+          buffered,
           upstream_candidates,
           &client_addr,
           &listen_addr,
@@ -191,6 +210,7 @@ where
           upstream_candidates,
           tls_enabled,
           fallback_host,
+          None, // let the load balancer pick
         )
         .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
 
@@ -274,48 +294,82 @@ where
   }
 
   /// Collect the request body into memory so it can be replayed on failover retries.
-  /// Returns `(parts, Some(bytes))` for normal-sized bodies and `(parts, None)` for the
-  /// edge case of a body that grows past `MAX_BUFFERED_BODY_SIZE` only after collection
-  /// begins (e.g. a chunked body that lied about its size). Callers are expected to have
-  /// already filtered chunked / oversized bodies out via `is_body_unbufferable`.
-  async fn buffer_request_body(&self, req: Request<RequestBody>) -> HttpResult<(http::request::Parts, Option<Bytes>)> {
+  /// Wraps the body in `Limited` so collection aborts early if the body exceeds
+  /// `MAX_BUFFERED_BODY_SIZE` — this prevents a malicious client from OOM-ing the proxy
+  /// by sending an unbounded body whose declared size hint understated the actual length.
+  /// Trailers (e.g. for gRPC over HTTP/2) are captured and replayed on each attempt.
+  async fn buffer_request_body(&self, req: Request<RequestBody>) -> HttpResult<(http::request::Parts, BufferedBody)> {
     let (parts, body) = req.into_parts();
-    let collected = body
-      .collect()
-      .await
-      .map_err(|e| HttpError::Other(anyhow::anyhow!("Failed to collect request body for failover: {e}")))?
-      .to_bytes();
-    if collected.len() > crate::constants::MAX_BUFFERED_BODY_SIZE {
-      debug!(
-        "Request body collected to {} bytes, exceeds {} byte buffer cap; failover disabled for this request",
-        collected.len(),
-        crate::constants::MAX_BUFFERED_BODY_SIZE
-      );
-      return Ok((parts, None));
+    // Fast path: known-empty body (Content-Length: 0 or methods without bodies). Skip
+    // collection entirely so common GET/HEAD requests don't allocate.
+    if body.is_end_stream() {
+      return Ok((parts, BufferedBody::Empty));
     }
-    Ok((parts, Some(collected)))
+    let limited = Limited::new(body, crate::constants::MAX_BUFFERED_BODY_SIZE);
+    let collected = match limited.collect().await {
+      Ok(c) => c,
+      Err(e) => {
+        // Limited's error is opaque; either the body grew past the cap or the underlying
+        // body errored. In both cases the body is unrecoverable — we cannot stream-fallback
+        // because the body is already partially consumed. Surface as a 502 to the client.
+        debug!(
+          "Failed to buffer request body for failover (likely exceeded {} bytes): {e}",
+          crate::constants::MAX_BUFFERED_BODY_SIZE
+        );
+        return Err(HttpError::Other(anyhow::anyhow!(
+          "Request body exceeded buffer cap or stream errored: {e}"
+        )));
+      }
+    };
+    let trailers = collected.trailers().cloned();
+    let bytes = collected.to_bytes();
+    Ok((parts, BufferedBody::Replayable { bytes, trailers }))
   }
 
-  /// Reconstruct a request from the saved parts and a buffered body, producing a fresh
-  /// `RequestBody::IncomingLike` body for each retry attempt.
-  fn reconstruct_request(&self, parts: &http::request::Parts, body_bytes: Bytes) -> HttpResult<Request<RequestBody>> {
-    let len = body_bytes.len() as u64;
-    let (mut tx, rx) = IncomingLike::new_channel(DecodedLength::new(len), false);
-    // The channel buffer holds one pending Bytes send; try_send avoids needing await here.
-    tx.try_send_data(body_bytes)
-      .map_err(|_| HttpError::Other(anyhow::anyhow!("Failed to enqueue buffered body for retry")))?;
-    drop(tx); // close the channel — only one frame plus terminator will be observed
-    Ok(Request::from_parts(parts.clone(), RequestBody::IncomingLike(rx)))
+  /// Reconstruct a request from the saved parts and the buffered body, producing a fresh
+  /// `RequestBody::IncomingLike` body for each retry attempt. Trailers (if captured) are
+  /// replayed via the IncomingLike trailers channel so gRPC and other trailer-aware
+  /// upstreams receive a well-formed request.
+  async fn reconstruct_request(&self, parts: &http::request::Parts, buffered: &BufferedBody) -> HttpResult<Request<RequestBody>> {
+    let body = match buffered {
+      BufferedBody::Empty => {
+        let (_tx, rx) = IncomingLike::new_channel(DecodedLength::ZERO, false);
+        RequestBody::IncomingLike(rx)
+      }
+      BufferedBody::Replayable { bytes, trailers } => {
+        let len = bytes.len() as u64;
+        let (mut tx, rx) = IncomingLike::new_channel(DecodedLength::new(len), false);
+        tx.try_send_data(bytes.clone())
+          .map_err(|_| HttpError::Other(anyhow::anyhow!("Failed to enqueue buffered body for retry")))?;
+        if let Some(t) = trailers {
+          tx.send_trailers(t.clone())
+            .await
+            .map_err(|e| HttpError::Other(anyhow::anyhow!("Failed to enqueue trailers for retry: {e}")))?;
+        }
+        drop(tx);
+        RequestBody::IncomingLike(rx)
+      }
+    };
+    Ok(Request::from_parts(parts.clone(), body))
   }
 
-  /// Drive the retry loop across upstream candidates. Returns the last response (success or
-  /// final failure) plus the load-balancer context produced during the final attempt — so
-  /// the caller can still apply sticky-cookie handling to the response.
+  /// Drive the retry loop across upstream candidates.
+  ///
+  /// Attempt 0 lets the load balancer pick (so sticky-cookie / round-robin behave
+  /// normally on the first try). After attempt 0 the chosen upstream's index is recorded
+  /// in `failover_ctx` and subsequent attempts iterate sequentially through untried
+  /// upstreams, calling `generate_request_forwarded` with the preselected upstream so
+  /// the URI, Host header (when `set_upstream_host` is enabled), and Set-Cookie all
+  /// reflect the upstream that's actually being targeted.
+  ///
+  /// Returns the last response (success or final triggered failure) plus the
+  /// load-balancer context to apply to the response (so Set-Cookie tracks the upstream
+  /// that actually served the request, not the originally-cookie-pinned one).
   #[allow(clippy::too_many_arguments)]
   async fn request_with_failover(
     &self,
     req_parts: http::request::Parts,
-    buffered_body: Option<Bytes>,
+    buffered: BufferedBody,
     upstream_candidates: &UpstreamCandidates,
     client_addr: &SocketAddr,
     listen_addr: &SocketAddr,
@@ -329,51 +383,39 @@ where
       .as_ref()
       .expect("failover_config must be Some when entering request_with_failover");
 
-    // Probe the load balancer once to find the initial upstream index. The actual
-    // per-attempt request will call generate_request_forwarded again, which itself
-    // re-invokes the load balancer; for retries (attempt > 0) we override the URI
-    // explicitly to point at the failover-selected upstream.
-    let (initial_upstream_opt, _initial_lb_ctx) = upstream_candidates.get(&None);
-    let initial_upstream = initial_upstream_opt.ok_or(HttpError::NoUpstreamCandidates)?;
-    let initial_idx = upstream_candidates
-      .find_upstream_index(initial_upstream)
-      .ok_or(HttpError::NoUpstreamCandidates)?;
-
-    let mut failover_ctx = FailoverContext::new(initial_idx);
+    // Snapshot trigger statuses behind an Arc so we can cheaply attach them to each
+    // outgoing request as a NoCacheStatuses extension — the cache layer reads this and
+    // skips storing responses whose status would otherwise poison the cache for retries.
+    let no_cache_statuses: Arc<HashSet<u16>> = Arc::new(failover_config.trigger_statuses.clone());
     let max_retries = failover_config.max_retries.min(upstream_candidates.inner.len() - 1);
 
     debug!(
-      "Failover starting: initial_upstream_idx={}, max_retries={}, trigger_statuses={:?}, on_connection_failure={}",
-      initial_idx, max_retries, failover_config.trigger_statuses, failover_config.on_connection_failure
+      "Failover starting: max_retries={}, trigger_statuses={:?}, on_connection_failure={}, retry_non_idempotent={}",
+      max_retries, failover_config.trigger_statuses, failover_config.on_connection_failure, failover_config.retry_non_idempotent,
     );
 
+    // initial_upstream_idx is filled in after attempt 0 returns (we don't pre-probe).
+    let mut failover_ctx = FailoverContext::new(0);
     let mut last_response: Option<Response<ResponseBody>> = None;
     let mut last_lb_context: Option<LoadBalanceContext> = None;
     let mut attempt: usize = 0;
 
     loop {
-      let Some((upstream_idx, _upstream)) = upstream_candidates.get_next(&mut failover_ctx) else {
-        break;
-      };
-
-      // Build a fresh request for this attempt. If we have a buffered body we replay it
-      // through a new IncomingLike channel; if not we cannot retry safely beyond attempt 0.
-      let req = match (&buffered_body, attempt) {
-        (Some(bytes), _) => self.reconstruct_request(&req_parts, bytes.clone())?,
-        (None, 0) => {
-          // Body collection produced a too-large payload, so failover is effectively disabled.
-          // Issue a single attempt with an empty body. (Callers normally prevent this branch
-          // via is_body_unbufferable, but defend against it anyway.)
-          let (_tx, rx) = IncomingLike::new_channel(DecodedLength::ZERO, false);
-          Request::from_parts(req_parts.clone(), RequestBody::IncomingLike(rx))
-        }
-        (None, _) => {
-          warn!("Cannot retry failover attempt {attempt}: request body was not buffered");
-          break;
+      // Decide which upstream this attempt targets.
+      let preselected = if attempt == 0 {
+        None // let the LB pick — respects sticky cookie / round-robin normally
+      } else {
+        match upstream_candidates.get_next(&mut failover_ctx) {
+          Some(p) => Some(p),
+          None => break, // every upstream has been tried
         }
       };
 
-      let mut forwarded_req = req;
+      let mut forwarded_req = self.reconstruct_request(&req_parts, &buffered).await?;
+      forwarded_req
+        .extensions_mut()
+        .insert(NoCacheStatuses(no_cache_statuses.clone()));
+
       let handler_context = self
         .generate_request_forwarded(
           client_addr,
@@ -383,40 +425,16 @@ where
           upstream_candidates,
           tls_enabled,
           fallback_host,
+          preselected,
         )
         .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
+      let chosen_idx = handler_context.chosen_upstream_idx;
 
-      // For retries (attempt > 0) override the URI to point at the failover-selected
-      // upstream, since generate_request_forwarded re-asks the load balancer and may not
-      // pick the same index we are tracking. Note: Host header rewriting (e.g. the
-      // `set_upstream_host` option) still reflects the load balancer's pick — this matches
-      // the documented limitation that header rewriting is not reapplied per retry.
-      if attempt > 0 {
-        let upstream = &upstream_candidates.inner[upstream_idx];
-        let original_pq = forwarded_req
-          .uri()
-          .path_and_query()
-          .map(|pq| pq.as_str().to_owned())
-          .unwrap_or_else(|| "/".to_owned());
-        let scheme = upstream
-          .uri
-          .scheme()
-          .ok_or_else(|| HttpError::Other(anyhow::anyhow!("Upstream missing scheme")))?
-          .as_str()
-          .to_owned();
-        let authority = upstream
-          .uri
-          .authority()
-          .ok_or_else(|| HttpError::Other(anyhow::anyhow!("Upstream missing authority")))?
-          .as_str()
-          .to_owned();
-        let new_uri = http::Uri::builder()
-          .scheme(scheme.as_str())
-          .authority(authority.as_str())
-          .path_and_query(original_pq.as_str())
-          .build()
-          .map_err(|e| HttpError::Other(anyhow::anyhow!("Failed to rebuild URI for retry: {e}")))?;
-        *forwarded_req.uri_mut() = new_uri;
+      // Anchor failover_ctx at the LB-picked upstream after attempt 0, then mark it
+      // tried so subsequent get_next calls iterate from there to the rest.
+      if attempt == 0 {
+        failover_ctx.initial_upstream_idx = chosen_idx;
+        failover_ctx.mark_tried(chosen_idx);
       }
 
       log_data.xff(&forwarded_req.headers().get(header_defs::X_FORWARDED_FOR));
@@ -424,8 +442,8 @@ where
 
       debug!(
         "Failover attempt {} -> upstream[{}]: {}",
-        failover_ctx.retry_count + 1,
-        upstream_idx,
+        attempt + 1,
+        chosen_idx,
         forwarded_req.uri()
       );
 
@@ -435,22 +453,32 @@ where
           if failover_config.trigger_statuses.contains(&status.as_u16()) {
             warn!(
               "Upstream[{}] returned status {} matching failover triggers; will retry next upstream",
-              upstream_idx, status
+              chosen_idx, status
             );
+            // Drain the previously-captured trigger response (if any) so its connection
+            // can be returned to the keep-alive pool instead of being closed.
+            if let Some(prev) = last_response.take() {
+              self.spawn_drain_response(prev);
+            }
             last_response = Some(response);
             last_lb_context = handler_context.context_lb;
           } else {
+            // Success — drain any captured trigger response before returning.
+            if let Some(prev) = last_response.take() {
+              self.spawn_drain_response(prev);
+            }
             return Ok((response, handler_context.context_lb));
           }
         }
         Err(e) => {
           if failover_config.on_connection_failure {
-            warn!(
-              "Upstream[{}] connection failed: {}; will retry next upstream",
-              upstream_idx, e
-            );
+            warn!("Upstream[{}] connection failed: {}; will retry next upstream", chosen_idx, e);
             last_lb_context = handler_context.context_lb;
           } else {
+            // Drain any pending trigger response before bailing out.
+            if let Some(prev) = last_response.take() {
+              self.spawn_drain_response(prev);
+            }
             return Err(HttpError::FailedToGetResponseFromBackend(e.to_string()));
           }
         }
@@ -468,12 +496,28 @@ where
       .map(|r| (r, last_lb_context))
       .ok_or(HttpError::AllUpstreamsFailed)
   }
+
+  /// Drain a discarded response body in the background so the underlying upstream
+  /// connection can be returned to the keep-alive pool. Without this, dropping a
+  /// partially-read response causes hyper to close the connection — bad under
+  /// sustained partial-failure load against already-sick upstreams.
+  fn spawn_drain_response(&self, res: Response<ResponseBody>) {
+    self.globals.runtime_handle.spawn(async move {
+      let (_, body) = res.into_parts();
+      let _ = body.collect().await;
+    });
+  }
 }
 
 /// Returns true when the request body cannot safely be buffered for failover retries.
-/// This is the case for chunked-encoded bodies (size unknown until fully collected) and
-/// for requests whose declared `Content-Length` exceeds `MAX_BUFFERED_BODY_SIZE`.
-fn is_body_unbufferable<B>(req: &Request<B>) -> bool {
+///
+/// Uses two complementary signals:
+/// 1. `Transfer-Encoding: chunked` (HTTP/1.1) — chunked size is unknown ahead of time.
+/// 2. `Body::size_hint().upper()` — handles HTTP/1.0 close-delimited (None upper),
+///    HTTP/2 / HTTP/3 streamed without END_STREAM-known length (None upper), and
+///    declared sizes above `MAX_BUFFERED_BODY_SIZE`. This is the authoritative check
+///    for non-HTTP/1.1 traffic where the chunked header doesn't apply.
+fn is_body_unbufferable<B: Body>(req: &Request<B>) -> bool {
   let chunked = req
     .headers()
     .get(header::TRANSFER_ENCODING)
@@ -482,10 +526,77 @@ fn is_body_unbufferable<B>(req: &Request<B>) -> bool {
   if chunked {
     return true;
   }
-  req
-    .headers()
-    .get(header::CONTENT_LENGTH)
-    .and_then(|v| v.to_str().ok())
-    .and_then(|s| s.parse::<usize>().ok())
-    .is_some_and(|len| len > crate::constants::MAX_BUFFERED_BODY_SIZE)
+  match req.body().size_hint().upper() {
+    None => true,
+    Some(n) => n as usize > crate::constants::MAX_BUFFERED_BODY_SIZE,
+  }
+}
+
+/// RFC 9110 §9.2.2 lists the methods whose semantics make repeated invocation safe.
+/// Failover retries for non-idempotent methods (POST, PATCH, etc.) require explicit
+/// opt-in via `failover_non_idempotent_methods` because the upstream may have
+/// processed the side effect before responding.
+fn is_idempotent_method(method: &Method) -> bool {
+  matches!(
+    *method,
+    Method::GET | Method::HEAD | Method::PUT | Method::DELETE | Method::OPTIONS | Method::TRACE
+  )
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use http_body_util::{Empty, Full};
+
+  fn req_with_body<B>(method: Method, headers: &[(&str, &str)], body: B) -> Request<B> {
+    let mut b = Request::builder().method(method).uri("http://example.com/");
+    for (k, v) in headers {
+      b = b.header(*k, *v);
+    }
+    b.body(body).unwrap()
+  }
+
+  #[test]
+  fn idempotent_methods_match_rfc_9110() {
+    for m in [
+      Method::GET,
+      Method::HEAD,
+      Method::PUT,
+      Method::DELETE,
+      Method::OPTIONS,
+      Method::TRACE,
+    ] {
+      assert!(is_idempotent_method(&m), "{m} should be idempotent");
+    }
+    for m in [Method::POST, Method::PATCH] {
+      assert!(!is_idempotent_method(&m), "{m} should not be idempotent");
+    }
+  }
+
+  #[test]
+  fn unbufferable_chunked_transfer_encoding() {
+    let r = req_with_body(Method::POST, &[("transfer-encoding", "chunked")], Empty::<Bytes>::new());
+    assert!(is_body_unbufferable(&r));
+    let r = req_with_body(Method::POST, &[("transfer-encoding", "gzip, chunked")], Empty::<Bytes>::new());
+    assert!(is_body_unbufferable(&r));
+    let r = req_with_body(Method::POST, &[("transfer-encoding", "CHUNKED")], Empty::<Bytes>::new());
+    assert!(is_body_unbufferable(&r));
+  }
+
+  #[test]
+  fn unbufferable_falls_through_to_size_hint() {
+    // Empty body has size_hint upper Some(0) — bufferable.
+    let r = req_with_body(Method::GET, &[], Empty::<Bytes>::new());
+    assert!(!is_body_unbufferable(&r));
+
+    // Full body within cap — bufferable.
+    let small = Bytes::from_static(b"hi");
+    let r = req_with_body(Method::POST, &[], Full::new(small));
+    assert!(!is_body_unbufferable(&r));
+
+    // Full body over cap — unbufferable.
+    let big = Bytes::from(vec![0u8; crate::constants::MAX_BUFFERED_BODY_SIZE + 1]);
+    let r = req_with_body(Method::POST, &[], Full::new(big));
+    assert!(is_body_unbufferable(&r));
+  }
 }

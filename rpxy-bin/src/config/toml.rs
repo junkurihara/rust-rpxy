@@ -234,6 +234,10 @@ pub struct ReverseProxyOption {
   pub failover_on_connection_failure: Option<bool>,
   /// Maximum failover retry attempts per request. Defaults to `upstream.len() - 1`.
   pub max_failover_retries: Option<usize>,
+  /// Opt-in: enable failover for non-idempotent methods (POST, PATCH).
+  /// Default `false` — only idempotent methods (GET/HEAD/PUT/DELETE/OPTIONS/TRACE) retry.
+  /// Risk of double-charge / double-write if upstream processed the side effect before responding.
+  pub failover_non_idempotent_methods: Option<bool>,
   #[cfg(feature = "health-check")]
   pub health_check: Option<HealthCheckOption>,
 }
@@ -625,6 +629,7 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
         failover_on_statuses: rpo.failover_on_statuses.clone(),
         failover_on_connection_failure: rpo.failover_on_connection_failure,
         max_failover_retries: rpo.max_failover_retries,
+        failover_non_idempotent_methods: rpo.failover_non_idempotent_methods,
         #[cfg(feature = "health-check")]
         health_check,
       })
@@ -1092,6 +1097,7 @@ mod tests {
         failover_on_statuses: None,
         failover_on_connection_failure: None,
         max_failover_retries: None,
+        failover_non_idempotent_methods: None,
         #[cfg(feature = "health-check")]
         health_check: None,
       }]),

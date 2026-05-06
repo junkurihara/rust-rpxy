@@ -1,6 +1,6 @@
 use super::{HttpMessageHandler, handler_main::HandlerContext, header_ops::*, request_ops::update_request_line};
 use crate::{
-  backend::{BackendApp, UpstreamCandidates},
+  backend::{BackendApp, Upstream, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
   log::*,
   name_exp::ServerName,
@@ -63,6 +63,13 @@ where
   /// fallback path. In that case the incoming `Host` is untrusted and will be force-overwritten
   /// with the given authoritative value. `X-Forwarded-Host` is rebuilt separately by
   /// `add_forwarding_header()` as part of the general forwarding-header policy.
+  ///
+  /// `preselected_upstream`: when `Some((idx, upstream))`, skip the load-balancer call entirely
+  /// and route this request to the named upstream. The sticky-cookie payload returned via
+  /// `HandlerContext::context_lb` is recomputed against `idx` so any Set-Cookie sent back to
+  /// the client encodes the upstream that actually served the request — important for the
+  /// failover path where retries may target a different upstream than the cookie originally
+  /// pinned. When `None`, the load balancer picks normally.
   pub(super) fn generate_request_forwarded<B>(
     &self,
     client_addr: &SocketAddr,
@@ -72,6 +79,7 @@ where
     upstream_candidates: &UpstreamCandidates,
     tls_enabled: bool,
     fallback_host: Option<&ServerName>,
+    preselected_upstream: Option<(usize, &Upstream)>,
   ) -> Result<HandlerContext> {
     trace!("Generate request to be forwarded");
 
@@ -117,25 +125,39 @@ where
     };
 
     /////////////////////////////////////////////
-    // Fix unique upstream destination since there could be multiple ones.
+    // Always remove the sticky cookie from request headers so we don't forward it upstream.
+    // For the LB-picks-upstream path this gives us the cookie to feed back to the LB; for
+    // the preselected path we discard the cookie value (the caller is overriding the LB).
     #[cfg(feature = "sticky-cookie")]
-    let (upstream_chosen_opt, context_from_lb) = {
-      let context_to_lb = if let crate::backend::LoadBalance::StickyRoundRobin(lb) = &upstream_candidates.load_balance {
-        takeout_sticky_cookie_lb_context(req.headers_mut(), &lb.sticky_config.name)?
-      } else {
-        None
-      };
-      upstream_candidates.get(&context_to_lb)
+    let context_to_lb = if let crate::backend::LoadBalance::StickyRoundRobin(lb) = &upstream_candidates.load_balance {
+      takeout_sticky_cookie_lb_context(req.headers_mut(), &lb.sticky_config.name)?
+    } else {
+      None
     };
-    #[cfg(not(feature = "sticky-cookie"))]
-    let (upstream_chosen_opt, _) = upstream_candidates.get(&None);
 
-    let upstream_chosen = upstream_chosen_opt.ok_or_else(|| anyhow!("Failed to get upstream"))?;
+    let (upstream_chosen, context_from_lb, chosen_idx): (&Upstream, Option<crate::backend::LoadBalanceContext>, usize) =
+      match preselected_upstream {
+        Some((idx, upstream)) => {
+          // Skip the load-balancer call. Compute a fresh sticky-cookie payload bound to
+          // the preselected upstream so Set-Cookie tracks where the request actually goes.
+          #[cfg(feature = "sticky-cookie")]
+          let context = upstream_candidates.build_lb_context_for_index(idx);
+          #[cfg(not(feature = "sticky-cookie"))]
+          let context = None;
+          (upstream, context, idx)
+        }
+        None => {
+          #[cfg(feature = "sticky-cookie")]
+          let picked = upstream_candidates.get_with_index(&context_to_lb);
+          #[cfg(not(feature = "sticky-cookie"))]
+          let picked = upstream_candidates.get_with_index(&None);
+          let (idx, upstream, ctx) = picked.ok_or_else(|| anyhow!("Failed to get upstream"))?;
+          (upstream, ctx, idx)
+        }
+      };
     let context = HandlerContext {
-      #[cfg(feature = "sticky-cookie")]
       context_lb: context_from_lb,
-      #[cfg(not(feature = "sticky-cookie"))]
-      context_lb: None,
+      chosen_upstream_idx: chosen_idx,
     };
     /////////////////////////////////////////////
 
