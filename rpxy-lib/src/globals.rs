@@ -178,6 +178,12 @@ pub struct ReverseProxyConfig {
   pub upstream: Vec<UpstreamUri>,
   pub upstream_options: Option<Vec<String>>,
   pub load_balance: Option<String>,
+  /// HTTP status codes that trigger upstream failover (e.g. [502, 503, 504])
+  pub failover_on_statuses: Option<Vec<u16>>,
+  /// Whether to failover on connection failures (timeout, refused, etc.)
+  pub failover_on_connection_failure: Option<bool>,
+  /// Maximum retry attempts (default: number of upstreams - 1)
+  pub max_failover_retries: Option<usize>,
   #[cfg(feature = "health-check")]
   pub health_check: Option<HealthCheckConfig>,
 }

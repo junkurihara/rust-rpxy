@@ -6,16 +6,18 @@ use super::{
   synthetic_response::{secure_redirection_response, synthetic_error_response},
 };
 use crate::{
-  backend::{BackendAppManager, LoadBalanceContext},
+  backend::{BackendAppManager, FailoverContext, LoadBalanceContext, UpstreamCandidates},
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
-  hyper_ext::body::{RequestBody, ResponseBody},
+  hyper_ext::body::{DecodedLength, IncomingLike, RequestBody, ResponseBody},
   log::*,
   name_exp::ServerName,
 };
 use derive_builder::Builder;
-use http::{Request, Response, StatusCode};
+use http::{Request, Response, StatusCode, header};
+use http_body_util::BodyExt;
+use hyper::body::Bytes;
 use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
@@ -153,42 +155,67 @@ where
     // `generate_request_forwarded` can force-overwrite `Host` after the usual header pass.
     let fallback_host = fallback_to_default_app.then_some(&backend_app.server_name);
 
-    // Build request from destination information
-    let _context = self
-      .generate_request_forwarded(
-        &client_addr,
-        &listen_addr,
-        &mut req,
-        &upgrade_in_request,
-        upstream_candidates,
-        tls_enabled,
-        fallback_host,
-      )
-      .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
+    // Determine whether failover is eligible for this request. Failover requires the request
+    // body (if any) to be small and replayable; we therefore disable it for HTTP upgrades
+    // (WebSocket / H2C) and for requests whose body is chunked or larger than the buffer cap.
+    let body_too_large_or_chunked = is_body_unbufferable(&req);
+    let should_use_failover = upstream_candidates.failover_config.is_some()
+      && upstream_candidates.inner.len() > 1
+      && upgrade_in_request.is_none()
+      && !body_too_large_or_chunked;
 
-    debug!(
-      "Request to be forwarded: [uri {}, method: {}, version {:?}, headers {:?}]",
-      req.uri(),
-      req.method(),
-      req.version(),
-      req.headers()
-    );
-    log_data.xff(&req.headers().get(header_defs::X_FORWARDED_FOR));
-    log_data.upstream(req.uri());
-    //////
+    let (mut res_backend, _context_lb) = if should_use_failover {
+      debug!("Failover eligible for this request");
+      let (req_parts, buffered_body) = self.buffer_request_body(req).await?;
+      self
+        .request_with_failover(
+          req_parts,
+          buffered_body,
+          upstream_candidates,
+          &client_addr,
+          &listen_addr,
+          tls_enabled,
+          &upgrade_in_request,
+          fallback_host,
+          log_data,
+        )
+        .await?
+    } else {
+      // Single-attempt path: no body buffering, request body streams directly to upstream.
+      let handler_context = self
+        .generate_request_forwarded(
+          &client_addr,
+          &listen_addr,
+          &mut req,
+          &upgrade_in_request,
+          upstream_candidates,
+          tls_enabled,
+          fallback_host,
+        )
+        .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
 
-    //////////////
-    // Forward request to a chosen backend
-    let mut res_backend = self
-      .forwarder
-      .request(req)
-      .await
-      .map_err(|e| HttpError::FailedToGetResponseFromBackend(e.to_string()))?;
+      debug!(
+        "Request to be forwarded: [uri {}, method: {}, version {:?}, headers {:?}]",
+        req.uri(),
+        req.method(),
+        req.version(),
+        req.headers()
+      );
+      log_data.xff(&req.headers().get(header_defs::X_FORWARDED_FOR));
+      log_data.upstream(req.uri());
+
+      let res = self
+        .forwarder
+        .request(req)
+        .await
+        .map_err(|e| HttpError::FailedToGetResponseFromBackend(e.to_string()))?;
+      (res, handler_context.context_lb)
+    };
 
     //////////////
     // Process reverse proxy context generated during the forwarding request generation.
     #[cfg(feature = "sticky-cookie")]
-    if let Some(context_from_lb) = _context.context_lb {
+    if let Some(context_from_lb) = _context_lb {
       let res_headers = res_backend.headers_mut();
       if let Err(e) = set_sticky_cookie_lb_context(res_headers, &context_from_lb) {
         return Err(HttpError::FailedToAddSetCookeInResponse(e.to_string()));
@@ -245,4 +272,220 @@ where
 
     Ok(res_backend)
   }
+
+  /// Collect the request body into memory so it can be replayed on failover retries.
+  /// Returns `(parts, Some(bytes))` for normal-sized bodies and `(parts, None)` for the
+  /// edge case of a body that grows past `MAX_BUFFERED_BODY_SIZE` only after collection
+  /// begins (e.g. a chunked body that lied about its size). Callers are expected to have
+  /// already filtered chunked / oversized bodies out via `is_body_unbufferable`.
+  async fn buffer_request_body(&self, req: Request<RequestBody>) -> HttpResult<(http::request::Parts, Option<Bytes>)> {
+    let (parts, body) = req.into_parts();
+    let collected = body
+      .collect()
+      .await
+      .map_err(|e| HttpError::Other(anyhow::anyhow!("Failed to collect request body for failover: {e}")))?
+      .to_bytes();
+    if collected.len() > crate::constants::MAX_BUFFERED_BODY_SIZE {
+      debug!(
+        "Request body collected to {} bytes, exceeds {} byte buffer cap; failover disabled for this request",
+        collected.len(),
+        crate::constants::MAX_BUFFERED_BODY_SIZE
+      );
+      return Ok((parts, None));
+    }
+    Ok((parts, Some(collected)))
+  }
+
+  /// Reconstruct a request from the saved parts and a buffered body, producing a fresh
+  /// `RequestBody::IncomingLike` body for each retry attempt.
+  fn reconstruct_request(&self, parts: &http::request::Parts, body_bytes: Bytes) -> HttpResult<Request<RequestBody>> {
+    let len = body_bytes.len() as u64;
+    let (mut tx, rx) = IncomingLike::new_channel(DecodedLength::new(len), false);
+    // The channel buffer holds one pending Bytes send; try_send avoids needing await here.
+    tx.try_send_data(body_bytes)
+      .map_err(|_| HttpError::Other(anyhow::anyhow!("Failed to enqueue buffered body for retry")))?;
+    drop(tx); // close the channel — only one frame plus terminator will be observed
+    Ok(Request::from_parts(parts.clone(), RequestBody::IncomingLike(rx)))
+  }
+
+  /// Drive the retry loop across upstream candidates. Returns the last response (success or
+  /// final failure) plus the load-balancer context produced during the final attempt — so
+  /// the caller can still apply sticky-cookie handling to the response.
+  #[allow(clippy::too_many_arguments)]
+  async fn request_with_failover(
+    &self,
+    req_parts: http::request::Parts,
+    buffered_body: Option<Bytes>,
+    upstream_candidates: &UpstreamCandidates,
+    client_addr: &SocketAddr,
+    listen_addr: &SocketAddr,
+    tls_enabled: bool,
+    upgrade: &Option<String>,
+    fallback_host: Option<&ServerName>,
+    log_data: &mut HttpMessageLog,
+  ) -> HttpResult<(Response<ResponseBody>, Option<LoadBalanceContext>)> {
+    let failover_config = upstream_candidates
+      .failover_config
+      .as_ref()
+      .expect("failover_config must be Some when entering request_with_failover");
+
+    // Probe the load balancer once to find the initial upstream index. The actual
+    // per-attempt request will call generate_request_forwarded again, which itself
+    // re-invokes the load balancer; for retries (attempt > 0) we override the URI
+    // explicitly to point at the failover-selected upstream.
+    let (initial_upstream_opt, _initial_lb_ctx) = upstream_candidates.get(&None);
+    let initial_upstream = initial_upstream_opt.ok_or(HttpError::NoUpstreamCandidates)?;
+    let initial_idx = upstream_candidates
+      .find_upstream_index(initial_upstream)
+      .ok_or(HttpError::NoUpstreamCandidates)?;
+
+    let mut failover_ctx = FailoverContext::new(initial_idx);
+    let max_retries = failover_config.max_retries.min(upstream_candidates.inner.len() - 1);
+
+    debug!(
+      "Failover starting: initial_upstream_idx={}, max_retries={}, trigger_statuses={:?}, on_connection_failure={}",
+      initial_idx, max_retries, failover_config.trigger_statuses, failover_config.on_connection_failure
+    );
+
+    let mut last_response: Option<Response<ResponseBody>> = None;
+    let mut last_lb_context: Option<LoadBalanceContext> = None;
+    let mut attempt: usize = 0;
+
+    loop {
+      let Some((upstream_idx, _upstream)) = upstream_candidates.get_next(&mut failover_ctx) else {
+        break;
+      };
+
+      // Build a fresh request for this attempt. If we have a buffered body we replay it
+      // through a new IncomingLike channel; if not we cannot retry safely beyond attempt 0.
+      let req = match (&buffered_body, attempt) {
+        (Some(bytes), _) => self.reconstruct_request(&req_parts, bytes.clone())?,
+        (None, 0) => {
+          // Body collection produced a too-large payload, so failover is effectively disabled.
+          // Issue a single attempt with an empty body. (Callers normally prevent this branch
+          // via is_body_unbufferable, but defend against it anyway.)
+          let (_tx, rx) = IncomingLike::new_channel(DecodedLength::ZERO, false);
+          Request::from_parts(req_parts.clone(), RequestBody::IncomingLike(rx))
+        }
+        (None, _) => {
+          warn!("Cannot retry failover attempt {attempt}: request body was not buffered");
+          break;
+        }
+      };
+
+      let mut forwarded_req = req;
+      let handler_context = self
+        .generate_request_forwarded(
+          client_addr,
+          listen_addr,
+          &mut forwarded_req,
+          upgrade,
+          upstream_candidates,
+          tls_enabled,
+          fallback_host,
+        )
+        .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
+
+      // For retries (attempt > 0) override the URI to point at the failover-selected
+      // upstream, since generate_request_forwarded re-asks the load balancer and may not
+      // pick the same index we are tracking. Note: Host header rewriting (e.g. the
+      // `set_upstream_host` option) still reflects the load balancer's pick — this matches
+      // the documented limitation that header rewriting is not reapplied per retry.
+      if attempt > 0 {
+        let upstream = &upstream_candidates.inner[upstream_idx];
+        let original_pq = forwarded_req
+          .uri()
+          .path_and_query()
+          .map(|pq| pq.as_str().to_owned())
+          .unwrap_or_else(|| "/".to_owned());
+        let scheme = upstream
+          .uri
+          .scheme()
+          .ok_or_else(|| HttpError::Other(anyhow::anyhow!("Upstream missing scheme")))?
+          .as_str()
+          .to_owned();
+        let authority = upstream
+          .uri
+          .authority()
+          .ok_or_else(|| HttpError::Other(anyhow::anyhow!("Upstream missing authority")))?
+          .as_str()
+          .to_owned();
+        let new_uri = http::Uri::builder()
+          .scheme(scheme.as_str())
+          .authority(authority.as_str())
+          .path_and_query(original_pq.as_str())
+          .build()
+          .map_err(|e| HttpError::Other(anyhow::anyhow!("Failed to rebuild URI for retry: {e}")))?;
+        *forwarded_req.uri_mut() = new_uri;
+      }
+
+      log_data.xff(&forwarded_req.headers().get(header_defs::X_FORWARDED_FOR));
+      log_data.upstream(forwarded_req.uri());
+
+      debug!(
+        "Failover attempt {} -> upstream[{}]: {}",
+        failover_ctx.retry_count + 1,
+        upstream_idx,
+        forwarded_req.uri()
+      );
+
+      match self.forwarder.request(forwarded_req).await {
+        Ok(response) => {
+          let status = response.status();
+          if failover_config.trigger_statuses.contains(&status.as_u16()) {
+            warn!(
+              "Upstream[{}] returned status {} matching failover triggers; will retry next upstream",
+              upstream_idx, status
+            );
+            last_response = Some(response);
+            last_lb_context = handler_context.context_lb;
+          } else {
+            return Ok((response, handler_context.context_lb));
+          }
+        }
+        Err(e) => {
+          if failover_config.on_connection_failure {
+            warn!(
+              "Upstream[{}] connection failed: {}; will retry next upstream",
+              upstream_idx, e
+            );
+            last_lb_context = handler_context.context_lb;
+          } else {
+            return Err(HttpError::FailedToGetResponseFromBackend(e.to_string()));
+          }
+        }
+      }
+
+      if !failover_ctx.can_retry(max_retries) {
+        debug!("Failover max_retries ({}) reached", max_retries);
+        break;
+      }
+      attempt += 1;
+      failover_ctx.increment_retry();
+    }
+
+    last_response
+      .map(|r| (r, last_lb_context))
+      .ok_or(HttpError::AllUpstreamsFailed)
+  }
+}
+
+/// Returns true when the request body cannot safely be buffered for failover retries.
+/// This is the case for chunked-encoded bodies (size unknown until fully collected) and
+/// for requests whose declared `Content-Length` exceeds `MAX_BUFFERED_BODY_SIZE`.
+fn is_body_unbufferable<B>(req: &Request<B>) -> bool {
+  let chunked = req
+    .headers()
+    .get(header::TRANSFER_ENCODING)
+    .and_then(|v| v.to_str().ok())
+    .is_some_and(|s| s.to_ascii_lowercase().split(',').any(|t| t.trim() == "chunked"));
+  if chunked {
+    return true;
+  }
+  req
+    .headers()
+    .get(header::CONTENT_LENGTH)
+    .and_then(|v| v.to_str().ok())
+    .and_then(|s| s.parse::<usize>().ok())
+    .is_some_and(|len| len > crate::constants::MAX_BUFFERED_BODY_SIZE)
 }

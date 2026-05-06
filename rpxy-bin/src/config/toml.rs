@@ -228,6 +228,12 @@ pub struct ReverseProxyOption {
   pub upstream: Vec<UpstreamParams>,
   pub upstream_options: Option<Vec<String>>,
   pub load_balance: Option<String>,
+  /// HTTP status codes that trigger failover to the next upstream (e.g. [502, 503, 504]).
+  pub failover_on_statuses: Option<Vec<u16>>,
+  /// Whether to failover when the upstream connection itself fails (timeout, refused, etc.).
+  pub failover_on_connection_failure: Option<bool>,
+  /// Maximum failover retry attempts per request. Defaults to `upstream.len() - 1`.
+  pub max_failover_retries: Option<usize>,
   #[cfg(feature = "health-check")]
   pub health_check: Option<HealthCheckOption>,
 }
@@ -590,6 +596,18 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
       }
       let upstream = upstream_res.into_iter().map(|v| v.unwrap()).collect();
 
+      // Validate failover trigger status codes if present
+      if let Some(ref statuses) = rpo.failover_on_statuses {
+        for &status in statuses {
+          ensure!(
+            (400..600).contains(&status),
+            "[{}] failover_on_statuses contains {} which is not in the 400-599 range",
+            &_server_name_string,
+            status
+          );
+        }
+      }
+
       #[cfg(feature = "health-check")]
       let health_check = rpo
         .health_check
@@ -604,6 +622,9 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
         upstream,
         upstream_options: rpo.upstream_options.clone(),
         load_balance: rpo.load_balance.clone(),
+        failover_on_statuses: rpo.failover_on_statuses.clone(),
+        failover_on_connection_failure: rpo.failover_on_connection_failure,
+        max_failover_retries: rpo.max_failover_retries,
         #[cfg(feature = "health-check")]
         health_check,
       })
@@ -1068,6 +1089,9 @@ mod tests {
         upstream: vec![],
         upstream_options: None,
         load_balance: None,
+        failover_on_statuses: None,
+        failover_on_connection_failure: None,
+        max_failover_retries: None,
         #[cfg(feature = "health-check")]
         health_check: None,
       }]),

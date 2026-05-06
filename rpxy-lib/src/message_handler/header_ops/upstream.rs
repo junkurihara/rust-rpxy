@@ -127,6 +127,7 @@ mod tests {
       replace_path: None,
       load_balance: LoadBalance::default(),
       options: HashSet::from_iter([UpstreamOption::ForwardedHeader]),
+      failover_config: None,
       #[cfg(feature = "health-check")]
       health_check_config: None,
     };
@@ -192,6 +193,7 @@ mod tests {
       replace_path: None,
       load_balance: LoadBalance::default(),
       options: HashSet::from_iter([UpstreamOption::SetUpstreamHost]),
+      failover_config: None,
       #[cfg(feature = "health-check")]
       health_check_config: None,
     };
@@ -226,6 +228,7 @@ mod tests {
       replace_path: None,
       load_balance: LoadBalance::default(),
       options: HashSet::from_iter([UpstreamOption::SetUpstreamHost, UpstreamOption::KeepOriginalHost]),
+      failover_config: None,
       #[cfg(feature = "health-check")]
       health_check_config: None,
     };
