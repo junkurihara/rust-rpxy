@@ -29,13 +29,24 @@ It is not backed by any commercial contract or SLA. Contributions are therefore 
   - Ensure code is formatted with `cargo fmt`.
   - Run tests with `cargo test` and confirm they pass.
   - Keep commits clean and focused.
-- Large changes should be discussed in an Issue or Discussion before a PR is submitted.
+- **Large behavioral or architectural changes should be discussed in an Issue or Discussion before a PR is submitted.**
+- **A large PR without prior design agreement may be closed even if the implementation itself is substantial.**
 
-### 4. Documentation improvements
+### 4. AI-assisted contributions
+
+AI-assisted contributions are generally allowed, but **the contributor is fully responsible for the submitted changes**. Contributors are expected to **minimize unnecessary maintainer burden** by providing clear rationale, focused changes, and sufficient code-level explanation of the changed parts for review.
+
+Please do not submit generated patches that you cannot personally explain and justify. You should understand every non-trivial part of the change, including its design rationale, behavior, interactions with existing features, and trade-offs.
+
+Large AI-generated or AI-assisted patches are not acceptable as a substitute for prior design discussion. Changes that affect core proxy behavior, configuration semantics, load balancing, health checks, caching, TLS handling, request/response streaming, or other major components must be discussed first in an Issue or Discussion before submitting an implementation PR.
+
+Maintainers should not be asked to reverse-engineer, validate, or debug a large generated patch without a clear design rationale and prior agreement on the direction.
+
+### 5. Documentation improvements
 
 - Fixing typos, clarifying explanations, and improving examples are always appreciated.
 
-### 5. Security reports
+### 6. Security reports
 
 - Do **not** open public Issues for security vulnerabilities.
 - Please report them via [GitHub's Private vulnerability reporting](../../security/advisories/new).
