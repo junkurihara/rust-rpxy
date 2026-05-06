@@ -50,7 +50,7 @@ jobs:
             dockerfile: ./docker/Dockerfile
             build-args: |
               "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,rustls-backend,acme,post-quantum"
-              "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
+              "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang-dev gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n"
             # Aliases must be used only for release builds
@@ -87,7 +87,7 @@ jobs:
             dockerfile: ./docker/Dockerfile
             build-args: |
               "CARGO_FEATURES=--no-default-features --features=http3-s2n,cache,webpki-roots,acme,post-quantum"
-              "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang1 gcc g++"
+              "ADDITIONAL_DEPS=pkg-config libssl-dev cmake libclang-dev gcc g++"
             platforms: linux/amd64,linux/arm64
             tags-suffix: "-s2n-webpki-roots"
             # Aliases must be used only for release builds
