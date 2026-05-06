@@ -54,9 +54,8 @@ where
     // TODO: cache handling
     #[cfg(feature = "cache")]
     {
-      // Snapshot the request's no-cache-statuses extension before consuming the request.
-      // The failover path inserts this so the cache layer skips storing trigger statuses
-      // (e.g. 502/503/504) — otherwise a poisoned cache would defeat retries.
+      // Snapshot before consuming the request; the failover path inserts this to
+      // prevent trigger statuses (e.g. 502/503/504) from poisoning the cache.
       let no_cache_statuses = req.extensions().get::<NoCacheStatuses>().cloned();
       let mut synth_req = None;
       if self.cache.is_some() {

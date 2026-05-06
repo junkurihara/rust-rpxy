@@ -1,4 +1,5 @@
 use ahash::HashSet;
+use std::sync::Arc;
 
 /// Default HTTP status codes that trigger failover when no list is configured.
 const DEFAULT_TRIGGER_STATUSES: &[u16] = &[502, 503, 504];
@@ -6,8 +7,10 @@ const DEFAULT_TRIGGER_STATUSES: &[u16] = &[502, 503, 504];
 /// Configuration for failover behavior when upstreams return errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailoverConfig {
-  /// HTTP status codes that trigger failover (e.g., 502, 503, 504)
-  pub trigger_statuses: HashSet<u16>,
+  /// HTTP status codes that trigger failover (e.g., 502, 503, 504). Wrapped in `Arc` so
+  /// the failover path can attach it to per-attempt request extensions without cloning
+  /// the underlying set on every request.
+  pub trigger_statuses: Arc<HashSet<u16>>,
   /// Whether to failover on connection failures (timeout, refused, etc.)
   pub on_connection_failure: bool,
   /// Maximum number of retry attempts (default: number of upstreams - 1)
@@ -28,10 +31,11 @@ impl FailoverConfig {
     retry_non_idempotent: Option<bool>,
     num_upstreams: usize,
   ) -> Self {
+    let statuses: HashSet<u16> = trigger_statuses
+      .map(|v| v.into_iter().collect())
+      .unwrap_or_else(|| DEFAULT_TRIGGER_STATUSES.iter().copied().collect());
     Self {
-      trigger_statuses: trigger_statuses
-        .map(|v| v.into_iter().collect())
-        .unwrap_or_else(|| DEFAULT_TRIGGER_STATUSES.iter().copied().collect()),
+      trigger_statuses: Arc::new(statuses),
       on_connection_failure: on_connection_failure.unwrap_or(true),
       max_retries: max_retries.unwrap_or_else(|| num_upstreams.saturating_sub(1)),
       retry_non_idempotent: retry_non_idempotent.unwrap_or(false),
@@ -40,7 +44,7 @@ impl FailoverConfig {
 
   /// Validate that status codes are in the 4xx/5xx range
   pub fn validate(&self) -> Result<(), String> {
-    for &status in &self.trigger_statuses {
+    for &status in self.trigger_statuses.iter() {
       if !(400..600).contains(&status) {
         return Err(format!("Failover status code {status} must be in range 400-599"));
       }

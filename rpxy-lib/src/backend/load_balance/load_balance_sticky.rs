@@ -85,7 +85,7 @@ impl<'a> LoadBalanceSticky {
     pick_nth_available_index(upstreams, count)
   }
 
-  /// This is always called only internally. So 'unwrap()' is executed.
+  #[cfg(test)]
   fn get_server_id_from_index(&self, index: usize) -> String {
     self.upstream_maps.upstream_index_map.get(index).unwrap().to_owned()
   }
@@ -97,20 +97,16 @@ impl<'a> LoadBalanceSticky {
 
   /// Build a PointerToUpstream with a new cookie context for the given index
   fn build_ptr_with_new_cookie(&self, ptr: usize) -> PointerToUpstream {
-    let upstream_id = self.get_server_id_from_index(ptr);
-    let new_cookie = self.sticky_config.build_sticky_cookie(upstream_id).unwrap();
-    let new_context = Some(LoadBalanceContext {
-      sticky_cookie: new_cookie,
-    });
     PointerToUpstream {
       ptr,
-      context: new_context,
+      context: self.build_lb_context_for_index(ptr),
     }
   }
 
-  /// Build a fresh sticky-cookie context bound to the given upstream index. Used by the
-  /// failover path to ensure the Set-Cookie returned to the client encodes the upstream
-  /// that actually served the response, not the one originally picked from the cookie.
+  /// Build a fresh sticky-cookie context bound to the given upstream index. Returns
+  /// `None` if the index is out of range or the cookie can't be built. Used internally
+  /// for fresh LB picks and externally by the failover path so Set-Cookie tracks the
+  /// upstream that actually served the response (not the one originally pinned).
   pub(crate) fn build_lb_context_for_index(&self, idx: usize) -> Option<LoadBalanceContext> {
     let upstream_id = self.upstream_maps.upstream_index_map.get(idx)?.to_owned();
     let cookie = self.sticky_config.build_sticky_cookie(upstream_id).ok()?;

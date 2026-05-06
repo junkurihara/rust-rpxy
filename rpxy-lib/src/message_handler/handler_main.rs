@@ -14,7 +14,6 @@ use crate::{
   log::*,
   name_exp::ServerName,
 };
-use ahash::HashSet;
 use derive_builder::Builder;
 use http::{HeaderMap, Method, Request, Response, StatusCode, header};
 use http_body_util::{BodyExt, Limited};
@@ -23,14 +22,11 @@ use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
 
-/// Captured request body and trailers after buffering. Used by the failover loop to
-/// reconstruct a fresh request for each attempt.
-enum BufferedBody {
-  /// No body to buffer (e.g. GET, HEAD, DELETE without body).
-  Empty,
-  /// Body fully captured. Trailers preserved so gRPC and other trailer-bearing requests
-  /// don't lose data on replay.
-  Replayable { bytes: Bytes, trailers: Option<HeaderMap> },
+/// Captured request body and trailers, replayed by the failover loop on each attempt.
+/// Trailers preserved so gRPC and other trailer-bearing requests don't lose data.
+struct BufferedBody {
+  bytes: Bytes,
+  trailers: Option<HeaderMap>,
 }
 
 #[allow(dead_code)]
@@ -169,12 +165,8 @@ where
     // `generate_request_forwarded` can force-overwrite `Host` after the usual header pass.
     let fallback_host = fallback_to_default_app.then_some(&backend_app.server_name);
 
-    // Determine whether failover is eligible for this request. Failover requires:
-    // - failover config present, multiple upstreams, no HTTP upgrade in flight
-    // - the request method must be idempotent unless explicitly opted into via
-    //   `failover_non_idempotent_methods` (RFC 9110 §9.2.2)
-    // - the body must be replayable (size_hint upper bounded and within `MAX_BUFFERED_BODY_SIZE`)
-    // Cheap checks come first so we only scan headers / size hints when the route is a candidate.
+    // Eligibility: failover config present, multiple upstreams, no HTTP upgrade,
+    // idempotent method (unless `retry_non_idempotent` opt-in), and a replayable body.
     let should_use_failover = upstream_candidates
       .failover_config
       .as_ref()
@@ -294,63 +286,53 @@ where
   }
 
   /// Collect the request body into memory so it can be replayed on failover retries.
-  /// Wraps the body in `Limited` so collection aborts early if the body exceeds
-  /// `MAX_BUFFERED_BODY_SIZE` — this prevents a malicious client from OOM-ing the proxy
-  /// by sending an unbounded body whose declared size hint understated the actual length.
-  /// Trailers (e.g. for gRPC over HTTP/2) are captured and replayed on each attempt.
+  /// `Limited` aborts collection if the body exceeds `MAX_BUFFERED_BODY_SIZE`, defending
+  /// against clients that under-declare their size hint.
   async fn buffer_request_body(&self, req: Request<RequestBody>) -> HttpResult<(http::request::Parts, BufferedBody)> {
     let (parts, body) = req.into_parts();
-    // Fast path: known-empty body (Content-Length: 0 or methods without bodies). Skip
-    // collection entirely so common GET/HEAD requests don't allocate.
+    // Skip allocation for known-empty bodies (GET/HEAD/Content-Length: 0).
     if body.is_end_stream() {
-      return Ok((parts, BufferedBody::Empty));
+      return Ok((
+        parts,
+        BufferedBody {
+          bytes: Bytes::new(),
+          trailers: None,
+        },
+      ));
     }
     let limited = Limited::new(body, crate::constants::MAX_BUFFERED_BODY_SIZE);
-    let collected = match limited.collect().await {
-      Ok(c) => c,
-      Err(e) => {
-        // Limited's error is opaque; either the body grew past the cap or the underlying
-        // body errored. In both cases the body is unrecoverable — we cannot stream-fallback
-        // because the body is already partially consumed. Surface as a 502 to the client.
-        debug!(
-          "Failed to buffer request body for failover (likely exceeded {} bytes): {e}",
-          crate::constants::MAX_BUFFERED_BODY_SIZE
-        );
-        return Err(HttpError::Other(anyhow::anyhow!(
-          "Request body exceeded buffer cap or stream errored: {e}"
-        )));
-      }
-    };
+    // Limited::collect errors when the body grows past the cap (or the underlying body
+    // errors). Either way the body is unrecoverable — we cannot fall back to streaming
+    // because it's already partially consumed. Surface as a 502.
+    let collected = limited.collect().await.map_err(|e| {
+      debug!(
+        "Failed to buffer request body for failover (likely exceeded {} bytes): {e}",
+        crate::constants::MAX_BUFFERED_BODY_SIZE
+      );
+      HttpError::Other(anyhow::anyhow!("Request body exceeded buffer cap or stream errored: {e}"))
+    })?;
     let trailers = collected.trailers().cloned();
     let bytes = collected.to_bytes();
-    Ok((parts, BufferedBody::Replayable { bytes, trailers }))
+    Ok((parts, BufferedBody { bytes, trailers }))
   }
 
-  /// Reconstruct a request from the saved parts and the buffered body, producing a fresh
-  /// `RequestBody::IncomingLike` body for each retry attempt. Trailers (if captured) are
-  /// replayed via the IncomingLike trailers channel so gRPC and other trailer-aware
-  /// upstreams receive a well-formed request.
+  /// Reconstruct a request from saved parts and the buffered body, producing a fresh
+  /// `RequestBody::IncomingLike` body each call. Trailers (if any) are replayed so
+  /// gRPC and other trailer-aware upstreams see a well-formed request.
   async fn reconstruct_request(&self, parts: &http::request::Parts, buffered: &BufferedBody) -> HttpResult<Request<RequestBody>> {
-    let body = match buffered {
-      BufferedBody::Empty => {
-        let (_tx, rx) = IncomingLike::new_channel(DecodedLength::ZERO, false);
-        RequestBody::IncomingLike(rx)
-      }
-      BufferedBody::Replayable { bytes, trailers } => {
-        let len = bytes.len() as u64;
-        let (mut tx, rx) = IncomingLike::new_channel(DecodedLength::new(len), false);
-        tx.try_send_data(bytes.clone())
-          .map_err(|_| HttpError::Other(anyhow::anyhow!("Failed to enqueue buffered body for retry")))?;
-        if let Some(t) = trailers {
-          tx.send_trailers(t.clone())
-            .await
-            .map_err(|e| HttpError::Other(anyhow::anyhow!("Failed to enqueue trailers for retry: {e}")))?;
-        }
-        drop(tx);
-        RequestBody::IncomingLike(rx)
-      }
-    };
-    Ok(Request::from_parts(parts.clone(), body))
+    let len = buffered.bytes.len() as u64;
+    let (mut tx, rx) = IncomingLike::new_channel(DecodedLength::new(len), false);
+    if !buffered.bytes.is_empty() {
+      tx.try_send_data(buffered.bytes.clone())
+        .map_err(|_| HttpError::Other(anyhow::anyhow!("Failed to enqueue buffered body for retry")))?;
+    }
+    if let Some(t) = &buffered.trailers {
+      tx.send_trailers(t.clone())
+        .await
+        .map_err(|e| HttpError::Other(anyhow::anyhow!("Failed to enqueue trailers for retry: {e}")))?;
+    }
+    drop(tx);
+    Ok(Request::from_parts(parts.clone(), RequestBody::IncomingLike(rx)))
   }
 
   /// Drive the retry loop across upstream candidates.
@@ -383,10 +365,9 @@ where
       .as_ref()
       .expect("failover_config must be Some when entering request_with_failover");
 
-    // Snapshot trigger statuses behind an Arc so we can cheaply attach them to each
-    // outgoing request as a NoCacheStatuses extension — the cache layer reads this and
-    // skips storing responses whose status would otherwise poison the cache for retries.
-    let no_cache_statuses: Arc<HashSet<u16>> = Arc::new(failover_config.trigger_statuses.clone());
+    // The trigger-status set is already Arc-shared in FailoverConfig; clone the Arc once
+    // here so each per-attempt extension insert is just a refcount bump.
+    let no_cache_statuses = failover_config.trigger_statuses.clone();
     let max_retries = failover_config.max_retries.min(upstream_candidates.inner.len() - 1);
 
     debug!(

@@ -64,12 +64,9 @@ where
   /// with the given authoritative value. `X-Forwarded-Host` is rebuilt separately by
   /// `add_forwarding_header()` as part of the general forwarding-header policy.
   ///
-  /// `preselected_upstream`: when `Some((idx, upstream))`, skip the load-balancer call entirely
-  /// and route this request to the named upstream. The sticky-cookie payload returned via
-  /// `HandlerContext::context_lb` is recomputed against `idx` so any Set-Cookie sent back to
-  /// the client encodes the upstream that actually served the request — important for the
-  /// failover path where retries may target a different upstream than the cookie originally
-  /// pinned. When `None`, the load balancer picks normally.
+  /// `preselected_upstream`: when `Some(_)`, skip the load balancer and route to that upstream;
+  /// `HandlerContext::context_lb` is rebuilt against the chosen index so Set-Cookie tracks
+  /// where the request actually went (matters for failover retries against sticky-cookie LB).
   pub(super) fn generate_request_forwarded<B>(
     &self,
     client_addr: &SocketAddr,
