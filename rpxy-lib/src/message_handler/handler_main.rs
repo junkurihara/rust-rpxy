@@ -6,7 +6,7 @@ use super::{
   synthetic_response::{secure_redirection_response, synthetic_error_response},
 };
 use crate::{
-  backend::{BackendAppManager, LoadBalanceContext},
+  backend::{BackendAppManager, ConcurrencyLimiter, LoadBalanceContext},
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
@@ -136,6 +136,64 @@ where
     // Longest prefix match
     let path = req.uri().path();
     let upstream_candidates = backend_app.path_manager.get(path).ok_or(HttpError::NoUpstreamCandidates)?;
+
+    /////////////////////////////////////////////////////
+    // Enforce maximum upstream concurrency.
+    // The permit is held as a local variable for the duration of handle_request_inner():
+    // it is released when this function returns, i.e., after upstream response headers are
+    // received. Body streaming to the downstream client happens after this function returns,
+    // so the next queued request can start as soon as the upstream has accepted the current one.
+    // This is intentional: serialising only the request/header phase lets streaming responses
+    // (SSE, large JSON) be delivered concurrently while still preventing thundering-herd sends
+    // to upstream.
+    let _concurrency_permit = if let Some(limiter) = upstream_candidates.concurrency_limiter.as_deref() {
+      // QueueGuard ensures leave_queue() is called even if this future is cancelled during acquire().
+      struct QueueGuard<'a> {
+        limiter: &'a ConcurrencyLimiter,
+        left: bool,
+      }
+      impl Drop for QueueGuard<'_> {
+        fn drop(&mut self) {
+          if !self.left {
+            self.limiter.leave_queue();
+          }
+        }
+      }
+
+      let queued = limiter.enter_queue();
+      debug!(
+        "Upstream concurrency [{}]: request queued, waiting={}, in_flight={}",
+        path,
+        queued,
+        limiter.in_flight()
+      );
+      let mut queue_guard = QueueGuard { limiter, left: false };
+
+      let permit = limiter
+        .acquire_owned()
+        .await
+        .map_err(|e| HttpError::FailedToGetResponseFromBackend(format!("upstream concurrency semaphore closed: {e}")))?;
+
+      queue_guard.left = true;
+      let waiting_now = limiter.leave_queue();
+      debug!(
+        "Upstream concurrency [{}]: permit acquired, waiting={}, in_flight={}",
+        path,
+        waiting_now,
+        limiter.in_flight()
+      );
+
+      Some(permit)
+    } else {
+      None
+    };
+
+    /////////////////////////////////////////////////////
+    // Enforce minimum request interval (rate limiting).
+    // Called AFTER acquiring the concurrency semaphore so only tasks with a slot pay the wait cost.
+    if let Some(tracker) = &upstream_candidates.min_request_interval {
+      tracker.enforce_interval().await;
+    }
 
     // Upgrade in request header
     let upgrade_in_request = extract_upgrade(req.headers());
