@@ -110,6 +110,13 @@ impl StickyCookie {
   /// the caller has determined the client-visible request scheme is HTTPS — see
   /// `client_visible_secure()` in the message_handler layer.
   pub fn to_set_cookie_value(&self, secure: bool) -> LoadBalanceResult<String> {
+    self.to_set_cookie_value_at(secure, Utc::now().timestamp())
+  }
+
+  /// Same as `to_set_cookie_value`, but takes the reference timestamp explicitly so
+  /// callers (and tests) can compute `Max-Age` deterministically against a fixed
+  /// "now". The public API delegates here with `Utc::now().timestamp()`.
+  fn to_set_cookie_value_at(&self, secure: bool, now_ts: i64) -> LoadBalanceResult<String> {
     let Some(info) = self.info.as_ref() else {
       return Err(LoadBalanceError::NoStickyCookieNoMetaInfo);
     };
@@ -117,7 +124,7 @@ impl StickyCookie {
       return Err(LoadBalanceError::FailedToConversionStickyCookie);
     };
     let exp_str = expires_timestamp.format("%a, %d-%b-%Y %T GMT").to_string();
-    let max_age = info.expires - Utc::now().timestamp();
+    let max_age = info.expires - now_ts;
 
     let mut s = format!(
       "{}={}; expires={}; Max-Age={}; path={}; domain={}; HttpOnly; SameSite=Lax",
@@ -164,29 +171,33 @@ mod tests {
       path: "/path".to_string(),
       duration: 100,
     };
-    let expires_unix = Utc::now().timestamp() + 100;
     let cookie = config.build_sticky_cookie("test_value").unwrap();
+
+    // Pin both `expires` (read from the built cookie) and `now_ts` so Max-Age is
+    // deterministic and independent of how many seconds have elapsed during the test.
+    let actual_expires = cookie.info.as_ref().unwrap().expires;
+    let now_ts = actual_expires - 100; // duration_secs at build time was 100
     let expires_date_string = Utc
-      .timestamp_opt(expires_unix, 0)
+      .timestamp_opt(actual_expires, 0)
       .unwrap()
       .format("%a, %d-%b-%Y %T GMT")
       .to_string();
 
-    let secure_string = cookie.to_set_cookie_value(true).unwrap();
+    let secure_string = cookie.to_set_cookie_value_at(true, now_ts).unwrap();
     assert_eq!(
       secure_string,
       format!(
-        "{}=test_value; expires={}; Max-Age={}; path=/path; domain=example.com; HttpOnly; SameSite=Lax; Secure",
-        STICKY_COOKIE_NAME, expires_date_string, 100
+        "{}=test_value; expires={}; Max-Age=100; path=/path; domain=example.com; HttpOnly; SameSite=Lax; Secure",
+        STICKY_COOKIE_NAME, expires_date_string
       )
     );
 
-    let insecure_string = cookie.to_set_cookie_value(false).unwrap();
+    let insecure_string = cookie.to_set_cookie_value_at(false, now_ts).unwrap();
     assert_eq!(
       insecure_string,
       format!(
-        "{}=test_value; expires={}; Max-Age={}; path=/path; domain=example.com; HttpOnly; SameSite=Lax",
-        STICKY_COOKIE_NAME, expires_date_string, 100
+        "{}=test_value; expires={}; Max-Age=100; path=/path; domain=example.com; HttpOnly; SameSite=Lax",
+        STICKY_COOKIE_NAME, expires_date_string
       )
     );
   }
@@ -203,9 +214,11 @@ mod tests {
         path: "/path".to_string(),
       }),
     };
-    let max_age = 1686221173i64 - Utc::now().timestamp();
+    // Fixed `now_ts` so Max-Age is a stable literal that does not depend on wall-clock.
+    let now_ts = 1686221000i64;
+    let max_age = 173; // 1686221173 - 1686221000
 
-    let secure_string = sc.to_set_cookie_value(true).unwrap();
+    let secure_string = sc.to_set_cookie_value_at(true, now_ts).unwrap();
     assert_eq!(
       secure_string,
       format!(
@@ -214,7 +227,7 @@ mod tests {
       )
     );
 
-    let insecure_string = sc.to_set_cookie_value(false).unwrap();
+    let insecure_string = sc.to_set_cookie_value_at(false, now_ts).unwrap();
     assert_eq!(
       insecure_string,
       format!(
