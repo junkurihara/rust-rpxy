@@ -160,15 +160,8 @@ mod tests {
 
   #[test]
   fn resolves_mixed_entries_with_dedup() {
-    let report = resolve_trusted_proxy_entries([
-      "10.0.0.0/8",
-      "cloudflare",
-      "cloudfront",
-      "10.0.0.0/8",
-      "fastly",
-      "cloudflare",
-    ])
-    .unwrap();
+    let report =
+      resolve_trusted_proxy_entries(["10.0.0.0/8", "cloudflare", "cloudfront", "10.0.0.0/8", "fastly", "cloudflare"]).unwrap();
 
     assert!(report.cidrs.contains(&"10.0.0.0/8".parse().unwrap()));
     assert!(report.cidrs.contains(&"173.245.48.0/20".parse().unwrap()));

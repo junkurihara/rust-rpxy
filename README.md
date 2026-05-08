@@ -209,6 +209,12 @@ In the above setting, both cleartext HTTP requests to port 80 and encrypted HTTP
 
 Note that the private key specified by `tls_cert_key_path` must be *in PKCS8 format*. (See TIPS to convert PKCS1 formatted private keys to PKCS8 format.)
 
+> [!NOTE]
+> <details>
+> <summary>Private Key Permissions</summary>
+> On Unix-like systems, it is recommended to set the private key file permissions to `0600` (readable only by the owner). At load time, `rpxy` inspects the mode of the private key file and emits a `warn!` log if any group or other permission bit is set; the key is still loaded, but the warning is repeated on every certificate hot-reload until the permissions are tightened.
+> </details>
+
 #### Redirecting Cleartext HTTP Requests to HTTPS
 
 In the current Web, it is common to serve everything through HTTPS rather than HTTP, and hence *HTTPS redirection* is often used for HTTP requests. When you specify both `listen_port` and `listen_port_tls`, such redirection is automatically enabled for all applications by default. You can explicitly control this behavior for each application by setting `https_redirection` option in the `tls` entry like
@@ -390,6 +396,12 @@ registry_path = "./acme_registry"       # optional. default is "./acme_registry"
 ```
 
 The above configuration is common to all ACME-enabled domains. Note that the HTTPS port must be open to the public to verify domain ownership.
+
+> [!NOTE]
+> <details>
+> <summary>Permissions of ACME-Cached Confidential File</summary>
+> On Unix-like systems, ACME-managed cache files (account keys, certificates, and private keys) are created with mode `0600`, and any cache directory created by `rpxy` is created with mode `0700`. Cache files or directories that already exist are not modified, so operators who intentionally widen permissions for a sidecar process retain that choice.
+> </details>
 
 ### HAProxy PROXY Protocol (Inbound)
 
