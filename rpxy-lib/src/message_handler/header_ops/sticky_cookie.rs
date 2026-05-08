@@ -42,8 +42,15 @@ pub(crate) fn takeout_sticky_cookie_lb_context(
 /// Set-Cookie if LB Sticky is enabled and if cookie is newly created/updated.
 /// Set-Cookie response header could be in multiple lines.
 /// https://developer.mozilla.org/ja/docs/Web/HTTP/Headers/Set-Cookie
-pub(crate) fn set_sticky_cookie_lb_context(headers: &mut HeaderMap, context_from_lb: &LoadBalanceContext) -> Result<()> {
-  let sticky_cookie_string: String = context_from_lb.sticky_cookie.clone().try_into()?;
+///
+/// `secure` controls whether the `Secure` attribute is appended; the caller is expected
+/// to derive it from the client-visible request scheme via `client_visible_secure()`.
+pub(crate) fn set_sticky_cookie_lb_context(
+  headers: &mut HeaderMap,
+  context_from_lb: &LoadBalanceContext,
+  secure: bool,
+) -> Result<()> {
+  let sticky_cookie_string = context_from_lb.sticky_cookie.to_set_cookie_value(secure)?;
   let new_header_val: HeaderValue = sticky_cookie_string.parse()?;
   let expected_cookie_name = &context_from_lb.sticky_cookie.value.name;
   match headers.entry(header::SET_COOKIE) {
