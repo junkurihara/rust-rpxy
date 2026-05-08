@@ -2164,6 +2164,7 @@ dependencies = [
  "rustls-acme",
  "rustls-platform-verifier 0.7.0",
  "rustls-post-quantum",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -2183,9 +2184,11 @@ dependencies = [
  "rustls",
  "rustls-post-quantum",
  "rustls-webpki",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "x509-parser",
 ]
 
