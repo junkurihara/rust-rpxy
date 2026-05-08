@@ -103,24 +103,30 @@ impl<'a> StickyCookieBuilder {
   }
 }
 
-impl TryInto<String> for StickyCookie {
-  type Error = LoadBalanceError;
-
-  fn try_into(self) -> LoadBalanceResult<String> {
-    if self.info.is_none() {
+impl StickyCookie {
+  /// Serialize the sticky cookie as a `Set-Cookie` header value.
+  ///
+  /// `HttpOnly` and `SameSite=Lax` are always present. `Secure` is added only when
+  /// the caller has determined the client-visible request scheme is HTTPS — see
+  /// `client_visible_secure()` in the message_handler layer.
+  pub fn to_set_cookie_value(&self, secure: bool) -> LoadBalanceResult<String> {
+    let Some(info) = self.info.as_ref() else {
       return Err(LoadBalanceError::NoStickyCookieNoMetaInfo);
-    }
-    let info = self.info.unwrap();
+    };
     let chrono::LocalResult::Single(expires_timestamp) = Utc.timestamp_opt(info.expires, 0) else {
       return Err(LoadBalanceError::FailedToConversionStickyCookie);
     };
     let exp_str = expires_timestamp.format("%a, %d-%b-%Y %T GMT").to_string();
     let max_age = info.expires - Utc::now().timestamp();
 
-    Ok(format!(
-      "{}={}; expires={}; Max-Age={}; path={}; domain={}",
+    let mut s = format!(
+      "{}={}; expires={}; Max-Age={}; path={}; domain={}; HttpOnly; SameSite=Lax",
       self.value.name, self.value.value, exp_str, max_age, info.path, info.domain
-    ))
+    );
+    if secure {
+      s.push_str("; Secure");
+    }
+    Ok(s)
   }
 }
 
@@ -159,16 +165,27 @@ mod tests {
       duration: 100,
     };
     let expires_unix = Utc::now().timestamp() + 100;
-    let sc_string: LoadBalanceResult<String> = config.build_sticky_cookie("test_value").unwrap().try_into();
+    let cookie = config.build_sticky_cookie("test_value").unwrap();
     let expires_date_string = Utc
       .timestamp_opt(expires_unix, 0)
       .unwrap()
       .format("%a, %d-%b-%Y %T GMT")
       .to_string();
+
+    let secure_string = cookie.to_set_cookie_value(true).unwrap();
     assert_eq!(
-      sc_string.unwrap(),
+      secure_string,
       format!(
-        "{}=test_value; expires={}; Max-Age={}; path=/path; domain=example.com",
+        "{}=test_value; expires={}; Max-Age={}; path=/path; domain=example.com; HttpOnly; SameSite=Lax; Secure",
+        STICKY_COOKIE_NAME, expires_date_string, 100
+      )
+    );
+
+    let insecure_string = cookie.to_set_cookie_value(false).unwrap();
+    assert_eq!(
+      insecure_string,
+      format!(
+        "{}=test_value; expires={}; Max-Age={}; path=/path; domain=example.com; HttpOnly; SameSite=Lax",
         STICKY_COOKIE_NAME, expires_date_string, 100
       )
     );
@@ -186,13 +203,22 @@ mod tests {
         path: "/path".to_string(),
       }),
     };
-    let sc_string: LoadBalanceResult<String> = sc.try_into();
     let max_age = 1686221173i64 - Utc::now().timestamp();
-    assert!(sc_string.is_ok());
+
+    let secure_string = sc.to_set_cookie_value(true).unwrap();
     assert_eq!(
-      sc_string.unwrap(),
+      secure_string,
       format!(
-        "{}=test_value; expires=Thu, 08-Jun-2023 10:46:13 GMT; Max-Age={}; path=/path; domain=example.com",
+        "{}=test_value; expires=Thu, 08-Jun-2023 10:46:13 GMT; Max-Age={}; path=/path; domain=example.com; HttpOnly; SameSite=Lax; Secure",
+        STICKY_COOKIE_NAME, max_age
+      )
+    );
+
+    let insecure_string = sc.to_set_cookie_value(false).unwrap();
+    assert_eq!(
+      insecure_string,
+      format!(
+        "{}=test_value; expires=Thu, 08-Jun-2023 10:46:13 GMT; Max-Age={}; path=/path; domain=example.com; HttpOnly; SameSite=Lax",
         STICKY_COOKIE_NAME, max_age
       )
     );

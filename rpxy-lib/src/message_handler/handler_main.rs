@@ -25,6 +25,12 @@ use tokio::io::copy_bidirectional;
 /// Context object to handle sticky cookies at HTTP message handler
 pub(super) struct HandlerContext {
   pub(super) context_lb: Option<LoadBalanceContext>,
+  /// Client-visible request scheme captured from the inbound side (before
+  /// `add_forwarding_header()` overwrites X-Forwarded-Proto). True when the request
+  /// reached rpxy over TLS, or via a trusted forwarding proxy that asserted HTTPS.
+  /// Drives the `Secure` attribute on the sticky-cookie Set-Cookie response.
+  #[cfg(feature = "sticky-cookie")]
+  pub(super) sticky_cookie_secure: bool,
 }
 
 #[derive(Clone, Builder)]
@@ -190,7 +196,7 @@ where
     #[cfg(feature = "sticky-cookie")]
     if let Some(context_from_lb) = _context.context_lb {
       let res_headers = res_backend.headers_mut();
-      if let Err(e) = set_sticky_cookie_lb_context(res_headers, &context_from_lb) {
+      if let Err(e) = set_sticky_cookie_lb_context(res_headers, &context_from_lb, _context.sticky_cookie_secure) {
         return Err(HttpError::FailedToAddSetCookeInResponse(e.to_string()));
       }
     }

@@ -95,6 +95,16 @@ where
     remove_connection_header(headers);
     // delete hop headers including header.connection
     remove_hop_header(headers);
+    // Capture the client-visible scheme from the inbound forwarding headers BEFORE
+    // add_forwarding_header() overwrites X-Forwarded-Proto with rpxy's listener TLS state.
+    // Used by the sticky-cookie `Secure` attribute on the response side.
+    #[cfg(feature = "sticky-cookie")]
+    let sticky_cookie_secure = client_visible_secure(
+      tls_enabled,
+      client_addr,
+      headers,
+      &self.globals.proxy_config.trusted_forwarded_proxies,
+    );
     // X-Forwarded-For (and Forwarded if exists)
     add_forwarding_header(
       headers,
@@ -136,6 +146,8 @@ where
       context_lb: context_from_lb,
       #[cfg(not(feature = "sticky-cookie"))]
       context_lb: None,
+      #[cfg(feature = "sticky-cookie")]
+      sticky_cookie_secure,
     };
     /////////////////////////////////////////////
 

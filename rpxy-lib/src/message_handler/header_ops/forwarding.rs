@@ -662,6 +662,118 @@ fn format_forwarded_node(node: &ForwardedNode) -> Result<String> {
   }
 }
 
+/* -------------------------------------------------------------------------------------------------- */
+/* Client-visible scheme detection (used by sticky-cookie Secure attribute                            */
+/* -------------------------------------------------------------------------------------------------- */
+
+/// Decide whether the request's client-visible scheme is HTTPS, for the purpose of
+/// setting the `Secure` attribute on response Set-Cookie values.
+///
+/// 1. If the rpxy listener is TLS-terminating, return true.
+/// 2. Otherwise, only honor forwarding-derived scheme when the immediate peer is in
+///    `trusted_forwarded_proxies` (same trust boundary as H-1).
+/// 3. Header priority: `X-Forwarded-Proto` first comma-element wins; fall back to the
+///    `proto=` parameter of the first `Forwarded` entry.
+/// 4. Any parse failure fails closed to false (debug-logged, not warn-logged) and does
+///    NOT fall through to the lower-priority source — a malformed `X-Forwarded-Proto`
+///    short-circuits without consulting `Forwarded`.
+#[cfg(feature = "sticky-cookie")]
+pub(in crate::message_handler) fn client_visible_secure(
+  tls_enabled: bool,
+  client_addr: &SocketAddr,
+  headers: &HeaderMap,
+  trusted_forwarded_proxies: &[IpNet],
+) -> bool {
+  if tls_enabled {
+    return true;
+  }
+  let peer_ip = canonicalize_ip(client_addr.to_canonical().ip());
+  if !is_trusted_proxy(&peer_ip, trusted_forwarded_proxies) {
+    return false;
+  }
+  let scheme = match xforwarded_proto_first(headers) {
+    Err(()) => return false, // XFP parse failure: fail closed, do NOT fall through
+    Ok(Some(s)) => Some(s),
+    Ok(None) => match forwarded_first_proto(headers) {
+      Err(()) => return false, // Forwarded parse failure: fail closed
+      Ok(s) => s,
+    },
+  };
+  scheme.is_some_and(|s| s.eq_ignore_ascii_case("https"))
+}
+
+/// Read the first comma-separated element of `X-Forwarded-Proto`.
+///
+/// Returns:
+/// - `Ok(Some(scheme))` when the header is present and the first element is non-empty.
+/// - `Ok(None)` when the header is absent or its first element is empty after trimming
+///   (caller may fall back to a lower-priority source).
+/// - `Err(())` when the header is present but unreadable (non-UTF-8 etc.). Caller MUST
+///   NOT fall back; doing so would let a malformed XFP enable a low-priority `Forwarded:
+///   proto=https` to elevate `Secure`.
+#[cfg(feature = "sticky-cookie")]
+fn xforwarded_proto_first(headers: &HeaderMap) -> Result<Option<String>, ()> {
+  let raw = match join_header_values(headers, X_FORWARDED_PROTO) {
+    Ok(Some(v)) => v,
+    Ok(None) => return Ok(None),
+    Err(e) => {
+      debug!("X-Forwarded-Proto header value not readable: {e}");
+      return Err(());
+    }
+  };
+  let first = raw.split(',').next().unwrap_or("").trim();
+  if first.is_empty() {
+    Ok(None)
+  } else {
+    Ok(Some(first.to_string()))
+  }
+}
+
+/// Read the `proto=` parameter of the first entry of the `Forwarded` header, if present.
+///
+/// Distinct from `parse_forwarded_header_entry`: this helper does not require a `for=`
+/// parameter, since for `Secure` decisions only the scheme matters.
+///
+/// Returns:
+/// - `Ok(Some(scheme))` when the first entry has a non-empty, well-formed `proto=` value.
+/// - `Ok(None)` when the header is absent, the first entry has no `proto=`, or the value
+///   is empty.
+/// - `Err(())` on header value / quoted-string parse failure (fail-closed signal).
+#[cfg(feature = "sticky-cookie")]
+fn forwarded_first_proto(headers: &HeaderMap) -> Result<Option<String>, ()> {
+  let raw = match join_header_values(headers, header::FORWARDED) {
+    Ok(Some(v)) => v,
+    Ok(None) => return Ok(None),
+    Err(e) => {
+      debug!("Forwarded header value not readable: {e}");
+      return Err(());
+    }
+  };
+  let Some(first_entry) = split_respecting_quotes(&raw, b',').into_iter().find(|e| !e.is_empty()) else {
+    return Ok(None);
+  };
+  for param in split_respecting_quotes(first_entry, b';')
+    .into_iter()
+    .filter(|p| !p.is_empty())
+  {
+    let Some((key, value)) = param.split_once('=') else {
+      continue;
+    };
+    if !key.trim().eq_ignore_ascii_case("proto") {
+      continue;
+    }
+    return match unquote_http_value(value.trim()) {
+      Ok(v) if !v.is_empty() => Ok(Some(v)),
+      Ok(_) => Ok(None),
+      Err(e) => {
+        debug!("Forwarded proto= unquote failure: {e}");
+        Err(())
+      }
+    };
+  }
+  Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -1133,5 +1245,143 @@ mod tests {
       generate_forwarded_header(&chain).unwrap(),
       "for=192.0.2.1;proto=https;host=\"example.com:8443\""
     );
+  }
+
+  /* ---------------------- client_visible_secure ---------------------- */
+
+  #[cfg(feature = "sticky-cookie")]
+  fn untrusted_addr() -> SocketAddr {
+    "203.0.113.10:4321".parse().unwrap()
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  fn trusted_addr() -> SocketAddr {
+    "10.1.2.3:1234".parse().unwrap()
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  fn cidr_10() -> Vec<IpNet> {
+    trusted(&["10.0.0.0/8"])
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_tls_enabled_returns_true_regardless() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("http"));
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=http"));
+    assert!(client_visible_secure(true, &untrusted_addr(), &headers, &[]));
+    assert!(client_visible_secure(true, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_untrusted_peer_ignores_xfp_https() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
+    assert!(!client_visible_secure(false, &untrusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_trusted_peer_xfp_https_returns_true() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
+    assert!(client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_trusted_peer_forwarded_proto_https_no_for() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
+    assert!(client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_trusted_peer_xfp_http_returns_false() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("http"));
+    assert!(!client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_trusted_peer_no_proto_header_returns_false() {
+    let headers = HeaderMap::new();
+    assert!(!client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_xfp_multi_hop_first_wins() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https, http"));
+    assert!(client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+
+    let mut headers2 = HeaderMap::new();
+    headers2.insert(X_FORWARDED_PROTO, HeaderValue::from_static("http, https"));
+    assert!(!client_visible_secure(false, &trusted_addr(), &headers2, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_conflict_xfp_wins() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
+    headers.insert(header::FORWARDED, HeaderValue::from_static("for=1.2.3.4;proto=http"));
+    assert!(client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_conflict_inverse_xfp_wins() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("http"));
+    headers.insert(header::FORWARDED, HeaderValue::from_static("for=1.2.3.4;proto=https"));
+    assert!(!client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_malformed_forwarded_fails_closed() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=\"https"));
+    assert!(!client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_non_utf8_xfp_fails_closed() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+      X_FORWARDED_PROTO,
+      HeaderValue::from_bytes(b"\xffhttps").expect("HeaderValue accepts non-UTF-8 bytes"),
+    );
+    assert!(!client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_empty_xfp_falls_through_to_forwarded() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static(""));
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
+    assert!(client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_malformed_xfp_does_not_fall_through_to_forwarded_https() {
+    // Malformed (non-UTF-8) X-Forwarded-Proto must short-circuit to fail-closed,
+    // even when a valid Forwarded: proto=https is present at the lower priority.
+    let mut headers = HeaderMap::new();
+    headers.insert(
+      X_FORWARDED_PROTO,
+      HeaderValue::from_bytes(b"\xffhttps").expect("HeaderValue accepts non-UTF-8 bytes"),
+    );
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
+    assert!(!client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
   }
 }
