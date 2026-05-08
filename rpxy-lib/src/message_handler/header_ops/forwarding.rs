@@ -14,10 +14,7 @@ use super::{
   header_defs::*,
 };
 
-fn overwrite_x_forwarded_host_from_original(
-  headers: &mut HeaderMap,
-  original_uri: &Uri,
-) -> Result<()> {
+fn overwrite_x_forwarded_host_from_original(headers: &mut HeaderMap, original_uri: &Uri) -> Result<()> {
   match host_from_uri_or_host_header(original_uri, headers.get(header::HOST)) {
     Ok(original_host) => add_header_entry_overwrite_if_exist(headers, X_FORWARDED_HOST, original_host)?,
     Err(_) => {
