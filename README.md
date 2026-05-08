@@ -399,7 +399,7 @@ The above configuration is common to all ACME-enabled domains. Note that the HTT
 
 > [!NOTE]
 > <details>
-> <summary>Permissions of ACME-Cached Confidential File</summary>
+> <summary>Permissions of ACME-Cached Confidential Files</summary>
 > On Unix-like systems, ACME-managed cache files (account keys, certificates, and private keys) are created with mode `0600`, and any cache directory created by `rpxy` is created with mode `0700`. Cache files or directories that already exist are not modified, so operators who intentionally widen permissions for a sidecar process retain that choice.
 > </details>
 
