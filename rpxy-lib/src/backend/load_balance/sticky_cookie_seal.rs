@@ -6,7 +6,7 @@ use aes_gcm::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use secrecy::{ExposeSecret, Secret};
+use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 
 pub(crate) const VERSION_V1: u8 = 0x01;
@@ -25,7 +25,7 @@ const MAX_BLOB_LEN: usize = 1 + NONCE_LEN + TAG_LEN + MAX_PLAINTEXT_LEN;
 /// The inner bytes are deliberately opaque outside this module. `rpxy-bin`
 /// validates TOML through `try_from_config_value`, then passes this newtype
 /// through to `rpxy-lib` runtime construction.
-pub struct StickyCookieSecret(Secret<[u8; 32]>);
+pub struct StickyCookieSecret(SecretBox<[u8; 32]>);
 
 impl StickyCookieSecret {
   pub fn try_from_config_value(s: &str) -> RpxyResult<Self> {
@@ -48,7 +48,7 @@ impl StickyCookieSecret {
       )));
     }
 
-    Ok(Self(Secret::new(bytes)))
+    Ok(Self(SecretBox::new(Box::new(bytes))))
   }
 
   pub(crate) fn expose(&self) -> &[u8; 32] {

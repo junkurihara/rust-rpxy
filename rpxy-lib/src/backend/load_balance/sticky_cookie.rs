@@ -106,7 +106,7 @@ impl<'a> StickyCookieBuilder {
 impl StickyCookie {
   /// Serialize the sticky cookie with a caller-supplied cookie value.
   ///
-  /// H-4 seals the internal plaintext `server_id` at the HTTP handler boundary.
+  /// Seals the internal plaintext `server_id` at the HTTP handler boundary.
   /// This method keeps the LB-owned metadata while allowing the wire value to be
   /// an opaque AEAD blob.
   pub fn to_set_cookie_value_with_value(&self, secure: bool, cookie_value: &str) -> LoadBalanceResult<String> {

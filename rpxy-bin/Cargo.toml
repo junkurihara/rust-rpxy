@@ -56,7 +56,7 @@ serde = { version = "1.0.228", default-features = false, features = [
   "derive",
   "std",
 ] }
-tokio = { version = "1.52.2", default-features = false, features = [
+tokio = { version = "1.52.3", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
