@@ -6,7 +6,7 @@ use aes_gcm::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use secrecy::{ExposeSecret, SecretBox};
+use secrecy::{ExposeSecret, ExposeSecretMut, SecretBox};
 use std::sync::Arc;
 
 pub(crate) const VERSION_V1: u8 = 0x01;
@@ -19,6 +19,18 @@ const MIN_PLAINTEXT_LEN: usize = EXPIRES_LEN + MIN_SERVER_ID_LEN;
 const MAX_PLAINTEXT_LEN: usize = EXPIRES_LEN + MAX_SERVER_ID_LEN;
 const MIN_BLOB_LEN: usize = 1 + NONCE_LEN + TAG_LEN + MIN_PLAINTEXT_LEN;
 const MAX_BLOB_LEN: usize = 1 + NONCE_LEN + TAG_LEN + MAX_PLAINTEXT_LEN;
+const MIN_BLOB_B64_LEN: usize = base64_url_no_pad_encoded_len(MIN_BLOB_LEN);
+const MAX_BLOB_B64_LEN: usize = base64_url_no_pad_encoded_len(MAX_BLOB_LEN);
+
+const fn base64_url_no_pad_encoded_len(raw_len: usize) -> usize {
+  let padded_len = ((raw_len + 2) / 3) * 4;
+  let padding_len = match raw_len % 3 {
+    0 => 0,
+    1 => 2,
+    _ => 1,
+  };
+  padded_len - padding_len
+}
 
 /// Operator-supplied sticky-cookie AEAD secret.
 ///
@@ -35,20 +47,20 @@ impl StickyCookieSecret {
       ));
     }
 
-    let mut bytes = [0u8; 32];
-    let decoded_len = URL_SAFE_NO_PAD.decode_slice(s, &mut bytes).map_err(|e| {
+    let mut secret = SecretBox::<[u8; 32]>::default();
+    let decoded_len = URL_SAFE_NO_PAD.decode_slice(s, secret.expose_secret_mut()).map_err(|e| {
       RpxyError::InvalidStickyCookieSecret(format!(
         "sticky_cookie_secret must be base64url without padding and decode to exactly 32 bytes: {e}",
       ))
     })?;
 
-    if decoded_len != bytes.len() {
+    if decoded_len != secret.expose_secret().len() {
       return Err(RpxyError::InvalidStickyCookieSecret(format!(
         "sticky_cookie_secret must decode to exactly 32 bytes, got {decoded_len} bytes",
       )));
     }
 
-    Ok(Self(SecretBox::new(Box::new(bytes))))
+    Ok(Self(secret))
   }
 
   pub(crate) fn expose(&self) -> &[u8; 32] {
@@ -115,6 +127,10 @@ pub(crate) fn open_server_id(cipher: &Aes256Gcm, aad: &[u8], blob_b64: &str) -> 
 }
 
 fn open_server_id_at(cipher: &Aes256Gcm, aad: &[u8], blob_b64: &str, now_unix: i64) -> Option<String> {
+  if !(MIN_BLOB_B64_LEN..=MAX_BLOB_B64_LEN).contains(&blob_b64.len()) {
+    return None;
+  }
+
   let blob = URL_SAFE_NO_PAD.decode(blob_b64).ok()?;
   if !(MIN_BLOB_LEN..=MAX_BLOB_LEN).contains(&blob.len()) {
     return None;
@@ -249,6 +265,13 @@ mod tests {
   fn old_plaintext_cookie_is_rejected() {
     let cipher = cipher(1);
     assert_eq!(open_server_id(&cipher, &aad("app-a"), "backend1"), None);
+  }
+
+  #[test]
+  fn oversized_base64_input_is_rejected_before_decode() {
+    let cipher = cipher(1);
+    let too_long = "A".repeat(MAX_BLOB_B64_LEN + 1);
+    assert_eq!(open_server_id(&cipher, &aad("app-a"), &too_long), None);
   }
 
   #[test]
