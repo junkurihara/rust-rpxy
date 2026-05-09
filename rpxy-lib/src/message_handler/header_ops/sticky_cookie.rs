@@ -33,16 +33,25 @@ pub(crate) fn takeout_sticky_cookie_lb_context(
       if sticky_cookies.is_empty() {
         return Ok(None);
       }
-      anyhow::ensure!(sticky_cookies.len() == 1, "Invalid cookie: Multiple sticky cookie values");
-
       let cookies_passed_to_upstream = without_sticky_cookies.join("; ");
-      let cookie_passed_to_lb = sticky_cookies.first().unwrap();
       headers.remove(header::COOKIE);
       if !cookies_passed_to_upstream.is_empty() {
         headers.insert(header::COOKIE, cookies_passed_to_upstream.parse()?);
       }
 
-      let raw_sticky_cookie = StickyCookieValue::try_from(cookie_passed_to_lb, expected_cookie_name)?;
+      if sticky_cookies.len() != 1 {
+        debug!("Ignoring malformed sticky cookie: multiple sticky cookie values");
+        return Ok(None);
+      }
+
+      let cookie_passed_to_lb = sticky_cookies.first().unwrap();
+      let raw_sticky_cookie = match StickyCookieValue::try_from(cookie_passed_to_lb, expected_cookie_name) {
+        Ok(value) => value,
+        Err(e) => {
+          debug!("Ignoring malformed sticky cookie: {e}");
+          return Ok(None);
+        }
+      };
       let aad = build_sticky_cookie_aad(sticky_config)?;
       let Some(server_id) = open_server_id(cipher, &aad, &raw_sticky_cookie.value) else {
         debug!("Ignoring invalid sticky cookie value");
@@ -195,6 +204,44 @@ mod tests {
         .unwrap()
         .is_none()
     );
+  }
+
+  #[test]
+  fn takeout_ignores_empty_sticky_cookie_value() {
+    let cipher = cipher();
+    let config = sticky_config("example.com");
+    let mut req_headers = HeaderMap::new();
+    req_headers.insert(
+      header::COOKIE,
+      format!("session=keep; {}=", STICKY_COOKIE_NAME).parse().unwrap(),
+    );
+
+    assert!(
+      takeout_sticky_cookie_lb_context(&mut req_headers, &config, &cipher)
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(req_headers.get(header::COOKIE).unwrap().to_str().unwrap(), "session=keep");
+  }
+
+  #[test]
+  fn takeout_ignores_multiple_sticky_cookie_values() {
+    let cipher = cipher();
+    let config = sticky_config("example.com");
+    let mut req_headers = HeaderMap::new();
+    req_headers.insert(
+      header::COOKIE,
+      format!("{}=one; session=keep; {}=two", STICKY_COOKIE_NAME, STICKY_COOKIE_NAME)
+        .parse()
+        .unwrap(),
+    );
+
+    assert!(
+      takeout_sticky_cookie_lb_context(&mut req_headers, &config, &cipher)
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(req_headers.get(header::COOKIE).unwrap().to_str().unwrap(), "session=keep");
   }
 
   #[test]

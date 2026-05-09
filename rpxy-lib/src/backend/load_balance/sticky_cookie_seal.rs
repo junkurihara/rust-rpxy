@@ -64,7 +64,7 @@ pub(crate) fn build_sticky_cookie_cipher(secret: &StickyCookieSecret) -> RpxyRes
 
 pub fn validate_sticky_cookie_aad_component(component: &str, value: &str) -> RpxyResult<()> {
   if value.as_bytes().contains(&0) {
-    return Err(RpxyError::InvalidStickyCookieSecret(format!(
+    return Err(RpxyError::InvalidStickyCookieAad(format!(
       "sticky-cookie AAD component {component} must not contain NUL bytes",
     )));
   }
@@ -174,6 +174,12 @@ mod tests {
   fn secret_rejects_embedded_whitespace() {
     let valid = URL_SAFE_NO_PAD.encode([42u8; 32]);
     assert!(StickyCookieSecret::try_from_config_value(&format!("{valid}\n")).is_err());
+  }
+
+  #[test]
+  fn aad_component_rejects_nul_with_dedicated_error() {
+    let err = validate_sticky_cookie_aad_component("path", "/bad\0path").unwrap_err();
+    assert!(matches!(err, crate::error::RpxyError::InvalidStickyCookieAad(_)));
   }
 
   #[test]
