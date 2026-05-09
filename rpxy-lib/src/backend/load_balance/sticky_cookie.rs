@@ -25,12 +25,12 @@ impl<'a> StickyCookieValueBuilder {
 }
 impl StickyCookieValue {
   pub fn try_from(value: &str, expected_name: &str) -> LoadBalanceResult<Self> {
-    if !value.starts_with(expected_name) {
-      return Err(LoadBalanceError::FailedToConversionStickyCookie);
-    };
     let kv = value.split('=').map(|v| v.trim()).collect::<Vec<&str>>();
     if kv.len() != 2 {
       return Err(LoadBalanceError::InvalidStickyCookieStructure);
+    };
+    if kv[0] != expected_name {
+      return Err(LoadBalanceError::FailedToConversionStickyCookie);
     };
     if kv[1].is_empty() {
       return Err(LoadBalanceError::NoStickyCookieValue);
@@ -104,19 +104,22 @@ impl<'a> StickyCookieBuilder {
 }
 
 impl StickyCookie {
-  /// Serialize the sticky cookie as a `Set-Cookie` header value.
+  /// Serialize the sticky cookie with a caller-supplied cookie value.
   ///
-  /// `HttpOnly` and `SameSite=Lax` are always present. `Secure` is added only when
-  /// the caller has determined the client-visible request scheme is HTTPS — see
-  /// `client_visible_secure()` in the message_handler layer.
-  pub fn to_set_cookie_value(&self, secure: bool) -> LoadBalanceResult<String> {
-    self.to_set_cookie_value_at(secure, Utc::now().timestamp())
+  /// H-4 seals the internal plaintext `server_id` at the HTTP handler boundary.
+  /// This method keeps the LB-owned metadata while allowing the wire value to be
+  /// an opaque AEAD blob.
+  pub fn to_set_cookie_value_with_value(&self, secure: bool, cookie_value: &str) -> LoadBalanceResult<String> {
+    self.to_set_cookie_value_with_value_at(secure, cookie_value, Utc::now().timestamp())
   }
 
-  /// Same as `to_set_cookie_value`, but takes the reference timestamp explicitly so
-  /// callers (and tests) can compute `Max-Age` deterministically against a fixed
-  /// "now". The public API delegates here with `Utc::now().timestamp()`.
+  /// Test-only serializer that keeps `Max-Age` deterministic against a fixed "now".
+  #[cfg(test)]
   fn to_set_cookie_value_at(&self, secure: bool, now_ts: i64) -> LoadBalanceResult<String> {
+    self.to_set_cookie_value_with_value_at(secure, &self.value.value, now_ts)
+  }
+
+  fn to_set_cookie_value_with_value_at(&self, secure: bool, cookie_value: &str, now_ts: i64) -> LoadBalanceResult<String> {
     let Some(info) = self.info.as_ref() else {
       return Err(LoadBalanceError::NoStickyCookieNoMetaInfo);
     };
@@ -128,7 +131,7 @@ impl StickyCookie {
 
     let mut s = format!(
       "{}={}; expires={}; Max-Age={}; path={}; domain={}; HttpOnly; SameSite=Lax",
-      self.value.name, self.value.value, exp_str, max_age, info.path, info.domain
+      self.value.name, cookie_value, exp_str, max_age, info.path, info.domain
     );
     if secure {
       s.push_str("; Secure");
@@ -235,5 +238,11 @@ mod tests {
         STICKY_COOKIE_NAME, max_age
       )
     );
+  }
+
+  #[test]
+  fn sticky_cookie_value_requires_exact_cookie_name() {
+    assert!(StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}=value"), STICKY_COOKIE_NAME).is_ok());
+    assert!(StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}_shadow=value"), STICKY_COOKIE_NAME).is_err());
   }
 }

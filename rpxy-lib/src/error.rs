@@ -85,6 +85,12 @@ pub enum RpxyError {
   InvalidUpstreamOptionSetting,
   #[error("Failed to build backend app: {0}")]
   FailedToBuildBackendApp(#[from] crate::backend::BackendAppBuilderError),
+  #[cfg(feature = "sticky-cookie")]
+  #[error("Invalid sticky cookie secret: {0}")]
+  InvalidStickyCookieSecret(String),
+  #[cfg(feature = "sticky-cookie")]
+  #[error("Failed to seal sticky cookie value")]
+  FailedToSealStickyCookie,
 
   // Handler errors
   #[error("Failed to build message handler: {0}")]

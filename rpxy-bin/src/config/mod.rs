@@ -10,3 +10,6 @@ pub use {
 
 #[cfg(feature = "acme")]
 pub use parse::build_acme_manager;
+
+#[cfg(feature = "sticky-cookie")]
+pub use parse::build_sticky_cookie_secret;

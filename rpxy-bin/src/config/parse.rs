@@ -4,7 +4,11 @@ use ahash::HashMap;
 use clap::Arg;
 use hot_reload::{ReloaderReceiver, ReloaderService};
 use rpxy_certs::{CryptoFileSourceBuilder, CryptoReloader, ServerCryptoBase, build_cert_reloader};
+#[cfg(feature = "sticky-cookie")]
+use rpxy_lib::StickyCookieSecret;
 use rpxy_lib::{AppConfigList, ProxyConfig};
+#[cfg(feature = "sticky-cookie")]
+use std::sync::Arc;
 
 #[cfg(feature = "acme")]
 use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
@@ -56,6 +60,11 @@ pub fn parse_opts() -> Result<Opts, anyhow::Error> {
 /// Build proxy and app settings from config using ConfigTomlExt
 pub fn build_settings(config: &ConfigToml) -> Result<(ProxyConfig, AppConfigList), anyhow::Error> {
   config.validate_and_build_settings()
+}
+
+#[cfg(feature = "sticky-cookie")]
+pub fn build_sticky_cookie_secret(config: &ConfigToml) -> Result<Option<Arc<StickyCookieSecret>>, anyhow::Error> {
+  config.validate_and_build_sticky_cookie_secret()
 }
 
 /* ----------------------- */
