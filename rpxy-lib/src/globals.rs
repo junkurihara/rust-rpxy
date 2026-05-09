@@ -4,6 +4,9 @@ use ipnet::IpNet;
 use rpxy_certs::ServerCryptoBase;
 use std::{net::SocketAddr, time::Duration};
 
+#[cfg(feature = "sticky-cookie")]
+use aes_gcm::Aes256Gcm;
+
 #[cfg(feature = "proxy-protocol")]
 /// Configuration parameters for TCP inbound PROXY protocol receive
 #[derive(PartialEq, Eq, Clone)]
@@ -26,6 +29,8 @@ pub struct Globals {
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Certificate reloader service receiver // TODO: newer one
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
+  #[cfg(feature = "sticky-cookie")]
+  pub(crate) sticky_cookie_cipher: Option<std::sync::Arc<Aes256Gcm>>,
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains

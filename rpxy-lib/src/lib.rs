@@ -35,6 +35,12 @@ pub use crate::{
 #[cfg(feature = "health-check")]
 pub const LOAD_BALANCE_PRIMARY_BACKUP: &str = crate::backend::LOAD_BALANCE_PRIMARY_BACKUP;
 
+#[cfg(feature = "sticky-cookie")]
+pub const LOAD_BALANCE_STICKY_ROUND_ROBIN: &str = crate::backend::LOAD_BALANCE_STICKY_ROUND_ROBIN;
+
+#[cfg(feature = "sticky-cookie")]
+pub use crate::backend::{StickyCookieSecret, validate_sticky_cookie_aad_component};
+
 #[cfg(feature = "health-check")]
 pub use crate::{
   constants::health_check as health_check_defaults,
@@ -59,6 +65,9 @@ pub struct RpxyOptions {
   pub cert_rx: Option<ReloaderReceiver<ServerCryptoBase>>, // TODO:
   /// Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
+  #[cfg(feature = "sticky-cookie")]
+  #[builder(default)]
+  pub sticky_cookie_secret: Option<Arc<StickyCookieSecret>>,
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains
@@ -72,6 +81,8 @@ pub async fn entrypoint(
     app_config_list,
     cert_rx, // TODO:
     runtime_handle,
+    #[cfg(feature = "sticky-cookie")]
+    sticky_cookie_secret,
     #[cfg(feature = "acme")]
     server_configs_acme_challenge,
   }: &RpxyOptions,
@@ -138,6 +149,14 @@ pub async fn entrypoint(
     );
   }
 
+  #[cfg(feature = "sticky-cookie")]
+  let sticky_cookie_cipher = if let Some(secret) = sticky_cookie_secret.as_ref() {
+    info!("sticky-cookie AEAD enabled (config-supplied secret)");
+    Some(backend::build_sticky_cookie_cipher(secret)?)
+  } else {
+    None
+  };
+
   #[cfg(not(feature = "post-quantum"))]
   // Install aws_lc_rs as default crypto provider for rustls
   let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
@@ -155,6 +174,8 @@ pub async fn entrypoint(
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
     cert_reloader_rx: cert_rx.clone(),
+    #[cfg(feature = "sticky-cookie")]
+    sticky_cookie_cipher,
 
     #[cfg(feature = "acme")]
     server_configs_acme_challenge: server_configs_acme_challenge.clone(),

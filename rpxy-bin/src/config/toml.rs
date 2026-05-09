@@ -13,6 +13,7 @@ use serde::Deserialize;
 use std::{
   fs,
   net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+  sync::Arc,
 };
 use tokio::time::Duration;
 
@@ -21,6 +22,9 @@ use rpxy_lib::TcpRecvProxyProtocolConfig;
 
 #[cfg(feature = "health-check")]
 use rpxy_lib::{HealthCheckConfig, HealthCheckType, LOAD_BALANCE_PRIMARY_BACKUP};
+
+#[cfg(feature = "sticky-cookie")]
+use rpxy_lib::{LOAD_BALANCE_STICKY_ROUND_ROBIN, StickyCookieSecret, validate_sticky_cookie_aad_component};
 
 /// Helper type that accepts both a single string and an array of strings in TOML.
 ///
@@ -73,6 +77,8 @@ pub struct ConfigToml {
   pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
+  #[cfg(feature = "sticky-cookie")]
+  pub sticky_cookie_secret: Option<String>,
   pub trusted_forwarded_proxies: Option<OneOrMany>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
@@ -82,6 +88,8 @@ pub struct ConfigToml {
 /// Extension trait for config validation and building
 pub trait ConfigTomlExt {
   fn validate_and_build_settings(&self) -> Result<(ProxyConfig, AppConfigList), anyhow::Error>;
+  #[cfg(feature = "sticky-cookie")]
+  fn validate_and_build_sticky_cookie_secret(&self) -> Result<Option<Arc<StickyCookieSecret>>, anyhow::Error>;
 }
 
 impl ConfigTomlExt for ConfigToml {
@@ -136,6 +144,39 @@ impl ConfigTomlExt for ConfigToml {
     };
 
     Ok((proxy_config, app_config_list))
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  fn validate_and_build_sticky_cookie_secret(&self) -> Result<Option<Arc<StickyCookieSecret>>, anyhow::Error> {
+    let apps = self.apps.as_ref().ok_or(anyhow!("Missing application spec"))?;
+    let mut uses_sticky = false;
+
+    for app in apps.0.values() {
+      let server_name = app.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
+      let reverse_proxy = app.reverse_proxy.as_ref().ok_or(anyhow!("Missing reverse_proxy"))?;
+      for rpo in reverse_proxy {
+        if rpo.load_balance.as_deref() == Some(LOAD_BALANCE_STICKY_ROUND_ROBIN) {
+          uses_sticky = true;
+          validate_sticky_cookie_aad_component("domain", server_name)?;
+          validate_sticky_cookie_aad_component("path", rpo.path.as_deref().unwrap_or("/"))?;
+        }
+      }
+    }
+
+    if !uses_sticky {
+      return Ok(None);
+    }
+
+    let Some(secret) = self.sticky_cookie_secret.as_deref() else {
+      return Err(anyhow!(
+        "sticky_cookie_secret is required when any reverse_proxy entry uses load_balance = \"sticky\""
+      ));
+    };
+
+    StickyCookieSecret::try_from_config_value(secret)
+      .map(Arc::new)
+      .map(Some)
+      .map_err(|e| anyhow!("{e}"))
   }
 }
 
@@ -720,6 +761,41 @@ fn validate_lb_health_check(
 mod tests {
   use super::*;
 
+  #[cfg(feature = "sticky-cookie")]
+  const VALID_STICKY_COOKIE_SECRET: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+  #[cfg(feature = "sticky-cookie")]
+  fn config_with_reverse_proxy(load_balance: Option<&str>, path: Option<&str>, secret: Option<&str>) -> ConfigToml {
+    let mut apps = ahash::HashMap::default();
+    apps.insert(
+      "app".to_string(),
+      Application {
+        server_name: Some("example.com".to_string()),
+        reverse_proxy: Some(vec![ReverseProxyOption {
+          path: path.map(str::to_string),
+          replace_path: None,
+          upstream: vec![UpstreamParams {
+            location: "backend.local:8080".to_string(),
+            tls: None,
+          }],
+          upstream_options: None,
+          load_balance: load_balance.map(str::to_string),
+          #[cfg(feature = "health-check")]
+          health_check: None,
+        }]),
+        tls: None,
+      },
+    );
+
+    ConfigToml {
+      listen_port: Some(8080),
+      #[cfg(feature = "sticky-cookie")]
+      sticky_cookie_secret: secret.map(str::to_string),
+      apps: Some(Apps(apps)),
+      ..Default::default()
+    }
+  }
+
   #[cfg(feature = "health-check")]
   fn http_health_check_option(
     path: Option<&str>,
@@ -1077,6 +1153,57 @@ mod tests {
     assert!(result.is_err());
     let err = result.err().unwrap();
     assert!(err.to_string().contains("At least one upstream must be specified"));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_secret_not_required_without_sticky_routes() {
+    let config = config_with_reverse_proxy(Some("round_robin"), None, None);
+    assert!(config.validate_and_build_sticky_cookie_secret().unwrap().is_none());
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_secret_required_for_sticky_routes() {
+    let config = config_with_reverse_proxy(Some(LOAD_BALANCE_STICKY_ROUND_ROBIN), None, None);
+    let err = match config.validate_and_build_sticky_cookie_secret() {
+      Ok(_) => panic!("sticky-cookie config without a secret must fail"),
+      Err(e) => e,
+    };
+    assert!(err.to_string().contains("sticky_cookie_secret is required"));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_secret_accepts_valid_config_secret() {
+    let config = config_with_reverse_proxy(Some(LOAD_BALANCE_STICKY_ROUND_ROBIN), None, Some(VALID_STICKY_COOKIE_SECRET));
+    assert!(config.validate_and_build_sticky_cookie_secret().unwrap().is_some());
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_secret_rejects_malformed_config_secret() {
+    let config = config_with_reverse_proxy(Some(LOAD_BALANCE_STICKY_ROUND_ROBIN), None, Some("not*base64url"));
+    let err = match config.validate_and_build_sticky_cookie_secret() {
+      Ok(_) => panic!("malformed sticky-cookie secret must fail"),
+      Err(e) => e,
+    };
+    assert!(err.to_string().contains("sticky_cookie_secret"));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_aad_components_reject_nul_bytes() {
+    let config = config_with_reverse_proxy(
+      Some(LOAD_BALANCE_STICKY_ROUND_ROBIN),
+      Some("/tenant\0shadow"),
+      Some(VALID_STICKY_COOKIE_SECRET),
+    );
+    let err = match config.validate_and_build_sticky_cookie_secret() {
+      Ok(_) => panic!("sticky-cookie AAD components containing NUL must fail"),
+      Err(e) => e,
+    };
+    assert!(err.to_string().contains("must not contain NUL"));
   }
 
   #[cfg(feature = "health-check")]

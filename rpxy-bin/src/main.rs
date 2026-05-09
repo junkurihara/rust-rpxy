@@ -9,6 +9,8 @@ mod log;
 
 #[cfg(feature = "acme")]
 use crate::config::build_acme_manager;
+#[cfg(feature = "sticky-cookie")]
+use crate::config::build_sticky_cookie_secret;
 use crate::{
   config::{ConfigToml, ConfigTomlReloader, build_cert_manager, build_settings, parse_opts},
   constants::CONFIG_WATCH_DELAY_SECS,
@@ -16,6 +18,8 @@ use crate::{
   log::*,
 };
 use hot_reload::{ReloaderConfig, ReloaderReceiver, ReloaderService};
+#[cfg(feature = "sticky-cookie")]
+use rpxy_lib::StickyCookieSecret;
 use rpxy_lib::{RpxyOptions, RpxyOptionsBuilder, entrypoint};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -66,6 +70,8 @@ struct RpxyService {
   app_conf: rpxy_lib::AppConfigList,
   cert_service: Option<Arc<ReloaderService<rpxy_certs::CryptoReloader, rpxy_certs::ServerCryptoBase>>>,
   cert_rx: Option<ReloaderReceiver<rpxy_certs::ServerCryptoBase>>,
+  #[cfg(feature = "sticky-cookie")]
+  sticky_cookie_secret: Option<Arc<StickyCookieSecret>>,
   #[cfg(feature = "acme")]
   acme_manager: Option<rpxy_acme::AcmeManager>,
 }
@@ -74,6 +80,9 @@ impl RpxyService {
   /// Create a new RpxyService from config and runtime handle.
   async fn new(config_toml: &ConfigToml, runtime_handle: tokio::runtime::Handle) -> Result<Self, anyhow::Error> {
     let (proxy_conf, app_conf) = build_settings(config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
+    #[cfg(feature = "sticky-cookie")]
+    let sticky_cookie_secret =
+      build_sticky_cookie_secret(config_toml).map_err(|e| anyhow!("Invalid sticky-cookie configuration: {e}"))?;
 
     let (cert_service, cert_rx) = build_cert_manager(config_toml)
       .await
@@ -87,6 +96,8 @@ impl RpxyService {
       app_conf,
       cert_service,
       cert_rx,
+      #[cfg(feature = "sticky-cookie")]
+      sticky_cookie_secret,
       #[cfg(feature = "acme")]
       acme_manager: build_acme_manager(config_toml, runtime_handle.clone()).await?,
     })
@@ -99,6 +110,8 @@ impl RpxyService {
       app_conf,
       cert_service: _,
       cert_rx,
+      #[cfg(feature = "sticky-cookie")]
+      sticky_cookie_secret,
       #[cfg(feature = "acme")]
       acme_manager,
     } = self;
@@ -109,13 +122,16 @@ impl RpxyService {
         .as_ref()
         .map(|m| m.spawn_manager_tasks(cancel_token.child_token()))
         .unwrap_or((vec![], Default::default()));
-      let rpxy_opts = RpxyOptionsBuilder::default()
+      let mut builder = RpxyOptionsBuilder::default();
+      builder
         .proxy_config(proxy_conf.clone())
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.clone())
         .runtime_handle(runtime_handle.clone())
-        .server_configs_acme_challenge(Arc::new(server_config_acme_challenge))
-        .build()?;
+        .server_configs_acme_challenge(Arc::new(server_config_acme_challenge));
+      #[cfg(feature = "sticky-cookie")]
+      builder.sticky_cookie_secret(sticky_cookie_secret.clone());
+      let rpxy_opts = builder.build()?;
       self
         .start_inner(rpxy_opts, cancel_token, acme_join_handles)
         .await
@@ -124,12 +140,15 @@ impl RpxyService {
 
     #[cfg(not(feature = "acme"))]
     {
-      let rpxy_opts = RpxyOptionsBuilder::default()
+      let mut builder = RpxyOptionsBuilder::default();
+      builder
         .proxy_config(proxy_conf.clone())
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.clone())
-        .runtime_handle(runtime_handle.clone())
-        .build()?;
+        .runtime_handle(runtime_handle.clone());
+      #[cfg(feature = "sticky-cookie")]
+      builder.sticky_cookie_secret(sticky_cookie_secret.clone());
+      let rpxy_opts = builder.build()?;
       self.start_inner(rpxy_opts, cancel_token).await.map_err(|e| anyhow!(e))
     }
   }

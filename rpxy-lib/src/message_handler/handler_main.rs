@@ -5,6 +5,8 @@ use super::{
   request_ops::InspectParseHost,
   synthetic_response::{secure_redirection_response, synthetic_error_response},
 };
+#[cfg(feature = "sticky-cookie")]
+use crate::backend::StickyCookieConfig;
 use crate::{
   backend::{BackendAppManager, LoadBalanceContext},
   error::*,
@@ -31,6 +33,8 @@ pub(super) struct HandlerContext {
   /// Drives the `Secure` attribute on the sticky-cookie Set-Cookie response.
   #[cfg(feature = "sticky-cookie")]
   pub(super) sticky_cookie_secure: bool,
+  #[cfg(feature = "sticky-cookie")]
+  pub(super) sticky_cookie_config: Option<StickyCookieConfig>,
 }
 
 #[derive(Clone, Builder)]
@@ -195,8 +199,23 @@ where
     // Process reverse proxy context generated during the forwarding request generation.
     #[cfg(feature = "sticky-cookie")]
     if let Some(context_from_lb) = _context.context_lb {
+      let sticky_config = _context
+        .sticky_cookie_config
+        .as_ref()
+        .ok_or_else(|| HttpError::FailedToAddSetCookeInResponse("missing sticky-cookie config".to_string()))?;
+      let cipher = self
+        .globals
+        .sticky_cookie_cipher
+        .as_deref()
+        .ok_or_else(|| HttpError::FailedToAddSetCookeInResponse("missing sticky-cookie cipher".to_string()))?;
       let res_headers = res_backend.headers_mut();
-      if let Err(e) = set_sticky_cookie_lb_context(res_headers, &context_from_lb, _context.sticky_cookie_secure) {
+      if let Err(e) = set_sticky_cookie_lb_context(
+        res_headers,
+        &context_from_lb,
+        sticky_config,
+        _context.sticky_cookie_secure,
+        cipher,
+      ) {
         return Err(HttpError::FailedToAddSetCookeInResponse(e.to_string()));
       }
     }

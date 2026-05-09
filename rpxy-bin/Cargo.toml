@@ -51,9 +51,12 @@ rpxy-trusted-proxies = { path = "../rpxy-trusted-proxies/" }
 
 
 anyhow = { version = "1.0.102" }
-ahash = { version = "0.8.12" }
-serde = { version = "1.0.228", default-features = false, features = ["derive"] }
-tokio = { version = "1.52.2", default-features = false, features = [
+ahash = { version = "0.8.12", features = ["serde"] }
+serde = { version = "1.0.228", default-features = false, features = [
+  "derive",
+  "std",
+] }
+tokio = { version = "1.52.3", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",

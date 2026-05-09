@@ -129,13 +129,21 @@ where
     /////////////////////////////////////////////
     // Fix unique upstream destination since there could be multiple ones.
     #[cfg(feature = "sticky-cookie")]
-    let (upstream_chosen_opt, context_from_lb) = {
+    let (upstream_chosen_opt, context_from_lb, sticky_cookie_config) = {
+      let mut sticky_cookie_config = None;
       let context_to_lb = if let crate::backend::LoadBalance::StickyRoundRobin(lb) = &upstream_candidates.load_balance {
-        takeout_sticky_cookie_lb_context(req.headers_mut(), &lb.sticky_config.name)?
+        let cipher = self
+          .globals
+          .sticky_cookie_cipher
+          .as_deref()
+          .ok_or_else(|| anyhow!("sticky-cookie cipher is not configured"))?;
+        sticky_cookie_config = Some(lb.sticky_config.clone());
+        takeout_sticky_cookie_lb_context(req.headers_mut(), &lb.sticky_config, cipher)?
       } else {
         None
       };
-      upstream_candidates.get(&context_to_lb)
+      let (upstream_chosen_opt, context_from_lb) = upstream_candidates.get(&context_to_lb);
+      (upstream_chosen_opt, context_from_lb, sticky_cookie_config)
     };
     #[cfg(not(feature = "sticky-cookie"))]
     let (upstream_chosen_opt, _) = upstream_candidates.get(&None);
@@ -148,6 +156,8 @@ where
       context_lb: None,
       #[cfg(feature = "sticky-cookie")]
       sticky_cookie_secure,
+      #[cfg(feature = "sticky-cookie")]
+      sticky_cookie_config,
     };
     /////////////////////////////////////////////
 

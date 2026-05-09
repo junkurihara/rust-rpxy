@@ -182,14 +182,21 @@ reverse_proxy = [
 You can specify multiple backend locations in the `reverse_proxy` array for *load-balancing* with an appropriate `load_balance` option. Currently it works in a round-robin manner, randomly, or round-robin with *session-persistence* using cookies. If `load_balance` is not specified, the first backend location is always chosen.
 
 ```toml
+# Required only when any reverse_proxy uses load_balance = 'sticky'.
+# Generate with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'
+sticky_cookie_secret = '<base64url-no-pad-encoded-32-byte-secret>'
+
 [apps."app_name"]
 server_name = 'app1.example.com'
-reverse_proxy = [
+[[apps."app_name".reverse_proxy]]
+upstream = [
   { location = 'app1.local:8080' },
-  { location = 'app2.local:8000' }
+  { location = 'app2.local:8000' },
 ]
 load_balance = 'round_robin' # or 'random' or 'sticky'
 ```
+
+When `load_balance = 'sticky'` is used, `sticky_cookie_secret` is mandatory. It must be a 32-byte secret encoded as unpadded base64url. rpxy issues an AEAD-sealed opaque sticky token containing the backend identifier and a short expiration timestamp, so backend identifiers are not exposed to clients and captured cookies are only replayable until the sealed expiration. Existing plaintext sticky cookies, malformed cookies, expired cookies, and cookies sealed with another secret are ignored and replaced by a newly issued sticky token.
 
 ### Second Step: Terminating TLS
 

@@ -34,7 +34,7 @@ rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, f
   "webpki-roots",
 ] }
 rustls-post-quantum = { version = "0.2.4", optional = true }
-tokio = { version = "1.52.2", default-features = false, features = [
+tokio = { version = "1.52.3", default-features = false, features = [
   "rt",
   "macros",
 ] }
@@ -45,8 +45,8 @@ futures-util = { version = "0.3.32", default-features = false, features = [
 ] }
 
 [dev-dependencies]
-tempfile = "3.15"
-tokio = { version = "1.52.2", default-features = false, features = [
+tempfile = "3.27"
+tokio = { version = "1.52.3", default-features = false, features = [
   "rt",
   "macros",
   "rt-multi-thread",

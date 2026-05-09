@@ -57,6 +57,11 @@ max_clients = 512
 # For full dual-stack trust-all, specify both "0.0.0.0/0" and "::/0".
 # trusted_forwarded_proxies = []
 
+# Optional. Required when any reverse_proxy entry uses load_balance = "sticky".
+# Value must be a 32-byte secret encoded as unpadded base64url.
+# Generate with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'
+# sticky_cookie_secret = "<base64url-no-pad-encoded-32-byte-secret>"
+
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # except for configured application.
 # Note that this is only for http. Https requests with an unknown server_name are rejected

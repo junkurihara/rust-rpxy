@@ -25,7 +25,7 @@ http3-s2n = [
 health-check = []
 proxy-protocol = ["dep:ppp"]
 cache = ["http-cache-semantics", "lru", "sha2", "base64"]
-sticky-cookie = ["base64", "sha2", "chrono"]
+sticky-cookie = ["base64", "sha2", "chrono", "aes-gcm", "secrecy"]
 native-tls-backend = ["hyper-tls"]
 rustls-backend = ["hyper-rustls"]
 webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
@@ -43,7 +43,7 @@ ahash = "0.8.12"
 bytes = "1.11.1"
 derive_builder = "0.20.2"
 futures = { version = "0.3.32", features = ["alloc", "async-await"] }
-tokio = { version = "1.52.2", default-features = false, features = [
+tokio = { version = "1.52.3", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -124,6 +124,10 @@ chrono = { version = "0.4.44", default-features = false, features = [
   "clock",
 ], optional = true }
 base64 = { version = "0.22.1", optional = true }
+# Intentional RC pin: this code targets the 0.11 AEAD nonce-generation API.
+# Re-evaluate this dependency, or vendor/pin a final release, before the release freeze.
+aes-gcm = { version = "0.11.0-rc.3", optional = true, features = ["rand_core"] }
+secrecy = { version = "0.10.3", optional = true }
 
 
 [dev-dependencies]

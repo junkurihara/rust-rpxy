@@ -18,8 +18,8 @@ pub mod H3 {
 }
 
 #[cfg(feature = "sticky-cookie")]
-/// For load-balancing with sticky cookie
-pub const STICKY_COOKIE_NAME: &str = "rpxy_srv_id";
+/// Current cookie name for sticky load-balancing tokens.
+pub const STICKY_COOKIE_NAME: &str = "rpxy_sticky_token";
 
 #[cfg(feature = "cache")]
 // # of entries in cache
