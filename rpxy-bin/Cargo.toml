@@ -89,6 +89,6 @@ rpxy-certs = { path = "../rpxy-certs/", default-features = false, features = [
 rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true }
 
 [target.'cfg(not(target_os = "illumos"))'.dependencies]
-mimalloc = { version = "0.1.51", default-features = false }
+mimalloc = { version = "0.1.52", default-features = false }
 
 [dev-dependencies]
