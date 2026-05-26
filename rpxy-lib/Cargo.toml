@@ -126,7 +126,7 @@ chrono = { version = "0.4.44", default-features = false, features = [
 base64 = { version = "0.22.1", optional = true }
 # Intentional RC pin: this code targets the 0.11 AEAD nonce-generation API.
 # Re-evaluate this dependency, or vendor/pin a final release, before the release freeze.
-aes-gcm = { version = "0.11.0-rc.3", optional = true, features = ["rand_core"] }
+aes-gcm = { version = "0.11.0-rc.4", optional = true, features = ["rand_core"] }
 secrecy = { version = "0.10.3", optional = true }
 
 
