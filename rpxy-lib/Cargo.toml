@@ -106,7 +106,7 @@ s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
 ], optional = true }
 ##########
 # for UDP socket with SO_REUSEADDR and set_only_v6 for socket binding
-socket2 = { version = "0.6.3", features = ["all"] }
+socket2 = { version = "0.6.4", features = ["all"] }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
