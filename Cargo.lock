@@ -1163,9 +1163,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.10.0"
+version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb92f162bf56536459fc83c79b974bb12837acfed43d6bc370a7916d0ae15ecc"
+checksum = "55281c53a1894c864990125767da440a4e630446785086f52523b20033b74498"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -2549,7 +2549,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "s2n-codec"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -2558,7 +2558,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic"
-version = "1.80.0"
+version = "1.81.0"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -2580,7 +2580,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-core"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "atomic-waker",
  "byteorder",
@@ -2599,7 +2599,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-crypto"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "aws-lc-rs",
  "cfg-if",
@@ -2622,7 +2622,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-platform"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "cfg-if",
  "futures",
@@ -2635,7 +2635,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-rustls"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "bytes",
  "rustls",
@@ -2648,7 +2648,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "bytes",
  "errno",
@@ -2661,7 +2661,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls-default"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "s2n-quic-rustls",
  "s2n-quic-tls",
@@ -2669,7 +2669,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-transport"
-version = "0.80.0"
+version = "0.81.0"
 dependencies = [
  "bytes",
  "futures-channel",
