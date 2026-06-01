@@ -63,7 +63,8 @@ impl<'a> StickyCookieInfoBuilder {
     self
   }
   pub fn path(&mut self, v: impl Into<Cow<'a, str>>) -> &mut Self {
-    self.path = Some(v.into().to_ascii_lowercase());
+    // Do not lowercase: paths are case-sensitive and must match the route's case.
+    self.path = Some(v.into().into_owned());
     self
   }
   pub fn expires(&mut self, duration_secs: i64) -> &mut Self {
@@ -244,5 +245,24 @@ mod tests {
   fn sticky_cookie_value_requires_exact_cookie_name() {
     assert!(StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}=value"), STICKY_COOKIE_NAME).is_ok());
     assert!(StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}_shadow=value"), STICKY_COOKIE_NAME).is_err());
+  }
+
+  #[test]
+  fn sticky_cookie_path_preserves_case_domain_lowercased() {
+    let config = StickyCookieConfig {
+      name: STICKY_COOKIE_NAME.to_string(),
+      domain: "Example.COM".to_string(),
+      path: "/App/Sub".to_string(),
+      duration: 100,
+    };
+    let cookie = config.build_sticky_cookie("v").unwrap();
+    let info = cookie.info.as_ref().unwrap();
+    assert_eq!(info.path, "/App/Sub", "path case must be preserved");
+    assert_eq!(info.domain, "example.com", "domain must be lowercased");
+
+    let now_ts = info.expires - 100;
+    let serialized = cookie.to_set_cookie_value_at(false, now_ts).unwrap();
+    assert!(serialized.contains("path=/App/Sub"), "got: {serialized}");
+    assert!(serialized.contains("domain=example.com"), "got: {serialized}");
   }
 }

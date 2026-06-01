@@ -42,8 +42,9 @@ impl LoadBalanceStickyBuilder {
     self.sticky_config = Some(StickyCookieConfig {
       name: STICKY_COOKIE_NAME.to_string(), // TODO: config等で変更できるように
       domain: server_name.to_ascii_lowercase(),
+      // Path is kept verbatim (route matching is case-sensitive); only the domain is lowercased.
       path: if let Some(v) = path_opt {
-        v.to_ascii_lowercase()
+        v.clone()
       } else {
         "/".to_string()
       },
