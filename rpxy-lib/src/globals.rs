@@ -29,6 +29,9 @@ pub struct Globals {
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Certificate reloader service receiver // TODO: newer one
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
+  /// Operator opt-out (env `RPXY_UNSAFE_DEBUG_HEADERS`) that disables
+  /// credential-header redaction in DEBUG request logs. Default false.
+  pub(crate) unsafe_debug_headers: bool,
   #[cfg(feature = "sticky-cookie")]
   pub(crate) sticky_cookie_cipher: Option<std::sync::Arc<Aes256Gcm>>,
 

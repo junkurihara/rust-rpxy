@@ -2,6 +2,10 @@
 
 ## 0.12.1 or 0.13.0 (Unreleased)
 
+### Important Changes
+
+- **Redact sensitive headers in DEBUG request logs.** The `debug!` line that logs the request to be forwarded now masks the values of `Authorization`, `Cookie`, and `Proxy-Authorization` with a `<redacted>` placeholder (header names stay visible). For troubleshooting, redaction can be disabled by setting the environment variable `RPXY_UNSAFE_DEBUG_HEADERS` to `1`, `true`, or `yes`; the variable is read once at startup and emits a `warn!` when enabled. Do not leave it enabled in production. The unredacted values still only appear when `RUST_LOG=debug`.
+
 ## 0.12.0 (To be released shortly)
 
 **Security-focused release with the following improvements and bugfixes.**

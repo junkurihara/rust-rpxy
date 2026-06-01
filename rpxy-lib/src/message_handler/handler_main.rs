@@ -181,7 +181,7 @@ where
       req.uri(),
       req.method(),
       req.version(),
-      req.headers()
+      DebugHeaders::new(req.headers(), self.globals.unsafe_debug_headers)
     );
     log_data.xff(&req.headers().get(header_defs::X_FORWARDED_FOR));
     log_data.upstream(req.uri());

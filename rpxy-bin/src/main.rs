@@ -38,6 +38,10 @@ fn main() {
 
     init_logger(parsed_opts.log_dir_path.as_deref());
 
+    // Read the unsafe debug-header logging opt-out once at startup.
+    // Not hot-reloaded; threaded into rpxy-lib via RpxyOptions.
+    let unsafe_debug_headers = unsafe_debug_headers_enabled();
+
     let reloader_config = ReloaderConfig::hybrid(CONFIG_WATCH_DELAY_SECS);
 
     let (config_service, config_rx) =
@@ -52,7 +56,7 @@ fn main() {
           std::process::exit(1);
         }
       }
-      rpxy_res = rpxy_service(config_rx, runtime.handle().clone()) => {
+      rpxy_res = rpxy_service(config_rx, runtime.handle().clone(), unsafe_debug_headers) => {
         if let Err(e) = rpxy_res {
           error!("rpxy service exited: {e}");
           std::process::exit(1);
@@ -70,6 +74,9 @@ struct RpxyService {
   app_conf: rpxy_lib::AppConfigList,
   cert_service: Option<Arc<ReloaderService<rpxy_certs::CryptoReloader, rpxy_certs::ServerCryptoBase>>>,
   cert_rx: Option<ReloaderReceiver<rpxy_certs::ServerCryptoBase>>,
+  /// Operator opt-out for credential-header redaction in DEBUG logs,
+  /// read once at startup from `RPXY_UNSAFE_DEBUG_HEADERS`.
+  unsafe_debug_headers: bool,
   #[cfg(feature = "sticky-cookie")]
   sticky_cookie_secret: Option<Arc<StickyCookieSecret>>,
   #[cfg(feature = "acme")]
@@ -78,7 +85,11 @@ struct RpxyService {
 
 impl RpxyService {
   /// Create a new RpxyService from config and runtime handle.
-  async fn new(config_toml: &ConfigToml, runtime_handle: tokio::runtime::Handle) -> Result<Self, anyhow::Error> {
+  async fn new(
+    config_toml: &ConfigToml,
+    runtime_handle: tokio::runtime::Handle,
+    unsafe_debug_headers: bool,
+  ) -> Result<Self, anyhow::Error> {
     let (proxy_conf, app_conf) = build_settings(config_toml).map_err(|e| anyhow!("Invalid configuration: {e}"))?;
     #[cfg(feature = "sticky-cookie")]
     let sticky_cookie_secret =
@@ -96,6 +107,7 @@ impl RpxyService {
       app_conf,
       cert_service,
       cert_rx,
+      unsafe_debug_headers,
       #[cfg(feature = "sticky-cookie")]
       sticky_cookie_secret,
       #[cfg(feature = "acme")]
@@ -110,6 +122,7 @@ impl RpxyService {
       app_conf,
       cert_service: _,
       cert_rx,
+      unsafe_debug_headers,
       #[cfg(feature = "sticky-cookie")]
       sticky_cookie_secret,
       #[cfg(feature = "acme")]
@@ -128,6 +141,7 @@ impl RpxyService {
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.clone())
         .runtime_handle(runtime_handle.clone())
+        .unsafe_debug_headers(*unsafe_debug_headers)
         .server_configs_acme_challenge(Arc::new(server_config_acme_challenge));
       #[cfg(feature = "sticky-cookie")]
       builder.sticky_cookie_secret(sticky_cookie_secret.clone());
@@ -145,7 +159,8 @@ impl RpxyService {
         .proxy_config(proxy_conf.clone())
         .app_config_list(app_conf.clone())
         .cert_rx(cert_rx.clone())
-        .runtime_handle(runtime_handle.clone());
+        .runtime_handle(runtime_handle.clone())
+        .unsafe_debug_headers(*unsafe_debug_headers);
       #[cfg(feature = "sticky-cookie")]
       builder.sticky_cookie_secret(sticky_cookie_secret.clone());
       let rpxy_opts = builder.build()?;
@@ -248,6 +263,7 @@ impl RpxyService {
 async fn rpxy_service(
   mut config_rx: ReloaderReceiver<ConfigToml, String>,
   runtime_handle: tokio::runtime::Handle,
+  unsafe_debug_headers: bool,
 ) -> Result<(), anyhow::Error> {
   info!("Start rpxy service with dynamic config reloader");
   // Initial loading
@@ -256,7 +272,7 @@ async fn rpxy_service(
     .borrow()
     .clone()
     .ok_or(anyhow!("Something wrong in config reloader receiver"))?;
-  let mut service = RpxyService::new(&config_toml, runtime_handle.clone()).await?;
+  let mut service = RpxyService::new(&config_toml, runtime_handle.clone(), unsafe_debug_headers).await?;
 
   // Continuous monitoring
   loop {
@@ -279,7 +295,7 @@ async fn rpxy_service(
           error!("Something wrong in config reloader receiver");
           return Err(anyhow!("Something wrong in config reloader receiver"));
         };
-        match RpxyService::new(&new_config_toml, runtime_handle.clone()).await {
+        match RpxyService::new(&new_config_toml, runtime_handle.clone(), unsafe_debug_headers).await {
           Ok(new_service) => {
             info!("Configuration updated.");
             service = new_service;
