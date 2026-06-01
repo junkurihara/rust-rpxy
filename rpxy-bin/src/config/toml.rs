@@ -770,31 +770,31 @@ fn validate_lb_health_check(
 pub(crate) fn validate_server_name(server_name: &str) -> Result<(), anyhow::Error> {
   if server_name.is_empty() || server_name.len() > 253 {
     return Err(anyhow!(
-      "Invalid server_name \"{server_name}\": length must be between 1 and 253 characters"
+      "Invalid server_name {server_name:?}: length must be between 1 and 253 characters"
     ));
   }
   if !server_name.is_ascii() {
     return Err(anyhow!(
-      "Invalid server_name \"{server_name}\": must be ASCII (use punycode for internationalized names)"
+      "Invalid server_name {server_name:?}: must be ASCII (use punycode for internationalized names)"
     ));
   }
   for label in server_name.split('.') {
     let bytes = label.as_bytes();
     if bytes.is_empty() || bytes.len() > 63 {
       return Err(anyhow!(
-        "Invalid server_name \"{server_name}\": each dot-separated label must be between 1 and 63 characters"
+        "Invalid server_name {server_name:?}: each dot-separated label must be between 1 and 63 characters"
       ));
     }
     let first = *bytes.first().unwrap();
     let last = *bytes.last().unwrap();
     if !first.is_ascii_alphanumeric() || !last.is_ascii_alphanumeric() {
       return Err(anyhow!(
-        "Invalid server_name \"{server_name}\": label \"{label}\" must start and end with an alphanumeric character"
+        "Invalid server_name {server_name:?}: label {label:?} must start and end with an alphanumeric character"
       ));
     }
     if !bytes.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'-') {
       return Err(anyhow!(
-        "Invalid server_name \"{server_name}\": label \"{label}\" may contain only alphanumerics and '-'"
+        "Invalid server_name {server_name:?}: label {label:?} may contain only alphanumerics and '-'"
       ));
     }
   }
