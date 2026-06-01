@@ -194,6 +194,46 @@ mod tests {
   }
 
   #[test]
+  fn takeout_rejects_path_aad_mismatch() {
+    // `path` is part of the AEAD AAD, so a cookie sealed for "/App" must not open under "/app".
+    let cipher = cipher();
+    let config_mixed = StickyCookieConfig {
+      name: STICKY_COOKIE_NAME.to_string(),
+      domain: "example.com".to_string(),
+      path: "/App".to_string(),
+      duration: 300,
+    };
+    let config_lower = StickyCookieConfig {
+      name: STICKY_COOKIE_NAME.to_string(),
+      domain: "example.com".to_string(),
+      path: "/app".to_string(),
+      duration: 300,
+    };
+    let context = LoadBalanceContext {
+      sticky_cookie: config_mixed.build_sticky_cookie("backend-a").unwrap(),
+    };
+    let mut res_headers = HeaderMap::new();
+    set_sticky_cookie_lb_context(&mut res_headers, &context, &config_mixed, false, &cipher).unwrap();
+    let cookie_pair = res_headers
+      .get(header::SET_COOKIE)
+      .unwrap()
+      .to_str()
+      .unwrap()
+      .split(';')
+      .next()
+      .unwrap()
+      .to_string();
+
+    let mut req_headers = HeaderMap::new();
+    req_headers.insert(header::COOKIE, cookie_pair.parse().unwrap());
+    assert!(
+      takeout_sticky_cookie_lb_context(&mut req_headers, &config_lower, &cipher)
+        .unwrap()
+        .is_none()
+    );
+  }
+
+  #[test]
   fn takeout_rejects_old_plaintext_cookie() {
     let cipher = cipher();
     let config = sticky_config("example.com");

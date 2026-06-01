@@ -563,6 +563,7 @@ impl ConfigToml {
 impl Application {
   pub fn build_app_config(&self, app_name: &str) -> std::result::Result<AppConfig, anyhow::Error> {
     let server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
+    validate_server_name(server_name_string)?;
 
     // reverse proxy settings
     let reverse_proxy_config: Vec<ReverseProxyConfig> = self.try_into()?;
@@ -755,6 +756,47 @@ fn validate_lb_health_check(
     return Err(anyhow!(
       "[{server_name}] load_balance = \"primary_backup\" requires health_check to be enabled",
     ));
+  }
+  Ok(())
+}
+
+/// Validate that `server_name` is a syntactically valid hostname before it is used as an
+/// SNI key, a Host rewrite value, or an ACME filesystem path component.
+///
+/// Each dot-separated label must be 1..=63 chars, start and end alphanumeric, and contain
+/// only alphanumerics and `-`; the whole name is 1..=253 chars and ASCII. This rejects path
+/// traversal, absolute paths, wildcards, underscores, IPv6 literals, and non-ASCII; IPv4
+/// literals are accepted.
+pub(crate) fn validate_server_name(server_name: &str) -> Result<(), anyhow::Error> {
+  if server_name.is_empty() || server_name.len() > 253 {
+    return Err(anyhow!(
+      "Invalid server_name \"{server_name}\": length must be between 1 and 253 characters"
+    ));
+  }
+  if !server_name.is_ascii() {
+    return Err(anyhow!(
+      "Invalid server_name \"{server_name}\": must be ASCII (use punycode for internationalized names)"
+    ));
+  }
+  for label in server_name.split('.') {
+    let bytes = label.as_bytes();
+    if bytes.is_empty() || bytes.len() > 63 {
+      return Err(anyhow!(
+        "Invalid server_name \"{server_name}\": each dot-separated label must be between 1 and 63 characters"
+      ));
+    }
+    let first = *bytes.first().unwrap();
+    let last = *bytes.last().unwrap();
+    if !first.is_ascii_alphanumeric() || !last.is_ascii_alphanumeric() {
+      return Err(anyhow!(
+        "Invalid server_name \"{server_name}\": label \"{label}\" must start and end with an alphanumeric character"
+      ));
+    }
+    if !bytes.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'-') {
+      return Err(anyhow!(
+        "Invalid server_name \"{server_name}\": label \"{label}\" may contain only alphanumerics and '-'"
+      ));
+    }
   }
   Ok(())
 }
@@ -1222,5 +1264,68 @@ mod tests {
       healthy_threshold: 2,
     });
     assert!(validate_lb_health_check("example.com", Some(LOAD_BALANCE_PRIMARY_BACKUP), &health_check).is_ok());
+  }
+
+  #[test]
+  fn validate_server_name_accepts_valid_hostnames() {
+    for name in [
+      "example.com",
+      "sub.example.co.jp",
+      "a-b.example.com",
+      "localhost",
+      "127.0.0.1", // IPv4 literal accepted (each label is alphanumeric)
+      "kubernetes.docker.internal",
+      "localhost.localdomain",
+    ] {
+      assert!(validate_server_name(name).is_ok(), "expected accept: {name}");
+    }
+  }
+
+  #[test]
+  fn validate_server_name_rejects_path_traversal_and_separators() {
+    for name in ["../../etc", "a/b", "a\\b", "..", "/abs/path", "a.b\0.c"] {
+      assert!(validate_server_name(name).is_err(), "expected reject: {name:?}");
+    }
+  }
+
+  #[test]
+  fn validate_server_name_rejects_invalid_label_syntax() {
+    for name in [
+      "",
+      ".example.com",
+      "example.com.",
+      "a..b.com",
+      "-bad.example",
+      "bad-.example",
+    ] {
+      assert!(validate_server_name(name).is_err(), "expected reject: {name:?}");
+    }
+    // over-long label (64 chars) and over-long name (>253 chars)
+    let long_label = "a".repeat(64);
+    assert!(validate_server_name(&long_label).is_err());
+    let long_name = format!("{}.example.com", "a".repeat(250));
+    assert!(validate_server_name(&long_name).is_err());
+  }
+
+  #[test]
+  fn validate_server_name_rejects_wildcard_underscore_ipv6_idn() {
+    for name in [
+      "*.example.com",     // wildcard: unsupported
+      "_dmarc.example.com", // underscore: not a valid TLS SNI hostname
+      "::1",                // IPv6 literal
+      "2001:db8::1",        // IPv6 literal
+      "例え.example",       // raw Unicode IDN (supply punycode instead)
+    ] {
+      assert!(validate_server_name(name).is_err(), "expected reject: {name:?}");
+    }
+  }
+
+  #[test]
+  fn validate_server_name_error_message_quotes_offending_value() {
+    let err = validate_server_name("../evil").unwrap_err();
+    assert!(
+      err.to_string().contains("Invalid server_name"),
+      "error must be the validation error: {err}"
+    );
   }
 }

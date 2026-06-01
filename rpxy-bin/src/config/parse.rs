@@ -12,6 +12,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "acme")]
 use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
+#[cfg(feature = "acme")]
+use super::toml::validate_server_name;
 
 /// Parsed options from CLI
 /// Options for configuring the application.
@@ -80,6 +82,8 @@ fn build_tls_for_app_acme(
 ) -> Result<(), anyhow::Error> {
   if let Some(true) = tls.acme {
     ensure!(acme_option.is_some() && tls.tls_cert_key_path.is_none() && tls.tls_cert_path.is_none());
+    // Re-validate here too: this function is callable without central config validation.
+    validate_server_name(server_name)?;
     let subdir = format!("{}/{}", acme_registry_path, server_name.to_ascii_lowercase());
     let file_name =
       rpxy_acme::DirCache::cached_cert_file_name(&[server_name.to_ascii_lowercase()], acme_dir_url.to_ascii_lowercase());
@@ -192,6 +196,12 @@ pub async fn build_acme_manager(
     return Ok(None);
   }
 
+  // Validate before `AcmeManager::try_new` touches the filesystem: each server_name is
+  // joined into the cache dir path, and this function is callable without central validation.
+  for domain in &domains {
+    validate_server_name(domain)?;
+  }
+
   let acme_manager = AcmeManager::try_new(
     acme_option.dir_url.as_deref(),
     acme_option.registry_path.as_deref(),
@@ -202,4 +212,55 @@ pub async fn build_acme_manager(
   .await?;
 
   Ok(Some(acme_manager))
+}
+
+#[cfg(all(test, feature = "acme"))]
+mod tests {
+  use super::*;
+  use super::super::toml::{AcmeOption, TlsOption};
+
+  #[test]
+  fn build_tls_for_app_acme_rejects_traversal_server_name() {
+    let mut tls = TlsOption {
+      acme: Some(true),
+      ..Default::default()
+    };
+    let acme_option = Some(AcmeOption {
+      email: "test@example.com".to_string(),
+      ..Default::default()
+    });
+    let err = build_tls_for_app_acme(&mut tls, &acme_option, "../evil", "/tmp/acme", ACME_DIR_URL).unwrap_err();
+    assert!(err.to_string().contains("Invalid server_name"), "got: {err}");
+    // The cert paths must not have been populated (validation fired before the format!).
+    assert!(tls.tls_cert_path.is_none());
+    assert!(tls.tls_cert_key_path.is_none());
+  }
+
+  #[tokio::test]
+  async fn build_acme_manager_rejects_traversal_server_name_before_fs() {
+    // Asserting the error is the validation error (not a write/IO error) proves the check
+    // runs before `AcmeManager::try_new` touches the filesystem; the temp registry below is
+    // therefore never created.
+    let registry = std::env::temp_dir().join("rpxy-server-name-validation-test");
+    let toml_str = format!(
+      r#"
+[apps.app1]
+server_name = "../evil"
+[apps.app1.tls]
+acme = true
+[experimental.acme]
+email = "test@example.com"
+registry_path = "{}"
+"#,
+      registry.display()
+    );
+    let config: ConfigToml = toml::from_str(&toml_str).unwrap();
+    let err = build_acme_manager(&config, tokio::runtime::Handle::current())
+      .await
+      .unwrap_err();
+    assert!(
+      err.to_string().contains("Invalid server_name"),
+      "must be the validation error, not a downstream write-permission/IO error: {err}"
+    );
+  }
 }
