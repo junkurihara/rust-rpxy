@@ -107,6 +107,8 @@ If you set `--log-dir=<log_dir>`, the log files are created in the specified dir
 <!-- - `${log_dir}/error.log` for error log -->
 - `${log_dir}/rpxy.log` for system and error log
 
+The log verbosity is controlled by the `RUST_LOG` environment variable (e.g., `RUST_LOG=debug`). At `debug` level, the request-forwarding log redacts the values of sensitive headers (`Authorization`, `Cookie`, `Proxy-Authorization`) as `<redacted>`. For troubleshooting only, you can disable this redaction by setting `RPXY_UNSAFE_DEBUG_HEADERS` to `1`, `true`, or `yes`; rpxy then prints these header values verbatim and emits a warning at startup. This is read once at startup and must not be left enabled in production.
+
 That's all!
 
 ## Basic Configuration

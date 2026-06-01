@@ -13,7 +13,6 @@ use serde::Deserialize;
 use std::{
   fs,
   net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-  sync::Arc,
 };
 use tokio::time::Duration;
 
@@ -22,6 +21,9 @@ use rpxy_lib::TcpRecvProxyProtocolConfig;
 
 #[cfg(feature = "health-check")]
 use rpxy_lib::{HealthCheckConfig, HealthCheckType, LOAD_BALANCE_PRIMARY_BACKUP};
+
+#[cfg(feature = "sticky-cookie")]
+use std::sync::Arc;
 
 #[cfg(feature = "sticky-cookie")]
 use rpxy_lib::{LOAD_BALANCE_STICKY_ROUND_ROBIN, StickyCookieSecret, validate_sticky_cookie_aad_component};

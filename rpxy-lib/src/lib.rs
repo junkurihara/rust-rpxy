@@ -65,6 +65,10 @@ pub struct RpxyOptions {
   pub cert_rx: Option<ReloaderReceiver<ServerCryptoBase>>, // TODO:
   /// Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
+  /// Operator opt-out (env `RPXY_UNSAFE_DEBUG_HEADERS`) that disables
+  /// credential-header redaction in DEBUG request logs. Default false.
+  #[builder(default)]
+  pub unsafe_debug_headers: bool,
   #[cfg(feature = "sticky-cookie")]
   #[builder(default)]
   pub sticky_cookie_secret: Option<Arc<StickyCookieSecret>>,
@@ -81,6 +85,7 @@ pub async fn entrypoint(
     app_config_list,
     cert_rx, // TODO:
     runtime_handle,
+    unsafe_debug_headers,
     #[cfg(feature = "sticky-cookie")]
     sticky_cookie_secret,
     #[cfg(feature = "acme")]
@@ -174,6 +179,7 @@ pub async fn entrypoint(
     request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
     cert_reloader_rx: cert_rx.clone(),
+    unsafe_debug_headers: *unsafe_debug_headers,
     #[cfg(feature = "sticky-cookie")]
     sticky_cookie_cipher,
 

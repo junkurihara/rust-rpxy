@@ -671,7 +671,7 @@ fn format_forwarded_node(node: &ForwardedNode) -> Result<String> {
 ///
 /// 1. If the rpxy listener is TLS-terminating, return true.
 /// 2. Otherwise, only honor forwarding-derived scheme when the immediate peer is in
-///    `trusted_forwarded_proxies` (same trust boundary as H-1).
+///    `trusted_forwarded_proxies` (same trust boundary as the forwarding-header policy).
 /// 3. Header priority: `X-Forwarded-Proto` first comma-element wins; fall back to the
 ///    `proto=` parameter of the first `Forwarded` entry.
 /// 4. Any parse failure fails closed to false (debug-logged, not warn-logged) and does
