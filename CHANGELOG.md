@@ -4,8 +4,6 @@
 
 ### Important Changes
 
-- **Redact sensitive headers in DEBUG request logs.** The `debug!` line that logs the request to be forwarded now masks the values of `Authorization`, `Cookie`, and `Proxy-Authorization` with a `<redacted>` placeholder (header names stay visible). For troubleshooting, redaction can be disabled by setting the environment variable `RPXY_UNSAFE_DEBUG_HEADERS` to `1`, `true`, or `yes`; the variable is read once at startup and emits a `warn!` when enabled. Do not leave it enabled in production. The unredacted values still only appear when `RUST_LOG=debug`.
-
 ## 0.12.0 (To be released shortly)
 
 **Security-focused release with the following improvements and bugfixes.**
@@ -24,6 +22,7 @@
 - **Dependency note:** the sticky-cookie AEAD implementation currently pins `aes-gcm = 0.11.0-rc.3` intentionally for the 0.11 AEAD nonce-generation API. This pre-release dependency must be re-evaluated, replaced with a final 0.11.x release, or explicitly re-approved before the release dependency freeze.
 - Rebuild `X-Forwarded-Host` as part of the general forwarding-header policy. rpxy no longer forwards a client-supplied `X-Forwarded-Host` value as-is; instead it rebuilds `X-Forwarded-Host` from the original client-visible host, alongside the other authoritative `X-Forwarded-*` headers. As with `Forwarded: host=`, this value is observational only and must not be used for security decisions.
 - Harden TLS private key file permissions on Unix-like systems. Newly-created ACME cache files are now created with mode `0600`, newly-created ACME cache directories with mode `0700`, and existing cache artifacts keep their current modes. Manually provisioned TLS private key files are also checked at load time; rpxy emits a `warn!` log when any group or other permission bit is set, while still loading the key for backward compatibility.
+- **Redact sensitive headers in DEBUG request logs.** The `debug!` line that logs the request to be forwarded now masks the values of `Authorization`, `Cookie`, and `Proxy-Authorization` with a `<redacted>` placeholder (header names stay visible). For troubleshooting, redaction can be disabled by setting the environment variable `RPXY_UNSAFE_DEBUG_HEADERS` to `1`, `true`, or `yes`; the variable is read once at startup and emits a `warn!` when enabled. Do not leave it enabled in production. The unredacted values still only appear when `RUST_LOG=debug`.
 
 ### Improvement
 
