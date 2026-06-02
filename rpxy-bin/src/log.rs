@@ -6,6 +6,34 @@ use tracing_subscriber::{filter::filter_fn, fmt, prelude::*};
 #[allow(unused)]
 pub use tracing::{debug, error, info, warn};
 
+/// Environment variable that disables credential-header redaction in DEBUG
+/// request logs. Troubleshooting-only; see `unsafe_debug_headers_enabled`.
+const UNSAFE_DEBUG_HEADERS_ENV: &str = "RPXY_UNSAFE_DEBUG_HEADERS";
+
+/// Strict parse of the `RPXY_UNSAFE_DEBUG_HEADERS` opt-out value. Only `1`,
+/// `true`, or `yes` (case-insensitive, trimmed) enable it; every other value -
+/// including typos and `0` / `false` - is treated as disabled, so the fail-safe
+/// posture is always toward redaction.
+fn parse_unsafe_debug_headers(value: Option<&str>) -> bool {
+  value
+    .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+    .unwrap_or(false)
+}
+
+/// Read the `RPXY_UNSAFE_DEBUG_HEADERS` opt-out once at startup. When enabled,
+/// emit a single `warn!` so that even at `RUST_LOG=info` an operator sees that
+/// credential redaction is disabled (the header dump itself still only appears
+/// at `RUST_LOG=debug`). Not hot-reloaded: read once and threaded into rpxy-lib.
+pub fn unsafe_debug_headers_enabled() -> bool {
+  let enabled = parse_unsafe_debug_headers(std::env::var(UNSAFE_DEBUG_HEADERS_ENV).ok().as_deref());
+  if enabled {
+    warn!(
+      "unsafe debug header logging enabled via {UNSAFE_DEBUG_HEADERS_ENV}: Authorization / Cookie / Proxy-Authorization values will be printed verbatim at RUST_LOG=debug. Do not leave this enabled in production."
+    );
+  }
+  enabled
+}
+
 /// Initialize the logger with the RUST_LOG environment variable.
 pub fn init_logger(log_dir_path: Option<&str>) {
   let level = std::env::var("RUST_LOG")
@@ -123,4 +151,28 @@ where
 fn is_cargo_pkg(metadata: &tracing::Metadata<'_>) -> bool {
   let pkg_name = env!("CARGO_PKG_NAME").replace('-', "_");
   metadata.target().starts_with(&pkg_name)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::parse_unsafe_debug_headers;
+
+  #[test]
+  fn enabled_values() {
+    for v in ["1", "true", "yes", "TRUE", "Yes", " yes ", "True"] {
+      assert!(parse_unsafe_debug_headers(Some(v)), "{v:?} should enable");
+    }
+  }
+
+  #[test]
+  fn disabled_values() {
+    for v in ["0", "false", "no", "enabled", "", " ", "2", "on"] {
+      assert!(!parse_unsafe_debug_headers(Some(v)), "{v:?} should not enable");
+    }
+  }
+
+  #[test]
+  fn unset_is_disabled() {
+    assert!(!parse_unsafe_debug_headers(None));
+  }
 }

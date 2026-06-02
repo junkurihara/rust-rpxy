@@ -20,21 +20,21 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 async-trait = "0.1.89"
 base64 = "0.22.1"
-aws-lc-rs = { version = "1.16.1", default-features = false, features = [
+aws-lc-rs = { version = "1.17.0", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.2"
-rustls = { version = "0.23.37", default-features = false, features = [
+rustls = { version = "0.23.40", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
-rustls-platform-verifier = { version = "0.6.2" }
+rustls-platform-verifier = { version = "0.7.0" }
 rustls-acme = { path = "../submodules/rustls-acme/", default-features = false, features = [
   "aws-lc-rs",
   "webpki-roots",
 ] }
 rustls-post-quantum = { version = "0.2.4", optional = true }
-tokio = { version = "1.50.0", default-features = false, features = [
+tokio = { version = "1.52.3", default-features = false, features = [
   "rt",
   "macros",
 ] }
@@ -42,4 +42,12 @@ tokio-util = { version = "0.7.18", default-features = false }
 tokio-stream = { version = "0.1.18", default-features = false }
 futures-util = { version = "0.3.32", default-features = false, features = [
   "alloc",
+] }
+
+[dev-dependencies]
+tempfile = "3.27"
+tokio = { version = "1.52.3", default-features = false, features = [
+  "rt",
+  "macros",
+  "rt-multi-thread",
 ] }

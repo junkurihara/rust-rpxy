@@ -138,6 +138,7 @@ impl From<&UpstreamUri> for Upstream {
   }
 }
 impl Upstream {
+  #[allow(unused)]
   /// Returns whether this upstream is considered healthy.
   /// Always returns true if health check is not configured.
   pub fn is_healthy(&self) -> bool {

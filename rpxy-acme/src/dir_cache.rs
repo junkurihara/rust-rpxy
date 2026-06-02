@@ -6,9 +6,50 @@ use blocking::unblock;
 use crypto::digest::{Context, SHA256};
 use rustls_acme::{AccountCache, CertCache};
 use std::{
-  io::ErrorKind,
+  io::{ErrorKind, Write},
   path::{Path, PathBuf},
 };
+
+/// Mode applied to newly-created cache directories on Unix. Directories that
+/// already exist are not modified; this only takes effect when the directory
+/// is actually created by `DirBuilder::create`.
+#[cfg(unix)]
+const DIR_MODE: u32 = 0o700;
+
+/// Mode applied to newly-created cache files (including private keys) on Unix.
+/// Existing files retain their current mode; `OpenOptions::mode` only applies
+/// when `O_CREAT` actually allocates a new inode.
+#[cfg(unix)]
+const FILE_MODE: u32 = 0o600;
+
+/// Create `dir` (and intermediate components) if missing. On Unix, newly
+/// created components get mode `DIR_MODE`; existing components are untouched.
+fn create_dir_secure(dir: &Path) -> std::io::Result<()> {
+  let mut builder = std::fs::DirBuilder::new();
+  builder.recursive(true);
+  #[cfg(unix)]
+  {
+    use std::os::unix::fs::DirBuilderExt;
+    builder.mode(DIR_MODE);
+  }
+  builder.create(dir)
+}
+
+/// Write `contents` to `path`, creating it with mode `FILE_MODE` on Unix if it
+/// did not already exist. If the file existed, its mode is preserved (the
+/// content is truncated and overwritten in place).
+fn write_file_secure(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+  let mut opts = std::fs::OpenOptions::new();
+  opts.write(true).create(true).truncate(true);
+  #[cfg(unix)]
+  {
+    use std::os::unix::fs::OpenOptionsExt;
+    opts.mode(FILE_MODE);
+  }
+  let mut f = opts.open(path)?;
+  f.write_all(contents)?;
+  Ok(())
+}
 
 enum FileType {
   Account,
@@ -52,10 +93,10 @@ impl DirCache {
     }
     .clone();
     let subdir_clone = subdir.clone();
-    unblock(move || std::fs::create_dir_all(subdir_clone)).await?;
+    unblock(move || create_dir_secure(&subdir_clone)).await?;
     let file_path = subdir.join(file);
     let contents = contents.as_ref().to_owned();
-    unblock(move || std::fs::write(file_path, contents)).await
+    unblock(move || write_file_secure(&file_path, &contents)).await
   }
   pub fn cached_account_file_name(contact: &[String], directory_url: impl AsRef<str>) -> String {
     let mut ctx = Context::new(&SHA256);
@@ -94,7 +135,7 @@ impl DirCache {
   async fn verify_dir_writable(dir: &Path) -> Result<(), std::io::Error> {
     let dir = dir.to_owned();
     unblock(move || {
-      std::fs::create_dir_all(&dir)?;
+      create_dir_secure(&dir)?;
       let test_file = dir.join(format!(
         ".write_test_{}_{}",
         std::process::id(),
@@ -103,7 +144,7 @@ impl DirCache {
           .map(|d| d.as_nanos())
           .unwrap_or(0)
       ));
-      std::fs::write(&test_file, b"test")?;
+      write_file_secure(&test_file, b"test")?;
       std::fs::remove_file(&test_file)?;
       Ok(())
     })
@@ -135,5 +176,90 @@ impl AccountCache for DirCache {
   async fn store_account(&self, contact: &[String], directory_url: &str, account: &[u8]) -> Result<(), Self::EA> {
     let file_name = Self::cached_account_file_name(contact, directory_url);
     self.write(file_name, account, FileType::Account).await
+  }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+  use super::*;
+  use std::os::unix::fs::PermissionsExt;
+  use tempfile::tempdir;
+
+  fn mode_of(path: &Path) -> u32 {
+    std::fs::metadata(path).expect("metadata").permissions().mode() & 0o7777
+  }
+
+  #[tokio::test]
+  async fn write_creates_new_file_with_0600_and_new_dir_with_0700() {
+    let tmp = tempdir().expect("tempdir");
+    let cache = DirCache::new(tmp.path(), "example.com");
+
+    cache.write("cached_cert_x", b"payload", FileType::Cert).await.expect("write");
+
+    let dir_mode = mode_of(&cache.cert_dir);
+    assert_eq!(dir_mode, 0o700, "new cert dir should be 0700, got {:o}", dir_mode);
+
+    let file_mode = mode_of(&cache.cert_dir.join("cached_cert_x"));
+    assert_eq!(file_mode, 0o600, "new cert file should be 0600, got {:o}", file_mode);
+  }
+
+  #[tokio::test]
+  async fn write_preserves_existing_dir_mode() {
+    let tmp = tempdir().expect("tempdir");
+    let cache = DirCache::new(tmp.path(), "example.com");
+
+    std::fs::create_dir_all(&cache.cert_dir).expect("pre-create");
+    std::fs::set_permissions(&cache.cert_dir, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+
+    cache.write("cached_cert_x", b"payload", FileType::Cert).await.expect("write");
+
+    let dir_mode = mode_of(&cache.cert_dir);
+    assert_eq!(dir_mode, 0o755, "pre-existing dir mode must be preserved, got {:o}", dir_mode);
+  }
+
+  #[tokio::test]
+  async fn write_preserves_existing_file_mode_on_overwrite() {
+    let tmp = tempdir().expect("tempdir");
+    let cache = DirCache::new(tmp.path(), "example.com");
+
+    std::fs::create_dir_all(&cache.cert_dir).expect("pre-create");
+    let target = cache.cert_dir.join("cached_cert_x");
+    std::fs::write(&target, b"old").expect("seed");
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+
+    cache
+      .write("cached_cert_x", b"new payload", FileType::Cert)
+      .await
+      .expect("write");
+
+    let file_mode = mode_of(&target);
+    assert_eq!(
+      file_mode, 0o644,
+      "pre-existing file mode must be preserved, got {:o}",
+      file_mode
+    );
+    let body = std::fs::read(&target).expect("read");
+    assert_eq!(body, b"new payload", "file contents should be replaced");
+  }
+
+  #[tokio::test]
+  async fn verify_dir_writable_does_not_leak_test_file_and_uses_secure_mode() {
+    let tmp = tempdir().expect("tempdir");
+    let cache = DirCache::new(tmp.path(), "example.com");
+
+    cache.verify_write_permissions().await.expect("verify");
+
+    let entries: Vec<_> = std::fs::read_dir(&cache.cert_dir)
+      .expect("read_dir")
+      .filter_map(|e| e.ok())
+      .collect();
+    assert!(entries.is_empty(), "verify_write_permissions must clean up its probe");
+
+    let dir_mode = mode_of(&cache.cert_dir);
+    assert_eq!(
+      dir_mode, 0o700,
+      "cert dir created by verify should be 0700, got {:o}",
+      dir_mode
+    );
   }
 }

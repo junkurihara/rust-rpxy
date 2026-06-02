@@ -107,6 +107,10 @@ If you set `--log-dir=<log_dir>`, the log files are created in the specified dir
 <!-- - `${log_dir}/error.log` for error log -->
 - `${log_dir}/rpxy.log` for system and error log
 
+The log verbosity is controlled by the `RUST_LOG` environment variable (e.g., `RUST_LOG=debug`). At `debug` level, the request-forwarding log redacts the values of sensitive headers (`Authorization`, `Cookie`, `Proxy-Authorization`) as `<redacted>`. For troubleshooting only, you can disable this redaction by setting `RPXY_UNSAFE_DEBUG_HEADERS` to `1`, `true`, or `yes`; rpxy then prints these header values verbatim and emits a warning at startup. This is read once at startup and must not be left enabled in production.
+
+The access log line includes the request host, client address, method, path and query string, HTTP version, status, a reconstructed request URL (scheme, host, and path only, without the query string), `User-Agent`, `X-Forwarded-For`, `Forwarded`, and the upstream URL. Because query strings can carry tokens or personal data (e.g. `?token=...`, `?email=...`), you can set the global option `redact_query_in_access_log = true` in `config.toml` to mask query-string values (the keys and path are kept, values become `<redacted>`) in both the request path+query and the upstream URL. It defaults to `false`, preserving full query logging.
+
 That's all!
 
 ## Basic Configuration
@@ -153,7 +157,19 @@ server_name = "app2.example.org"
 #...
 ```
 
-Note that by specifying a `default_app` entry, *HTTP* requests will be served by the specified application if the HOST header or URL in the Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since a secure connection cannot be established for an unknown server name.
+> [!NOTE]
+> Note that by specifying a `default_app` entry, *HTTP* requests will be served by the specified application if the HOST header or URL in the Request line doesn't match any `server_name`s in `reverse_proxy` entries. For HTTPS requests, it will be rejected since a secure connection cannot be established for an unknown server name. [^https-default-app-rejection]
+
+<details>
+<summary>Request Header Rewriting for Default Application</summary>
+When a request falls through to the `default_app`, `rpxy` rewrites the outgoing request headers to prevent the untrusted `Host` from reaching the backend:
+
+- The `Host` header sent upstream is **force-overwritten** with the default application's configured `server_name`. This overwrite is stronger than the `keep_original_host` / `set_upstream_host` upstream options, because the incoming `Host` is, by definition, unknown to `rpxy` on this path.
+- Observational forwarding headers such as `X-Forwarded-Host` are rebuilt separately by the general forwarding-header policy. On the fallback path, this means the backend sees an authoritative rewritten `Host` together with forwarding metadata that still reflects the original client-visible host.
+- As elsewhere in `rpxy`, `X-Forwarded-Host` and `Forwarded: host=` are observational only and MUST NOT be used for security decisions (tenant routing, trusted-host allowlists, absolute URL generation, etc.).
+</details>
+
+[^https-default-app-rejection]: This rejection is unconditional and does not depend on `sni_consistency`.
 
 #### HTTPS to Backend Application
 
@@ -170,14 +186,21 @@ reverse_proxy = [
 You can specify multiple backend locations in the `reverse_proxy` array for *load-balancing* with an appropriate `load_balance` option. Currently it works in a round-robin manner, randomly, or round-robin with *session-persistence* using cookies. If `load_balance` is not specified, the first backend location is always chosen.
 
 ```toml
+# Required only when any reverse_proxy uses load_balance = 'sticky'.
+# Generate with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'
+sticky_cookie_secret = '<base64url-no-pad-encoded-32-byte-secret>'
+
 [apps."app_name"]
 server_name = 'app1.example.com'
-reverse_proxy = [
+[[apps."app_name".reverse_proxy]]
+upstream = [
   { location = 'app1.local:8080' },
-  { location = 'app2.local:8000' }
+  { location = 'app2.local:8000' },
 ]
 load_balance = 'round_robin' # or 'random' or 'sticky'
 ```
+
+When `load_balance = 'sticky'` is used, `sticky_cookie_secret` is mandatory. It must be a 32-byte secret encoded as unpadded base64url. rpxy issues an AEAD-sealed opaque sticky token containing the backend identifier and a short expiration timestamp, so backend identifiers are not exposed to clients and captured cookies are only replayable until the sealed expiration. Existing plaintext sticky cookies, malformed cookies, expired cookies, and cookies sealed with another secret are ignored and replaced by a newly issued sticky token.
 
 ### Second Step: Terminating TLS
 
@@ -196,6 +219,12 @@ reverse_proxy = [{ upstream = [{ location = 'app1.local:8080' }] }]
 In the above setting, both cleartext HTTP requests to port 80 and encrypted HTTPS requests to port 443 are routed to the backend `app1.local:8080` in the same manner. If you don't need to serve cleartext requests, just remove `listen_port = 80` and specify only `listen_port_tls = 443`.
 
 Note that the private key specified by `tls_cert_key_path` must be *in PKCS8 format*. (See TIPS to convert PKCS1 formatted private keys to PKCS8 format.)
+
+> [!NOTE]
+> <details>
+> <summary>Private Key Permissions</summary>
+> On Unix-like systems, it is recommended to set the private key file permissions to `0600` (readable only by the owner). At load time, `rpxy` inspects the mode of the private key file and emits a `warn!` log if any group or other permission bit is set; the key is still loaded, but the warning is repeated on every certificate hot-reload until the permissions are tightened.
+> </details>
 
 #### Redirecting Cleartext HTTP Requests to HTTPS
 
@@ -274,6 +303,34 @@ This example configuration demonstrates a very common path-based routing situati
 
 Since this is currently a work-in-progress project, we are frequently adding new options. We first add new option entries in `config-example.toml` as examples. Please refer to it for up-to-date options. We will prepare comprehensive documentation for all options.
 
+### Forwarding Headers and Trusted Proxies
+
+`rpxy` always rewrites the downstream-facing forwarding headers that backend applications commonly trust, including `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-SSL`, and `X-Original-URI`.
+
+By default, no preceding proxy is trusted. If `trusted_forwarded_proxies` is omitted or empty, any incoming `X-Forwarded-*` or `Forwarded` values from the client or an unknown preceding proxy are ignored, and `rpxy` rebuilds the outgoing forwarding view from the immediate peer address only.
+
+```toml
+# Global setting
+trusted_forwarded_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
+# trusted_forwarded_proxies = ["cloudflare", "fastly", "cloudfront"]
+```
+
+When `trusted_forwarded_proxies` is configured, `rpxy` trusts incoming forwarding-chain information only if the immediate peer matches one of those CIDR ranges or built-in aliases. In that case, it parses and normalizes incoming `Forwarded` and/or `X-Forwarded-For`, appends the immediate peer as the latest hop, trims trusted proxy hops from the right-hand side, and rewrites the outgoing headers from that normalized chain.
+
+`Forwarded` is handled slightly differently from `X-Forwarded-*`:
+
+- If a request already contains `Forwarded`, `rpxy` rewrites it into a normalized value.
+- If a request does not contain `Forwarded`, `rpxy` does not add it by default.
+- To always generate RFC 7239 `Forwarded`, add `forwarded_header` to `upstream_options`.
+
+```toml
+[[apps.app1.reverse_proxy]]
+upstream = [{ location = "app1.local:8080" }]
+upstream_options = ["forwarded_header"]
+```
+
+This setting is separate from inbound HAProxy PROXY protocol support. `trusted_forwarded_proxies` defines which immediate L7 peers may contribute `X-Forwarded-*` / `Forwarded` information, while `[experimental.tcp_recv_proxy_protocol].trusted_proxies` defines which L4 peers may send PROXY protocol headers.
+
 ## Using Docker Image
 
 You can also use the `docker` image hosted on [Docker Hub](https://hub.docker.com/r/jqtype/rpxy) and [GitHub Container Registry](https://github.com/junkurihara/rust-rpxy/pkgs/container/rust-rpxy) instead of directly executing the binary. See the [`./docker`](./docker/README.md) directory for more details.
@@ -291,12 +348,18 @@ The [`./bench`](./bench/) directory contains a very simple example of `rpxy` con
 ```toml
 [experimental.h3]
 alt_svc_max_age = 3600
+# Limits the total HTTP/3 request body size per request stream.
+# If omitted, the default is 268435456 bytes (256 MiB).
 request_max_body_size = 65536
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100
 max_idle_timeout = 10
 ```
+
+`request_max_body_size` limits the total HTTP/3 request body size per request stream.
+The body is processed as a stream; this setting is not a preallocated memory buffer size.
+Set this explicitly to a smaller value in production when large uploads are not required.
 
 ### Client Authentication via Client Certificates
 
@@ -350,6 +413,12 @@ registry_path = "./acme_registry"       # optional. default is "./acme_registry"
 ```
 
 The above configuration is common to all ACME-enabled domains. Note that the HTTPS port must be open to the public to verify domain ownership.
+
+> [!NOTE]
+> <details>
+> <summary>Permissions of ACME-Cached Confidential Files</summary>
+> On Unix-like systems, ACME-managed cache files (account keys, certificates, and private keys) are created with mode `0600`, and any cache directory created by `rpxy` is created with mode `0700`. Cache files or directories that already exist are not modified, so operators who intentionally widen permissions for a sidecar process retain that choice.
+> </details>
 
 ### HAProxy PROXY Protocol (Inbound)
 

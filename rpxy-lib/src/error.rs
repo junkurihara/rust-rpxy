@@ -12,6 +12,8 @@ pub enum RpxyError {
   // TLS errors
   #[error("Failed to build TLS acceptor: {0}")]
   FailedToTlsHandshake(String),
+  #[error("TLS handshake failed after ClientHello: {0}")]
+  TlsHandshakeFailed(String),
   #[error("No server name in ClientHello")]
   NoServerNameInClientHello,
   #[error("No TLS serving app: {0}")]
@@ -85,6 +87,15 @@ pub enum RpxyError {
   InvalidUpstreamOptionSetting,
   #[error("Failed to build backend app: {0}")]
   FailedToBuildBackendApp(#[from] crate::backend::BackendAppBuilderError),
+  #[cfg(feature = "sticky-cookie")]
+  #[error("Invalid sticky cookie secret: {0}")]
+  InvalidStickyCookieSecret(String),
+  #[cfg(feature = "sticky-cookie")]
+  #[error("Invalid sticky cookie AAD: {0}")]
+  InvalidStickyCookieAad(String),
+  #[cfg(feature = "sticky-cookie")]
+  #[error("Failed to seal sticky cookie value")]
+  FailedToSealStickyCookie,
 
   // Handler errors
   #[error("Failed to build message handler: {0}")]

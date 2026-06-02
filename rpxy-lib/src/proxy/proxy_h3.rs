@@ -32,6 +32,12 @@ where
     <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::RecvStream: Send,
     <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
   {
+    // Per-IP cap at the established-connection level; held for the whole QUIC connection lifetime.
+    let Some(_per_ip_guard) = self.globals.per_ip_connection_count.try_acquire(client_addr.ip()) else {
+      debug!("Per-IP connection limit reached for {client_addr}, dropping HTTP/3 connection");
+      return Ok(());
+    };
+
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
     debug!(
       "QUIC/HTTP3 connection established from {:?} {}",

@@ -4,17 +4,29 @@ use crate::{
   log::warn,
 };
 use ahash::HashMap;
-use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
-#[cfg(feature = "health-check")]
-use rpxy_lib::{HealthCheckConfig, HealthCheckType, LOAD_BALANCE_PRIMARY_BACKUP};
-#[cfg(feature = "proxy-protocol")]
-use rpxy_lib::{TcpRecvProxyProtocolConfig, reexports::IpNet};
+use rpxy_lib::{
+  AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri,
+  reexports::{IpNet, Uri},
+};
+use rpxy_trusted_proxies::resolve_trusted_proxy_entries;
 use serde::Deserialize;
 use std::{
   fs,
   net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 use tokio::time::Duration;
+
+#[cfg(feature = "proxy-protocol")]
+use rpxy_lib::TcpRecvProxyProtocolConfig;
+
+#[cfg(feature = "health-check")]
+use rpxy_lib::{HealthCheckConfig, HealthCheckType, LOAD_BALANCE_PRIMARY_BACKUP};
+
+#[cfg(feature = "sticky-cookie")]
+use std::sync::Arc;
+
+#[cfg(feature = "sticky-cookie")]
+use rpxy_lib::{LOAD_BALANCE_STICKY_ROUND_ROBIN, StickyCookieSecret, validate_sticky_cookie_aad_component};
 
 /// Helper type that accepts both a single string and an array of strings in TOML.
 ///
@@ -53,6 +65,9 @@ impl OneOrMany {
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
 /// - `max_clients`: Optional max client connections.
+/// - `max_clients_per_ip`: Optional max concurrent connections per source IP (0 disables it).
+/// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
+/// - `redact_query_in_access_log`: Optional. Redact query-string values in the access log (default: false).
 /// - `apps`: Optional application definitions.
 /// - `default_app`: Optional default application name.
 /// - `experimental`: Optional experimental features.
@@ -66,6 +81,11 @@ pub struct ConfigToml {
   pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
+  pub max_clients_per_ip: Option<u32>,
+  #[cfg(feature = "sticky-cookie")]
+  pub sticky_cookie_secret: Option<String>,
+  pub trusted_forwarded_proxies: Option<OneOrMany>,
+  pub redact_query_in_access_log: Option<bool>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
   pub experimental: Option<Experimental>,
@@ -74,6 +94,8 @@ pub struct ConfigToml {
 /// Extension trait for config validation and building
 pub trait ConfigTomlExt {
   fn validate_and_build_settings(&self) -> Result<(ProxyConfig, AppConfigList), anyhow::Error>;
+  #[cfg(feature = "sticky-cookie")]
+  fn validate_and_build_sticky_cookie_secret(&self) -> Result<Option<Arc<StickyCookieSecret>>, anyhow::Error>;
 }
 
 impl ConfigTomlExt for ConfigToml {
@@ -128,6 +150,39 @@ impl ConfigTomlExt for ConfigToml {
     };
 
     Ok((proxy_config, app_config_list))
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  fn validate_and_build_sticky_cookie_secret(&self) -> Result<Option<Arc<StickyCookieSecret>>, anyhow::Error> {
+    let apps = self.apps.as_ref().ok_or(anyhow!("Missing application spec"))?;
+    let mut uses_sticky = false;
+
+    for app in apps.0.values() {
+      let server_name = app.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
+      let reverse_proxy = app.reverse_proxy.as_ref().ok_or(anyhow!("Missing reverse_proxy"))?;
+      for rpo in reverse_proxy {
+        if rpo.load_balance.as_deref() == Some(LOAD_BALANCE_STICKY_ROUND_ROBIN) {
+          uses_sticky = true;
+          validate_sticky_cookie_aad_component("domain", server_name)?;
+          validate_sticky_cookie_aad_component("path", rpo.path.as_deref().unwrap_or("/"))?;
+        }
+      }
+    }
+
+    if !uses_sticky {
+      return Ok(None);
+    }
+
+    let Some(secret) = self.sticky_cookie_secret.as_deref() else {
+      return Err(anyhow!(
+        "sticky_cookie_secret is required when any reverse_proxy entry uses load_balance = \"sticky\""
+      ));
+    };
+
+    StickyCookieSecret::try_from_config_value(secret)
+      .map(Arc::new)
+      .map(Some)
+      .map_err(|e| anyhow!("{e}"))
   }
 }
 
@@ -306,8 +361,17 @@ impl TryInto<ProxyConfig> for &ConfigToml {
     if let Some(c) = self.max_clients {
       proxy_config.max_clients = c as usize;
     }
+    if let Some(c) = self.max_clients_per_ip {
+      proxy_config.max_clients_per_ip = c as usize;
+    }
     if let Some(c) = self.max_concurrent_streams {
       proxy_config.max_concurrent_streams = c;
+    }
+    if let Some(entries) = &self.trusted_forwarded_proxies {
+      proxy_config.trusted_forwarded_proxies = resolve_trusted_proxy_entries(entries.clone().into_vec())?.cidrs;
+    }
+    if let Some(redact) = self.redact_query_in_access_log {
+      proxy_config.redact_query_in_access_log = redact;
     }
 
     // experimental
@@ -382,9 +446,9 @@ impl TryInto<ProxyConfig> for &ConfigToml {
           .iter()
           .map(|s| {
             s.parse::<IpNet>()
-              .map_err(|e| anyhow!("Invalid CIDR in trusted_proxies: {}: {}", s, e))
+              .map_err(|e| anyhow!("Invalid CIDR in trusted_proxies: {s}: {e}"))
           })
-          .collect::<std::result::Result<Vec<_>, _>>()?;
+          .collect::<Result<Vec<_>, _>>()?;
         let timeout = match pp_option.timeout {
           None => Duration::from_millis(rpxy_lib::proxy_protocol_defaults::TIMEOUT_MSEC),
           Some(0) => Duration::ZERO,
@@ -509,6 +573,7 @@ impl ConfigToml {
 impl Application {
   pub fn build_app_config(&self, app_name: &str) -> std::result::Result<AppConfig, anyhow::Error> {
     let server_name_string = self.server_name.as_ref().ok_or(anyhow!("Missing server_name"))?;
+    validate_server_name(server_name_string)?;
 
     // reverse proxy settings
     let reverse_proxy_config: Vec<ReverseProxyConfig> = self.try_into()?;
@@ -705,9 +770,85 @@ fn validate_lb_health_check(
   Ok(())
 }
 
+/// Validate that `server_name` is a syntactically valid hostname before it is used as an
+/// SNI key, a Host rewrite value, or an ACME filesystem path component.
+///
+/// Each dot-separated label must be 1..=63 chars, start and end alphanumeric, and contain
+/// only alphanumerics and `-`; the whole name is 1..=253 chars and ASCII. This rejects path
+/// traversal, absolute paths, wildcards, underscores, IPv6 literals, and non-ASCII; IPv4
+/// literals are accepted.
+pub(crate) fn validate_server_name(server_name: &str) -> Result<(), anyhow::Error> {
+  if server_name.is_empty() || server_name.len() > 253 {
+    return Err(anyhow!(
+      "Invalid server_name {server_name:?}: length must be between 1 and 253 characters"
+    ));
+  }
+  if !server_name.is_ascii() {
+    return Err(anyhow!(
+      "Invalid server_name {server_name:?}: must be ASCII (use punycode for internationalized names)"
+    ));
+  }
+  for label in server_name.split('.') {
+    let bytes = label.as_bytes();
+    if bytes.is_empty() || bytes.len() > 63 {
+      return Err(anyhow!(
+        "Invalid server_name {server_name:?}: each dot-separated label must be between 1 and 63 characters"
+      ));
+    }
+    let first = *bytes.first().unwrap();
+    let last = *bytes.last().unwrap();
+    if !first.is_ascii_alphanumeric() || !last.is_ascii_alphanumeric() {
+      return Err(anyhow!(
+        "Invalid server_name {server_name:?}: label {label:?} must start and end with an alphanumeric character"
+      ));
+    }
+    if !bytes.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'-') {
+      return Err(anyhow!(
+        "Invalid server_name {server_name:?}: label {label:?} may contain only alphanumerics and '-'"
+      ));
+    }
+  }
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[cfg(feature = "sticky-cookie")]
+  const VALID_STICKY_COOKIE_SECRET: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+  #[cfg(feature = "sticky-cookie")]
+  fn config_with_reverse_proxy(load_balance: Option<&str>, path: Option<&str>, secret: Option<&str>) -> ConfigToml {
+    let mut apps = ahash::HashMap::default();
+    apps.insert(
+      "app".to_string(),
+      Application {
+        server_name: Some("example.com".to_string()),
+        reverse_proxy: Some(vec![ReverseProxyOption {
+          path: path.map(str::to_string),
+          replace_path: None,
+          upstream: vec![UpstreamParams {
+            location: "backend.local:8080".to_string(),
+            tls: None,
+          }],
+          upstream_options: None,
+          load_balance: load_balance.map(str::to_string),
+          #[cfg(feature = "health-check")]
+          health_check: None,
+        }]),
+        tls: None,
+      },
+    );
+
+    ConfigToml {
+      listen_port: Some(8080),
+      #[cfg(feature = "sticky-cookie")]
+      sticky_cookie_secret: secret.map(str::to_string),
+      apps: Some(Apps(apps)),
+      ..Default::default()
+    }
+  }
 
   #[cfg(feature = "health-check")]
   fn http_health_check_option(
@@ -866,6 +1007,150 @@ mod tests {
     );
   }
 
+  #[test]
+  fn trusted_forwarded_proxies_default_to_empty() {
+    let toml_str = r#"
+      listen_port = 8080
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(proxy_config.trusted_forwarded_proxies.is_empty());
+  }
+
+  #[test]
+  fn max_clients_per_ip_defaults_to_zero() {
+    let toml_str = r#"
+      listen_port = 8080
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.max_clients_per_ip, 0);
+  }
+
+  #[test]
+  fn max_clients_per_ip_is_applied() {
+    let toml_str = r#"
+      listen_port = 8080
+      max_clients_per_ip = 16
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.max_clients_per_ip, 16);
+  }
+
+  #[test]
+  fn redact_query_in_access_log_defaults_to_false() {
+    let toml_str = r#"
+      listen_port = 8080
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(!proxy_config.redact_query_in_access_log);
+  }
+
+  #[test]
+  fn redact_query_in_access_log_is_applied() {
+    let toml_str = r#"
+      listen_port = 8080
+      redact_query_in_access_log = true
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(proxy_config.redact_query_in_access_log);
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_single_and_many() {
+    let single = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = "10.0.0.0/8"
+    "#;
+    let config: ConfigToml = toml::from_str(single).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.trusted_forwarded_proxies.len(), 1);
+    assert_eq!(
+      proxy_config.trusted_forwarded_proxies[0],
+      "10.0.0.0/8".parse::<IpNet>().unwrap()
+    );
+
+    let many = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
+    "#;
+    let config: ConfigToml = toml::from_str(many).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.trusted_forwarded_proxies.len(), 2);
+    assert_eq!(
+      proxy_config.trusted_forwarded_proxies[1],
+      "192.168.0.0/16".parse::<IpNet>().unwrap()
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_builtin_aliases() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = "cloudflare"
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"173.245.48.0/20".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"2400:cb00::/32".parse::<IpNet>().unwrap())
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_cloudfront_alias() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = "cloudfront"
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"120.52.22.96/27".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"13.35.0.0/16".parse::<IpNet>().unwrap())
+    );
+  }
+
+  #[test]
+  fn trusted_forwarded_proxies_accept_mixed_alias_and_cidr() {
+    let alias = r#"
+      listen_port = 8080
+      trusted_forwarded_proxies = ["fastly", "10.0.0.0/8"]
+    "#;
+    let config: ConfigToml = toml::from_str(alias).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"23.235.32.0/20".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"2a04:4e40::/32".parse::<IpNet>().unwrap())
+    );
+    assert!(
+      proxy_config
+        .trusted_forwarded_proxies
+        .contains(&"10.0.0.0/8".parse::<IpNet>().unwrap())
+    );
+  }
+
   #[cfg(feature = "health-check")]
   #[test]
   fn build_health_check_config_enabled_true_uses_tcp_defaults() {
@@ -966,6 +1251,57 @@ mod tests {
     assert!(err.to_string().contains("At least one upstream must be specified"));
   }
 
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_secret_not_required_without_sticky_routes() {
+    let config = config_with_reverse_proxy(Some("round_robin"), None, None);
+    assert!(config.validate_and_build_sticky_cookie_secret().unwrap().is_none());
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_secret_required_for_sticky_routes() {
+    let config = config_with_reverse_proxy(Some(LOAD_BALANCE_STICKY_ROUND_ROBIN), None, None);
+    let err = match config.validate_and_build_sticky_cookie_secret() {
+      Ok(_) => panic!("sticky-cookie config without a secret must fail"),
+      Err(e) => e,
+    };
+    assert!(err.to_string().contains("sticky_cookie_secret is required"));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_secret_accepts_valid_config_secret() {
+    let config = config_with_reverse_proxy(Some(LOAD_BALANCE_STICKY_ROUND_ROBIN), None, Some(VALID_STICKY_COOKIE_SECRET));
+    assert!(config.validate_and_build_sticky_cookie_secret().unwrap().is_some());
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_secret_rejects_malformed_config_secret() {
+    let config = config_with_reverse_proxy(Some(LOAD_BALANCE_STICKY_ROUND_ROBIN), None, Some("not*base64url"));
+    let err = match config.validate_and_build_sticky_cookie_secret() {
+      Ok(_) => panic!("malformed sticky-cookie secret must fail"),
+      Err(e) => e,
+    };
+    assert!(err.to_string().contains("sticky_cookie_secret"));
+  }
+
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn sticky_cookie_aad_components_reject_nul_bytes() {
+    let config = config_with_reverse_proxy(
+      Some(LOAD_BALANCE_STICKY_ROUND_ROBIN),
+      Some("/tenant\0shadow"),
+      Some(VALID_STICKY_COOKIE_SECRET),
+    );
+    let err = match config.validate_and_build_sticky_cookie_secret() {
+      Ok(_) => panic!("sticky-cookie AAD components containing NUL must fail"),
+      Err(e) => e,
+    };
+    assert!(err.to_string().contains("must not contain NUL"));
+  }
+
   #[cfg(feature = "health-check")]
   #[test]
   fn validate_lb_health_check_primary_backup_requires_health_check() {
@@ -980,5 +1316,68 @@ mod tests {
       healthy_threshold: 2,
     });
     assert!(validate_lb_health_check("example.com", Some(LOAD_BALANCE_PRIMARY_BACKUP), &health_check).is_ok());
+  }
+
+  #[test]
+  fn validate_server_name_accepts_valid_hostnames() {
+    for name in [
+      "example.com",
+      "sub.example.co.jp",
+      "a-b.example.com",
+      "localhost",
+      "127.0.0.1", // IPv4 literal accepted (each label is alphanumeric)
+      "kubernetes.docker.internal",
+      "localhost.localdomain",
+    ] {
+      assert!(validate_server_name(name).is_ok(), "expected accept: {name}");
+    }
+  }
+
+  #[test]
+  fn validate_server_name_rejects_path_traversal_and_separators() {
+    for name in ["../../etc", "a/b", "a\\b", "..", "/abs/path", "a.b\0.c"] {
+      assert!(validate_server_name(name).is_err(), "expected reject: {name:?}");
+    }
+  }
+
+  #[test]
+  fn validate_server_name_rejects_invalid_label_syntax() {
+    for name in [
+      "",
+      ".example.com",
+      "example.com.",
+      "a..b.com",
+      "-bad.example",
+      "bad-.example",
+    ] {
+      assert!(validate_server_name(name).is_err(), "expected reject: {name:?}");
+    }
+    // over-long label (64 chars) and over-long name (>253 chars)
+    let long_label = "a".repeat(64);
+    assert!(validate_server_name(&long_label).is_err());
+    let long_name = format!("{}.example.com", "a".repeat(250));
+    assert!(validate_server_name(&long_name).is_err());
+  }
+
+  #[test]
+  fn validate_server_name_rejects_wildcard_underscore_ipv6_idn() {
+    for name in [
+      "*.example.com",     // wildcard: unsupported
+      "_dmarc.example.com", // underscore: not a valid TLS SNI hostname
+      "::1",                // IPv6 literal
+      "2001:db8::1",        // IPv6 literal
+      "例え.example",       // raw Unicode IDN (supply punycode instead)
+    ] {
+      assert!(validate_server_name(name).is_err(), "expected reject: {name:?}");
+    }
+  }
+
+  #[test]
+  fn validate_server_name_error_message_quotes_offending_value() {
+    let err = validate_server_name("../evil").unwrap_err();
+    assert!(
+      err.to_string().contains("Invalid server_name"),
+      "error must be the validation error: {err}"
+    );
   }
 }

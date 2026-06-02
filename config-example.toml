@@ -46,11 +46,49 @@ max_concurrent_streams = 100
 # Optional. Counted in total for http1.1, 2, 3
 max_clients = 512
 
+# Optional. Max concurrent connections per source IP, in addition to max_clients. 0 disables it (default).
+# This caps how many connections a single client IP may hold so one source cannot exhaust max_clients.
+# The source IP is the immediate TCP/QUIC peer, or the real client address recovered from an inbound
+# PROXY protocol header (see [experimental.tcp_recv_proxy_protocol]). It does NOT use X-Forwarded-For /
+# Forwarded, so it is only meaningful when rpxy is the edge or inbound PROXY protocol is enabled; behind
+# a bare L7 load balancer every connection collapses to the LB's IP. Hence it is disabled by default.
+# For HTTP/3, this caps QUIC connections per IP; a single IP's concurrent H3 request streams are then
+# bounded by max_clients_per_ip * [experimental.h3] max_concurrent_bidistream, so size them together
+# relative to max_clients.
+# max_clients_per_ip = 0
+
+# Optional. Trusted proxies whose incoming X-Forwarded-* / Forwarded headers are
+# recursively trusted. If omitted or empty, forwarding headers from preceding peers
+# are ignored and rebuilt from the immediate peer address.
+# Examples:
+# trusted_forwarded_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
+# trusted_forwarded_proxies = ["cloudflare", "fastly", "cloudfront"]
+# trusted_forwarded_proxies = ["cloudfront", "10.0.0.0/8"]
+# trusted_forwarded_proxies = "0.0.0.0/0" # trust all IPv4 proxies (not recommended)
+# For full dual-stack trust-all, specify both "0.0.0.0/0" and "::/0".
+# trusted_forwarded_proxies = []
+
+# Optional. Redact query-string values in the access log so URLs that carry tokens or PII
+# (e.g. ?token=..., ?code=..., ?email=...) are not logged verbatim. Default: false (full query
+# strings are logged). When enabled, parameter values are replaced with <redacted> while the
+# keys and path are kept. Enable this when applications may put secrets or personal data in
+# query strings.
+# redact_query_in_access_log = true
+
+# Optional. Required when any reverse_proxy entry uses load_balance = "sticky".
+# Value must be a 32-byte secret encoded as unpadded base64url.
+# Generate with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'
+# sticky_cookie_secret = "<base64url-no-pad-encoded-32-byte-secret>"
+
 # Optional: App that serves all plaintext http request by referring to HOSTS or request header
 # except for configured application.
-# Note that this is only for http.
-# Note that nothing is served for requests via https since secure channel cannot be
-# established for non-configured server_name, and they are always rejected by checking SNI.
+# Note that this is only for http. Https requests with an unknown server_name are rejected
+# unconditionally (independent of `sni_consistency`).
+# On fallback to `default_app`, rpxy force-overwrites the outgoing `Host` header with the
+# default app's configured `server_name` (wins against `keep_original_host` / `set_upstream_host`),
+# and exposes the untrusted original client-visible host in `X-Forwarded-Host` (and in
+# `Forwarded: host=` when the `forwarded_header` option is set). Backends MUST treat
+# `X-Forwarded-Host` / `Forwarded: host=` as untrusted observational data on this path.
 default_app = 'another_localhost'
 
 ###################################
@@ -120,8 +158,8 @@ load_balance = "random" # or "round_robin" or "sticky" (sticky session) or "none
 upstream_options = [
   "upgrade_insecure_requests",
   "force_http11_upstream",
-  "set_upstream_host",        # overwrite HOST value with upstream hostname (like www.yahoo.com)
-  "forwarded_header"          # add Forwarded header (by default, this is not added. However, if the incoming request has Forwarded header, it would be preserved and updated)
+  "set_upstream_host",        # overwrite HOST value with upstream hostname (like www.yahoo.com). rpxy always overwrites X-Forwarded-Host with the original client-visible host and never forwards a client-supplied X-Forwarded-Host as-is.
+  "forwarded_header"          # add Forwarded header (disabled by default. However, update one if already present.) Incoming Forwarded/X-Forwarded-* values are normalized according to trusted_forwarded_proxies before generation.
 ]
 ######################################################################
 
@@ -151,12 +189,15 @@ ignore_sni_consistency = false
 
 # Force connection handling timeout regardless of the connection status, i.e., idle or not.
 # 0 represents an infinite timeout. [default: 0]
-# Note that idel and header read timeouts are always specified independently of this.
+# Note that idle and header read timeouts are always specified independently of this.
+# A non-zero value is recommended in production unless long-lived connections (e.g. WebSocket) are required.
 connection_handling_timeout = 0 # sec
 
 # If this specified, h3 is enabled
 [experimental.h3]
 alt_svc_max_age = 3600             # sec
+# Limits the total HTTP/3 request body size per request stream.
+# Default: 268435456 bytes (256 MiB). Set lower when large uploads are not required.
 request_max_body_size = 65536      # bytes
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100

@@ -25,12 +25,12 @@ impl<'a> StickyCookieValueBuilder {
 }
 impl StickyCookieValue {
   pub fn try_from(value: &str, expected_name: &str) -> LoadBalanceResult<Self> {
-    if !value.starts_with(expected_name) {
-      return Err(LoadBalanceError::FailedToConversionStickyCookie);
-    };
     let kv = value.split('=').map(|v| v.trim()).collect::<Vec<&str>>();
     if kv.len() != 2 {
       return Err(LoadBalanceError::InvalidStickyCookieStructure);
+    };
+    if kv[0] != expected_name {
+      return Err(LoadBalanceError::FailedToConversionStickyCookie);
     };
     if kv[1].is_empty() {
       return Err(LoadBalanceError::NoStickyCookieValue);
@@ -63,7 +63,8 @@ impl<'a> StickyCookieInfoBuilder {
     self
   }
   pub fn path(&mut self, v: impl Into<Cow<'a, str>>) -> &mut Self {
-    self.path = Some(v.into().to_ascii_lowercase());
+    // Do not lowercase: paths are case-sensitive and must match the route's case.
+    self.path = Some(v.into().into_owned());
     self
   }
   pub fn expires(&mut self, duration_secs: i64) -> &mut Self {
@@ -103,24 +104,40 @@ impl<'a> StickyCookieBuilder {
   }
 }
 
-impl TryInto<String> for StickyCookie {
-  type Error = LoadBalanceError;
+impl StickyCookie {
+  /// Serialize the sticky cookie with a caller-supplied cookie value.
+  ///
+  /// Seals the internal plaintext `server_id` at the HTTP handler boundary.
+  /// This method keeps the LB-owned metadata while allowing the wire value to be
+  /// an opaque AEAD blob.
+  pub fn to_set_cookie_value_with_value(&self, secure: bool, cookie_value: &str) -> LoadBalanceResult<String> {
+    self.to_set_cookie_value_with_value_at(secure, cookie_value, Utc::now().timestamp())
+  }
 
-  fn try_into(self) -> LoadBalanceResult<String> {
-    if self.info.is_none() {
+  /// Test-only serializer that keeps `Max-Age` deterministic against a fixed "now".
+  #[cfg(test)]
+  fn to_set_cookie_value_at(&self, secure: bool, now_ts: i64) -> LoadBalanceResult<String> {
+    self.to_set_cookie_value_with_value_at(secure, &self.value.value, now_ts)
+  }
+
+  fn to_set_cookie_value_with_value_at(&self, secure: bool, cookie_value: &str, now_ts: i64) -> LoadBalanceResult<String> {
+    let Some(info) = self.info.as_ref() else {
       return Err(LoadBalanceError::NoStickyCookieNoMetaInfo);
-    }
-    let info = self.info.unwrap();
+    };
     let chrono::LocalResult::Single(expires_timestamp) = Utc.timestamp_opt(info.expires, 0) else {
       return Err(LoadBalanceError::FailedToConversionStickyCookie);
     };
     let exp_str = expires_timestamp.format("%a, %d-%b-%Y %T GMT").to_string();
-    let max_age = info.expires - Utc::now().timestamp();
+    let max_age = info.expires - now_ts;
 
-    Ok(format!(
-      "{}={}; expires={}; Max-Age={}; path={}; domain={}",
-      self.value.name, self.value.value, exp_str, max_age, info.path, info.domain
-    ))
+    let mut s = format!(
+      "{}={}; expires={}; Max-Age={}; path={}; domain={}; HttpOnly; SameSite=Lax",
+      self.value.name, cookie_value, exp_str, max_age, info.path, info.domain
+    );
+    if secure {
+      s.push_str("; Secure");
+    }
+    Ok(s)
   }
 }
 
@@ -158,18 +175,33 @@ mod tests {
       path: "/path".to_string(),
       duration: 100,
     };
-    let expires_unix = Utc::now().timestamp() + 100;
-    let sc_string: LoadBalanceResult<String> = config.build_sticky_cookie("test_value").unwrap().try_into();
+    let cookie = config.build_sticky_cookie("test_value").unwrap();
+
+    // Pin both `expires` (read from the built cookie) and `now_ts` so Max-Age is
+    // deterministic and independent of how many seconds have elapsed during the test.
+    let actual_expires = cookie.info.as_ref().unwrap().expires;
+    let now_ts = actual_expires - 100; // duration_secs at build time was 100
     let expires_date_string = Utc
-      .timestamp_opt(expires_unix, 0)
+      .timestamp_opt(actual_expires, 0)
       .unwrap()
       .format("%a, %d-%b-%Y %T GMT")
       .to_string();
+
+    let secure_string = cookie.to_set_cookie_value_at(true, now_ts).unwrap();
     assert_eq!(
-      sc_string.unwrap(),
+      secure_string,
       format!(
-        "{}=test_value; expires={}; Max-Age={}; path=/path; domain=example.com",
-        STICKY_COOKIE_NAME, expires_date_string, 100
+        "{}=test_value; expires={}; Max-Age=100; path=/path; domain=example.com; HttpOnly; SameSite=Lax; Secure",
+        STICKY_COOKIE_NAME, expires_date_string
+      )
+    );
+
+    let insecure_string = cookie.to_set_cookie_value_at(false, now_ts).unwrap();
+    assert_eq!(
+      insecure_string,
+      format!(
+        "{}=test_value; expires={}; Max-Age=100; path=/path; domain=example.com; HttpOnly; SameSite=Lax",
+        STICKY_COOKIE_NAME, expires_date_string
       )
     );
   }
@@ -186,15 +218,51 @@ mod tests {
         path: "/path".to_string(),
       }),
     };
-    let sc_string: LoadBalanceResult<String> = sc.try_into();
-    let max_age = 1686221173i64 - Utc::now().timestamp();
-    assert!(sc_string.is_ok());
+    // Fixed `now_ts` so Max-Age is a stable literal that does not depend on wall-clock.
+    let now_ts = 1686221000i64;
+    let max_age = 173; // 1686221173 - 1686221000
+
+    let secure_string = sc.to_set_cookie_value_at(true, now_ts).unwrap();
     assert_eq!(
-      sc_string.unwrap(),
+      secure_string,
       format!(
-        "{}=test_value; expires=Thu, 08-Jun-2023 10:46:13 GMT; Max-Age={}; path=/path; domain=example.com",
+        "{}=test_value; expires=Thu, 08-Jun-2023 10:46:13 GMT; Max-Age={}; path=/path; domain=example.com; HttpOnly; SameSite=Lax; Secure",
         STICKY_COOKIE_NAME, max_age
       )
     );
+
+    let insecure_string = sc.to_set_cookie_value_at(false, now_ts).unwrap();
+    assert_eq!(
+      insecure_string,
+      format!(
+        "{}=test_value; expires=Thu, 08-Jun-2023 10:46:13 GMT; Max-Age={}; path=/path; domain=example.com; HttpOnly; SameSite=Lax",
+        STICKY_COOKIE_NAME, max_age
+      )
+    );
+  }
+
+  #[test]
+  fn sticky_cookie_value_requires_exact_cookie_name() {
+    assert!(StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}=value"), STICKY_COOKIE_NAME).is_ok());
+    assert!(StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}_shadow=value"), STICKY_COOKIE_NAME).is_err());
+  }
+
+  #[test]
+  fn sticky_cookie_path_preserves_case_domain_lowercased() {
+    let config = StickyCookieConfig {
+      name: STICKY_COOKIE_NAME.to_string(),
+      domain: "Example.COM".to_string(),
+      path: "/App/Sub".to_string(),
+      duration: 100,
+    };
+    let cookie = config.build_sticky_cookie("v").unwrap();
+    let info = cookie.info.as_ref().unwrap();
+    assert_eq!(info.path, "/App/Sub", "path case must be preserved");
+    assert_eq!(info.domain, "example.com", "domain must be lowercased");
+
+    let now_ts = info.expires - 100;
+    let serialized = cookie.to_set_cookie_value_at(false, now_ts).unwrap();
+    assert!(serialized.contains("path=/App/Sub"), "got: {serialized}");
+    assert!(serialized.contains("domain=example.com"), "got: {serialized}");
   }
 }

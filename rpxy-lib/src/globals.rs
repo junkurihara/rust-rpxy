@@ -1,7 +1,14 @@
-use crate::{constants::*, count::RequestCount};
+use crate::{
+  constants::*,
+  count::{PerIpConnectionCount, RequestCount},
+};
 use hot_reload::ReloaderReceiver;
+use ipnet::IpNet;
 use rpxy_certs::ServerCryptoBase;
 use std::{net::SocketAddr, time::Duration};
+
+#[cfg(feature = "sticky-cookie")]
+use aes_gcm::Aes256Gcm;
 
 #[cfg(feature = "proxy-protocol")]
 /// Configuration parameters for TCP inbound PROXY protocol receive
@@ -15,16 +22,24 @@ pub struct TcpRecvProxyProtocolConfig {
 }
 
 /// Global object containing proxy configurations and shared object like counters.
-/// But note that in Globals, we do not have Mutex and RwLock. It is indeed, the context shared among async tasks.
+/// The only lock-bearing shared state is the per-IP connection counter, which is touched
+/// solely on connection open/close (a cold path), not on the per-request path.
 pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig,
   /// Shared context - Counter for serving requests
   pub request_count: RequestCount,
+  /// Shared context - Per-source-IP concurrent connection counter
+  pub per_ip_connection_count: PerIpConnectionCount,
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Certificate reloader service receiver // TODO: newer one
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
+  /// Operator opt-out (env `RPXY_UNSAFE_DEBUG_HEADERS`) that disables
+  /// credential-header redaction in DEBUG request logs. Default false.
+  pub(crate) unsafe_debug_headers: bool,
+  #[cfg(feature = "sticky-cookie")]
+  pub(crate) sticky_cookie_cipher: Option<std::sync::Arc<Aes256Gcm>>,
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains
@@ -53,12 +68,21 @@ pub struct ProxyConfig {
   pub upstream_idle_timeout: Duration,
 
   pub max_clients: usize,          // when serving requests
+  pub max_clients_per_ip: usize,   // per source IP; 0 disables the per-IP limit
   pub max_concurrent_streams: u32, // when instantiate server
   pub keepalive: bool,             // when instantiate server
+
+  /// Redact query-string values in the access log so URLs carrying tokens or PII are not logged
+  /// verbatim. Opt-in; default false (full query strings are logged).
+  pub redact_query_in_access_log: bool,
 
   // experimentals
   /// SNI consistency check
   pub sni_consistency: bool, // Handler
+
+  /// Trusted source IPs/CIDRs allowed to influence incoming forwarding headers
+  /// such as X-Forwarded-For and Forwarded. Empty means trust none.
+  pub trusted_forwarded_proxies: Vec<IpNet>,
 
   #[cfg(feature = "proxy-protocol")]
   /// TCP inbound PROXY protocol receive configuration
@@ -110,10 +134,14 @@ impl Default for ProxyConfig {
       upstream_idle_timeout: Duration::from_secs(UPSTREAM_IDLE_TIMEOUT_SEC),
 
       max_clients: MAX_CLIENTS,
+      max_clients_per_ip: MAX_CLIENTS_PER_IP,
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,
       keepalive: true,
 
+      redact_query_in_access_log: false,
+
       sni_consistency: true,
+      trusted_forwarded_proxies: Vec::new(),
       connection_handling_timeout: None,
 
       #[cfg(feature = "proxy-protocol")]

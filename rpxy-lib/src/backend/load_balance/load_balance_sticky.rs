@@ -42,8 +42,9 @@ impl LoadBalanceStickyBuilder {
     self.sticky_config = Some(StickyCookieConfig {
       name: STICKY_COOKIE_NAME.to_string(), // TODO: config等で変更できるように
       domain: server_name.to_ascii_lowercase(),
+      // Path is kept verbatim (route matching is case-sensitive); only the domain is lowercased.
       path: if let Some(v) = path_opt {
-        v.to_ascii_lowercase()
+        v.clone()
       } else {
         "/".to_string()
       },
@@ -122,7 +123,7 @@ impl LoadBalanceWithPointer for LoadBalanceSticky {
         match self.get_server_index_from_id(server_id) {
           Some(index) if upstreams.get(index).is_some_and(|u| u.is_healthy()) => {
             // Valid cookie, target is healthy -> use it, NO re-issue
-            debug!("Valid sticky cookie: id={server_id}, index={index}, healthy",);
+            debug!("Valid sticky cookie: index={index}, healthy",);
             PointerToUpstream {
               ptr: index,
               context: None,
@@ -130,13 +131,13 @@ impl LoadBalanceWithPointer for LoadBalanceSticky {
           }
           Some(index) => {
             // Valid cookie but target is unhealthy -> fallback + new cookie
-            debug!("Valid sticky cookie: id={server_id}, index={index}, unhealthy -> fallback",);
+            debug!("Valid sticky cookie: index={index}, unhealthy -> fallback",);
             let ptr = self.rr_next_index(upstreams);
             self.build_ptr_with_new_cookie(ptr)
           }
           None => {
             // Invalid cookie -> RR + new cookie
-            debug!("Invalid sticky cookie: id={}", server_id);
+            debug!("Invalid sticky cookie: cookie value did not resolve");
             let ptr = self.rr_next_index(upstreams);
             self.build_ptr_with_new_cookie(ptr)
           }

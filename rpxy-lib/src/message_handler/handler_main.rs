@@ -1,10 +1,12 @@
 use super::{
+  header_ops::*,
   http_log::HttpMessageLog,
   http_result::{HttpError, HttpResult},
+  request_ops::InspectParseHost,
   synthetic_response::{secure_redirection_response, synthetic_error_response},
-  utils_headers::*,
-  utils_request::InspectParseHost,
 };
+#[cfg(feature = "sticky-cookie")]
+use crate::backend::StickyCookieConfig;
 use crate::{
   backend::{BackendAppManager, LoadBalanceContext},
   error::*,
@@ -25,6 +27,14 @@ use tokio::io::copy_bidirectional;
 /// Context object to handle sticky cookies at HTTP message handler
 pub(super) struct HandlerContext {
   pub(super) context_lb: Option<LoadBalanceContext>,
+  /// Client-visible request scheme captured from the inbound side (before
+  /// `add_forwarding_header()` overwrites X-Forwarded-Proto). True when the request
+  /// reached rpxy over TLS, or via a trusted forwarding proxy that asserted HTTPS.
+  /// Drives the `Secure` attribute on the sticky-cookie Set-Cookie response.
+  #[cfg(feature = "sticky-cookie")]
+  pub(super) sticky_cookie_secure: bool,
+  #[cfg(feature = "sticky-cookie")]
+  pub(super) sticky_cookie_config: Option<StickyCookieConfig>,
 }
 
 #[derive(Clone, Builder)]
@@ -54,7 +64,7 @@ where
     tls_server_name: Option<ServerName>,
   ) -> RpxyResult<Response<ResponseBody>> {
     // preparing log data
-    let mut log_data = HttpMessageLog::from(&req);
+    let mut log_data = HttpMessageLog::new(&req, self.globals.proxy_config.redact_query_in_access_log);
     log_data.client_addr(&client_addr);
 
     let http_result = self
@@ -101,17 +111,22 @@ where
       }
     }
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
+    // `default_app` fallback is plaintext-HTTP only (see README and backend_main.rs). TLS requests
+    // with an unknown host are rejected regardless of `sni_consistency`.
+    let mut fallback_to_default_app = false;
     let backend_app = match self.app_manager.apps.get(&server_name) {
       Some(backend_app) => backend_app,
-      None => {
+      None if !tls_enabled => {
         let default_server_name = self
           .app_manager
           .default_server_name
           .as_ref()
           .ok_or(HttpError::NoMatchingBackendApp)?;
         debug!("Serving by default app");
+        fallback_to_default_app = true;
         self.app_manager.apps.get(default_server_name).unwrap()
       }
+      None => return Err(HttpError::NoMatchingBackendApp),
     };
 
     // Redirect to https if !tls_enabled and redirect_to_https is true
@@ -143,6 +158,11 @@ where
     // let request_upgraded = req.extensions_mut().remove::<hyper::upgrade::OnUpgrade>();
     let req_on_upgrade = hyper::upgrade::on(&mut req);
 
+    // If this request was matched via the `default_app` fallback, the incoming `Host` is untrusted.
+    // Pass the matched backend's configured server_name through without allocating so that
+    // `generate_request_forwarded` can force-overwrite `Host` after the usual header pass.
+    let fallback_host = fallback_to_default_app.then_some(&backend_app.server_name);
+
     // Build request from destination information
     let _context = self
       .generate_request_forwarded(
@@ -152,6 +172,7 @@ where
         &upgrade_in_request,
         upstream_candidates,
         tls_enabled,
+        fallback_host,
       )
       .map_err(|e| HttpError::FailedToGenerateUpstreamRequest(e.to_string()))?;
 
@@ -160,9 +181,9 @@ where
       req.uri(),
       req.method(),
       req.version(),
-      req.headers()
+      DebugHeaders::new(req.headers(), self.globals.unsafe_debug_headers)
     );
-    log_data.xff(&req.headers().get("x-forwarded-for"));
+    log_data.xff(&req.headers().get(header_defs::X_FORWARDED_FOR));
     log_data.upstream(req.uri());
     //////
 
@@ -178,8 +199,23 @@ where
     // Process reverse proxy context generated during the forwarding request generation.
     #[cfg(feature = "sticky-cookie")]
     if let Some(context_from_lb) = _context.context_lb {
+      let sticky_config = _context
+        .sticky_cookie_config
+        .as_ref()
+        .ok_or_else(|| HttpError::FailedToAddSetCookeInResponse("missing sticky-cookie config".to_string()))?;
+      let cipher = self
+        .globals
+        .sticky_cookie_cipher
+        .as_deref()
+        .ok_or_else(|| HttpError::FailedToAddSetCookeInResponse("missing sticky-cookie cipher".to_string()))?;
       let res_headers = res_backend.headers_mut();
-      if let Err(e) = set_sticky_cookie_lb_context(res_headers, &context_from_lb) {
+      if let Err(e) = set_sticky_cookie_lb_context(
+        res_headers,
+        &context_from_lb,
+        sticky_config,
+        _context.sticky_cookie_secure,
+        cipher,
+      ) {
         return Err(HttpError::FailedToAddSetCookeInResponse(e.to_string()));
       }
     }

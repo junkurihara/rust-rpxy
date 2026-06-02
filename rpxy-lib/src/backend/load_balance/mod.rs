@@ -3,6 +3,8 @@ mod load_balance_main;
 mod load_balance_sticky;
 #[cfg(feature = "sticky-cookie")]
 mod sticky_cookie;
+#[cfg(feature = "sticky-cookie")]
+mod sticky_cookie_seal;
 
 use super::upstream::Upstream;
 use thiserror::Error;
@@ -15,7 +17,11 @@ pub use load_balance_main::{
 #[cfg(feature = "sticky-cookie")]
 pub use load_balance_sticky::LoadBalanceStickyBuilder;
 #[cfg(feature = "sticky-cookie")]
-pub use sticky_cookie::{StickyCookie, StickyCookieValue};
+pub use sticky_cookie::{StickyCookie, StickyCookieConfig, StickyCookieValue};
+#[cfg(feature = "sticky-cookie")]
+pub use sticky_cookie_seal::{StickyCookieSecret, validate_sticky_cookie_aad_component};
+#[cfg(feature = "sticky-cookie")]
+pub(crate) use sticky_cookie_seal::{build_sticky_cookie_aad, build_sticky_cookie_cipher, open_server_id, seal_server_id};
 
 /// Result type for load balancing
 #[cfg(feature = "sticky-cookie")]

@@ -35,6 +35,12 @@ pub use crate::{
 #[cfg(feature = "health-check")]
 pub const LOAD_BALANCE_PRIMARY_BACKUP: &str = crate::backend::LOAD_BALANCE_PRIMARY_BACKUP;
 
+#[cfg(feature = "sticky-cookie")]
+pub const LOAD_BALANCE_STICKY_ROUND_ROBIN: &str = crate::backend::LOAD_BALANCE_STICKY_ROUND_ROBIN;
+
+#[cfg(feature = "sticky-cookie")]
+pub use crate::backend::{StickyCookieSecret, validate_sticky_cookie_aad_component};
+
 #[cfg(feature = "health-check")]
 pub use crate::{
   constants::health_check as health_check_defaults,
@@ -45,7 +51,6 @@ pub use crate::{constants::proxy_protocol as proxy_protocol_defaults, globals::T
 
 pub mod reexports {
   pub use hyper::Uri;
-  #[cfg(feature = "proxy-protocol")]
   pub use ipnet::IpNet;
 }
 
@@ -60,6 +65,13 @@ pub struct RpxyOptions {
   pub cert_rx: Option<ReloaderReceiver<ServerCryptoBase>>, // TODO:
   /// Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
+  /// Operator opt-out (env `RPXY_UNSAFE_DEBUG_HEADERS`) that disables
+  /// credential-header redaction in DEBUG request logs. Default false.
+  #[builder(default)]
+  pub unsafe_debug_headers: bool,
+  #[cfg(feature = "sticky-cookie")]
+  #[builder(default)]
+  pub sticky_cookie_secret: Option<Arc<StickyCookieSecret>>,
 
   #[cfg(feature = "acme")]
   /// ServerConfig used for only ACME challenge for ACME domains
@@ -73,6 +85,9 @@ pub async fn entrypoint(
     app_config_list,
     cert_rx, // TODO:
     runtime_handle,
+    unsafe_debug_headers,
+    #[cfg(feature = "sticky-cookie")]
+    sticky_cookie_secret,
     #[cfg(feature = "acme")]
     server_configs_acme_challenge,
   }: &RpxyOptions,
@@ -109,6 +124,13 @@ pub async fn entrypoint(
   if !proxy_config.sni_consistency {
     info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
   }
+  if !proxy_config.trusted_forwarded_proxies.is_empty() {
+    info!(
+      "Trusted forwarded proxies configured: {} CIDR(s)",
+      proxy_config.trusted_forwarded_proxies.len()
+    );
+    debug!("Trusted forwarded proxies: {:?}", proxy_config.trusted_forwarded_proxies);
+  }
   #[cfg(feature = "cache")]
   if proxy_config.cache_enabled {
     info!("Cache is enabled: cache dir = {:?}", proxy_config.cache_dir.as_ref().unwrap());
@@ -132,6 +154,14 @@ pub async fn entrypoint(
     );
   }
 
+  #[cfg(feature = "sticky-cookie")]
+  let sticky_cookie_cipher = if let Some(secret) = sticky_cookie_secret.as_ref() {
+    info!("sticky-cookie AEAD enabled (config-supplied secret)");
+    Some(backend::build_sticky_cookie_cipher(secret)?)
+  } else {
+    None
+  };
+
   #[cfg(not(feature = "post-quantum"))]
   // Install aws_lc_rs as default crypto provider for rustls
   let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
@@ -147,8 +177,12 @@ pub async fn entrypoint(
   let globals = Arc::new(Globals {
     proxy_config: proxy_config.clone(),
     request_count: Default::default(),
+    per_ip_connection_count: count::PerIpConnectionCount::new(proxy_config.max_clients_per_ip),
     runtime_handle: runtime_handle.clone(),
     cert_reloader_rx: cert_rx.clone(),
+    unsafe_debug_headers: *unsafe_debug_headers,
+    #[cfg(feature = "sticky-cookie")]
+    sticky_cookie_cipher,
 
     #[cfg(feature = "acme")]
     server_configs_acme_challenge: server_configs_acme_challenge.clone(),
