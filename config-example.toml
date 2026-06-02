@@ -182,7 +182,7 @@ ignore_sni_consistency = false
 
 # Force connection handling timeout regardless of the connection status, i.e., idle or not.
 # 0 represents an infinite timeout. [default: 0]
-# Note that idel and header read timeouts are always specified independently of this.
+# Note that idle and header read timeouts are always specified independently of this.
 # A non-zero value is recommended in production unless long-lived connections (e.g. WebSocket) are required.
 connection_handling_timeout = 0 # sec
 

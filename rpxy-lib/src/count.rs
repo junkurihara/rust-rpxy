@@ -36,6 +36,12 @@ impl RequestCount {
 
 type IpConnectionMap = HashMap<IpAddr, usize, ahash::RandomState>;
 
+/// Locks the map, recovering the guard if the mutex was poisoned. This counter is a best-effort
+/// availability guard, so a panic elsewhere must not cascade into rejecting every connection.
+fn lock_map(map: &Mutex<IpConnectionMap>) -> std::sync::MutexGuard<'_, IpConnectionMap> {
+  map.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[derive(Debug, Clone)]
 /// Per-source-IP concurrent connection counter, in addition to the global RequestCount.
 /// `max_per_ip == 0` disables the limit, in which case the map is never touched.
@@ -59,7 +65,7 @@ impl PerIpConnectionCount {
     if self.max_per_ip == 0 {
       return Some(PerIpConnectionGuard { state: None });
     }
-    let mut map = self.inner.lock().unwrap();
+    let mut map = lock_map(&self.inner);
     let count = map.entry(ip).or_insert(0);
     // A freshly inserted entry is 0, which is below max_per_ip (>= 1 here), so the rejection
     // branch is only reached for an already-positive count and never leaves a stale zero entry.
@@ -83,9 +89,9 @@ impl Drop for PerIpConnectionGuard {
     let Some((map, ip)) = &self.state else {
       return;
     };
-    let mut map = map.lock().unwrap();
+    let mut map = lock_map(map);
     if let Some(count) = map.get_mut(ip) {
-      *count -= 1;
+      *count = count.saturating_sub(1);
       if *count == 0 {
         map.remove(ip);
       }
