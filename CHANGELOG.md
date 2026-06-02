@@ -2,7 +2,7 @@
 
 ## 0.12.1 or 0.13.0 (Unreleased)
 
-## 0.12.0 (To be released shortly)
+## 0.12.0
 
 **Security-focused release with the following improvements and bugfixes.**
 
