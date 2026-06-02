@@ -189,6 +189,8 @@ connection_handling_timeout = 0 # sec
 # If this specified, h3 is enabled
 [experimental.h3]
 alt_svc_max_age = 3600             # sec
+# Limits the total HTTP/3 request body size per request stream.
+# Default: 268435456 bytes (256 MiB). Set lower when large uploads are not required.
 request_max_body_size = 65536      # bytes
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100

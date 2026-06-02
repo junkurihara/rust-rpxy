@@ -30,6 +30,7 @@
 ### Improvement
 
 - Document that `connection_handling_timeout = 0` (the default) means no forced timeout, and recommend a non-zero value in production unless long-lived connections (e.g. WebSocket) are required.
+- Document the HTTP/3 `request_max_body_size` default of 256 MiB and recommend setting a lower explicit value in production when large uploads are not required.
 - deps and refactor
 
 ## 0.11.3

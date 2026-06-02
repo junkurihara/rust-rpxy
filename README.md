@@ -346,12 +346,18 @@ The [`./bench`](./bench/) directory contains a very simple example of `rpxy` con
 ```toml
 [experimental.h3]
 alt_svc_max_age = 3600
+# Limits the total HTTP/3 request body size per request stream.
+# If omitted, the default is 268435456 bytes (256 MiB).
 request_max_body_size = 65536
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100
 max_idle_timeout = 10
 ```
+
+`request_max_body_size` limits the total HTTP/3 request body size per request stream.
+The body is processed as a stream; this setting is not a preallocated memory buffer size.
+Set this explicitly to a smaller value in production when large uploads are not required.
 
 ### Client Authentication via Client Certificates
 
