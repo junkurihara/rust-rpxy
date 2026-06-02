@@ -149,11 +149,24 @@ impl HttpMessageLog {
     self
   }
   pub fn upstream(&mut self, upstream: &http::Uri) -> &mut Self {
-    let upstream = upstream.to_string();
-    self.upstream = if self.redact_query {
-      redact_query_values(&upstream).into_owned()
-    } else {
-      upstream
+    if !self.redact_query {
+      self.upstream = upstream.to_string();
+      return self;
+    }
+    // Redaction on. For the common absolute form, rebuild from the URI parts so the raw query is
+    // never copied into an owned string; fall back to redacting the rendered URI for other forms.
+    self.upstream = match (upstream.scheme_str(), upstream.authority()) {
+      (Some(scheme), Some(authority)) => {
+        let mut s = String::new();
+        s.push_str(scheme);
+        s.push_str("://");
+        s.push_str(authority.as_str());
+        if let Some(p_and_q) = upstream.path_and_query() {
+          s.push_str(&redact_query_values(p_and_q.as_str()));
+        }
+        s
+      }
+      _ => redact_query_values(&upstream.to_string()).into_owned(),
     };
     self
   }
@@ -296,5 +309,14 @@ mod tests {
     let mut log = HttpMessageLog::new(&req, false);
     log.upstream(&"https://backend.local/api?key=s3cret".parse::<http::Uri>().unwrap());
     assert_eq!(log.upstream, "https://backend.local/api?key=s3cret");
+  }
+
+  #[test]
+  fn upstream_redacted_without_query_is_unchanged() {
+    // The rebuilt-from-parts path must reproduce the plain URL when there is no query.
+    let req = http::Request::builder().uri("https://example.com/p").body(()).unwrap();
+    let mut log = HttpMessageLog::new(&req, true);
+    log.upstream(&"https://backend.local/api".parse::<http::Uri>().unwrap());
+    assert_eq!(log.upstream, "https://backend.local/api");
   }
 }
