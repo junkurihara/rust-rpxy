@@ -4,6 +4,7 @@ pub const PROXY_IDLE_TIMEOUT_SEC: u64 = 20;
 pub const UPSTREAM_IDLE_TIMEOUT_SEC: u64 = 20;
 pub const TLS_HANDSHAKE_TIMEOUT_SEC: u64 = 15; // default as with firefox browser
 pub const MAX_CLIENTS: usize = 512;
+pub const MAX_CLIENTS_PER_IP: usize = 0; // 0 disables the per-IP connection limit
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 
 #[allow(non_snake_case)]

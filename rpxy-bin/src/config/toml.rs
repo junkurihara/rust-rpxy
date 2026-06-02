@@ -65,6 +65,7 @@ impl OneOrMany {
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
 /// - `max_clients`: Optional max client connections.
+/// - `max_clients_per_ip`: Optional max concurrent connections per source IP (0 disables it).
 /// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
 /// - `apps`: Optional application definitions.
 /// - `default_app`: Optional default application name.
@@ -79,6 +80,7 @@ pub struct ConfigToml {
   pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
+  pub max_clients_per_ip: Option<u32>,
   #[cfg(feature = "sticky-cookie")]
   pub sticky_cookie_secret: Option<String>,
   pub trusted_forwarded_proxies: Option<OneOrMany>,
@@ -356,6 +358,9 @@ impl TryInto<ProxyConfig> for &ConfigToml {
     // max values
     if let Some(c) = self.max_clients {
       proxy_config.max_clients = c as usize;
+    }
+    if let Some(c) = self.max_clients_per_ip {
+      proxy_config.max_clients_per_ip = c as usize;
     }
     if let Some(c) = self.max_concurrent_streams {
       proxy_config.max_concurrent_streams = c;
@@ -1005,6 +1010,27 @@ mod tests {
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
     let proxy_config: ProxyConfig = (&config).try_into().unwrap();
     assert!(proxy_config.trusted_forwarded_proxies.is_empty());
+  }
+
+  #[test]
+  fn max_clients_per_ip_defaults_to_zero() {
+    let toml_str = r#"
+      listen_port = 8080
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.max_clients_per_ip, 0);
+  }
+
+  #[test]
+  fn max_clients_per_ip_is_applied() {
+    let toml_str = r#"
+      listen_port = 8080
+      max_clients_per_ip = 16
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.max_clients_per_ip, 16);
   }
 
   #[test]

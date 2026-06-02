@@ -46,6 +46,17 @@ max_concurrent_streams = 100
 # Optional. Counted in total for http1.1, 2, 3
 max_clients = 512
 
+# Optional. Max concurrent connections per source IP, in addition to max_clients. 0 disables it (default).
+# This caps how many connections a single client IP may hold so one source cannot exhaust max_clients.
+# The source IP is the immediate TCP/QUIC peer, or the real client address recovered from an inbound
+# PROXY protocol header (see [experimental.tcp_recv_proxy_protocol]). It does NOT use X-Forwarded-For /
+# Forwarded, so it is only meaningful when rpxy is the edge or inbound PROXY protocol is enabled; behind
+# a bare L7 load balancer every connection collapses to the LB's IP. Hence it is disabled by default.
+# For HTTP/3, this caps QUIC connections per IP; a single IP's concurrent H3 request streams are then
+# bounded by max_clients_per_ip * [experimental.h3] max_concurrent_bidistream, so size them together
+# relative to max_clients.
+# max_clients_per_ip = 0
+
 # Optional. Trusted proxies whose incoming X-Forwarded-* / Forwarded headers are
 # recursively trusted. If omitted or empty, forwarding headers from preceding peers
 # are ignored and rebuilt from the immediate peer address.
@@ -172,6 +183,7 @@ ignore_sni_consistency = false
 # Force connection handling timeout regardless of the connection status, i.e., idle or not.
 # 0 represents an infinite timeout. [default: 0]
 # Note that idel and header read timeouts are always specified independently of this.
+# A non-zero value is recommended in production unless long-lived connections (e.g. WebSocket) are required.
 connection_handling_timeout = 0 # sec
 
 # If this specified, h3 is enabled
