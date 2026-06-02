@@ -62,13 +62,17 @@ impl Reload<ServerCryptoBase> for CryptoReloader {
     let mut server_crypto_base = ServerCryptoBase::default();
 
     for (server_name_bytes, crypto_source) in self.inner.iter() {
-      let server_name = String::from_utf8_lossy(server_name_bytes);
       let certs_keys = match crypto_source.read().await {
         Ok(certs_keys) => {
-          lock_last_good(&self.last_good).insert(server_name_bytes.clone(), certs_keys.clone());
+          // Clone the key and the freshly read materials before locking, so the mutex is held
+          // only for the insert itself.
+          let cached_name = server_name_bytes.clone();
+          let cached_certs = certs_keys.clone();
+          lock_last_good(&self.last_good).insert(cached_name, cached_certs);
           certs_keys
         }
         Err(e) => {
+          let server_name = String::from_utf8_lossy(server_name_bytes);
           let retained = lock_last_good(&self.last_good).get(server_name_bytes).cloned();
           match retained {
             Some(retained) => {
