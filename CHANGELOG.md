@@ -2,8 +2,6 @@
 
 ## 0.12.1 or 0.13.0 (Unreleased)
 
-### Important Changes
-
 ## 0.12.0 (To be released shortly)
 
 **Security-focused release with the following improvements and bugfixes.**
@@ -25,9 +23,11 @@
 - **Redact sensitive headers in DEBUG request logs.** The `debug!` line that logs the request to be forwarded now masks the values of `Authorization`, `Cookie`, and `Proxy-Authorization` with a `<redacted>` placeholder (header names stay visible). For troubleshooting, redaction can be disabled by setting the environment variable `RPXY_UNSAFE_DEBUG_HEADERS` to `1`, `true`, or `yes`; the variable is read once at startup and emits a `warn!` when enabled. Do not leave it enabled in production. The unredacted values still only appear when `RUST_LOG=debug`.
 - **Fix: preserve the case of the sticky cookie `path` attribute.** The sticky-session `Set-Cookie` previously lowercased its `path`, which could mis-scope the cookie and silently break stickiness on case-sensitive route paths. The `path` is now emitted verbatim (the cookie `domain` is still lowercased). Because the path is bound into the sealed token, sticky cookies issued for a mixed-case path before the upgrade are ignored once and reissued; all-lowercase paths are unaffected.
 - **Validate `server_name` as a hostname.** Each app's `server_name` is now validated at startup and must be a syntactically valid hostname: dot-separated labels of 1-63 characters, each starting and ending with an alphanumeric and otherwise containing only alphanumerics and `-`, with a total length up to 253 ASCII characters. This is defense-in-depth, in particular for the ACME on-disk paths derived from `server_name`. Valid hostnames are unaffected, but a `server_name` that is not a valid hostname (containing path separators, `..`, wildcards `*`, underscores `_`, IPv6 literals, or non-ASCII characters) is now rejected at startup where it was previously accepted (IPv4 literals are still accepted).
+- **Add optional per-IP connection limit.** A new global `max_clients_per_ip` option caps the number of concurrent connections from a single source IP, in addition to the existing global `max_clients`, so one source cannot exhaust the connection pool. It defaults to `0` (disabled), preserving existing behavior. The source IP is the immediate TCP/QUIC peer, or the real client address recovered from an inbound PROXY protocol header; it is not derived from `X-Forwarded-For` / `Forwarded`, so the limit is only meaningful when rpxy is the edge or inbound PROXY protocol is enabled (behind a bare L7 load balancer every connection collapses to the balancer's IP). For HTTP/1.1 and HTTP/2 the slot is reserved before the TLS handshake so handshake floods are bounded too; for HTTP/3 it caps QUIC connections per source IP, and a single IP's concurrent HTTP/3 request streams are then bounded by `max_clients_per_ip` times `[experimental.h3] max_concurrent_bidistream`.
 
 ### Improvement
 
+- Document that `connection_handling_timeout = 0` (the default) means no forced timeout, and recommend a non-zero value in production unless long-lived connections (e.g. WebSocket) are required.
 - deps and refactor
 
 ## 0.11.3

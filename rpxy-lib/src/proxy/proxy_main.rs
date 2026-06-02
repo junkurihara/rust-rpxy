@@ -1,6 +1,7 @@
 use super::socket::bind_tcp_socket;
 use crate::{
   constants::TLS_HANDSHAKE_TIMEOUT_SEC,
+  count::PerIpConnectionGuard,
   error::*,
   globals::Globals,
   hyper_ext::{
@@ -244,9 +245,16 @@ impl<T> Proxy<T>
 where
   T: Send + Sync + Connect + Clone + 'static,
 {
-  /// Serves requests from clients
-  fn serve_connection<I>(&self, stream: I, peer_addr: SocketAddr, tls_server_name: Option<ServerName>)
-  where
+  /// Serves requests from clients.
+  /// The per-IP connection slot is reserved by the caller and passed in as a guard so that it
+  /// spans the same lifetime as the connection (including the preceding TLS handshake).
+  fn serve_connection<I>(
+    &self,
+    stream: I,
+    peer_addr: SocketAddr,
+    tls_server_name: Option<ServerName>,
+    per_ip_guard: PerIpConnectionGuard,
+  ) where
     I: Read + Write + Send + Unpin + 'static,
   {
     let request_count = self.globals.request_count.clone();
@@ -263,6 +271,8 @@ where
     let handling_timeout = self.globals.proxy_config.connection_handling_timeout;
 
     self.globals.runtime_handle.clone().spawn(async move {
+      // Hold the per-IP connection slot for the whole connection lifetime.
+      let _per_ip_guard = per_ip_guard;
       let fut = server_clone.serve_connection_with_upgrades(
         stream,
         service_fn(move |req: Request<Incoming>| {
@@ -297,7 +307,11 @@ where
       #[cfg(not(feature = "proxy-protocol"))]
       while let Ok((stream, client_addr)) = tcp_listener.accept().await {
         trace!("Accepted TCP connection from {client_addr}");
-        self.serve_connection(TokioIo::new(stream), client_addr, None);
+        let Some(per_ip_guard) = self.globals.per_ip_connection_count.try_acquire(client_addr.ip()) else {
+          debug!("Per-IP connection limit reached for {client_addr}, dropping connection");
+          continue;
+        };
+        self.serve_connection(TokioIo::new(stream), client_addr, None, per_ip_guard);
       }
       #[cfg(feature = "proxy-protocol")]
       {
@@ -326,12 +340,20 @@ where
                   return;
                 }
               };
-              self_inner.serve_connection(TokioIo::new(stream), real_addr, None);
+              let Some(per_ip_guard) = self_inner.globals.per_ip_connection_count.try_acquire(real_addr.ip()) else {
+                debug!("Per-IP connection limit reached for {real_addr}, dropping connection");
+                return;
+              };
+              self_inner.serve_connection(TokioIo::new(stream), real_addr, None, per_ip_guard);
             });
             continue;
           }
           // If inbound PROXY protocol is not enabled, serve connection directly with peer address from TCP accept
-          self.serve_connection(TokioIo::new(stream), client_addr, None);
+          let Some(per_ip_guard) = self.globals.per_ip_connection_count.try_acquire(client_addr.ip()) else {
+            debug!("Per-IP connection limit reached for {client_addr}, dropping connection");
+            continue;
+          };
+          self.serve_connection(TokioIo::new(stream), client_addr, None, per_ip_guard);
         }
       }
 
@@ -495,6 +517,12 @@ where
         }
       };
 
+      // Reserve the per-IP connection slot before the TLS handshake so handshake floods are bounded too.
+      let Some(per_ip_guard) = self_inner.globals.per_ip_connection_count.try_acquire(client_addr.ip()) else {
+        debug!("Per-IP connection limit reached for {client_addr}, dropping connection (TLS)");
+        return;
+      };
+
       #[cfg(feature = "acme")]
       let tls_handshake_fut = serve_tls_handshake(raw_stream, server_configs_acme_challenge, server_crypto_map);
       #[cfg(not(feature = "acme"))]
@@ -520,7 +548,7 @@ where
               stream.inner_mut().shutdown().await.ok();
               return;
             }
-            self_inner.serve_connection(stream, client_addr, Some(server_name));
+            self_inner.serve_connection(stream, client_addr, Some(server_name), per_ip_guard);
           }
           Err(e) => {
             error!("{}", e);
@@ -532,7 +560,7 @@ where
       {
         match tls_handshake_result {
           Ok(TlsHandshakeResult { stream, server_name }) => {
-            self_inner.serve_connection(stream, client_addr, Some(server_name));
+            self_inner.serve_connection(stream, client_addr, Some(server_name), per_ip_guard);
           }
           Err(e) => {
             error!("{}", e);

@@ -177,6 +177,7 @@ pub async fn entrypoint(
   let globals = Arc::new(Globals {
     proxy_config: proxy_config.clone(),
     request_count: Default::default(),
+    per_ip_connection_count: count::PerIpConnectionCount::new(proxy_config.max_clients_per_ip),
     runtime_handle: runtime_handle.clone(),
     cert_reloader_rx: cert_rx.clone(),
     unsafe_debug_headers: *unsafe_debug_headers,
