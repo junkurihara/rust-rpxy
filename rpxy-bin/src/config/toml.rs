@@ -67,6 +67,7 @@ impl OneOrMany {
 /// - `max_clients`: Optional max client connections.
 /// - `max_clients_per_ip`: Optional max concurrent connections per source IP (0 disables it).
 /// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
+/// - `redact_query_in_access_log`: Optional. Redact query-string values in the access log (default: false).
 /// - `apps`: Optional application definitions.
 /// - `default_app`: Optional default application name.
 /// - `experimental`: Optional experimental features.
@@ -84,6 +85,7 @@ pub struct ConfigToml {
   #[cfg(feature = "sticky-cookie")]
   pub sticky_cookie_secret: Option<String>,
   pub trusted_forwarded_proxies: Option<OneOrMany>,
+  pub redact_query_in_access_log: Option<bool>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
   pub experimental: Option<Experimental>,
@@ -367,6 +369,9 @@ impl TryInto<ProxyConfig> for &ConfigToml {
     }
     if let Some(entries) = &self.trusted_forwarded_proxies {
       proxy_config.trusted_forwarded_proxies = resolve_trusted_proxy_entries(entries.clone().into_vec())?.cidrs;
+    }
+    if let Some(redact) = self.redact_query_in_access_log {
+      proxy_config.redact_query_in_access_log = redact;
     }
 
     // experimental
@@ -1031,6 +1036,27 @@ mod tests {
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
     let proxy_config: ProxyConfig = (&config).try_into().unwrap();
     assert_eq!(proxy_config.max_clients_per_ip, 16);
+  }
+
+  #[test]
+  fn redact_query_in_access_log_defaults_to_false() {
+    let toml_str = r#"
+      listen_port = 8080
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(!proxy_config.redact_query_in_access_log);
+  }
+
+  #[test]
+  fn redact_query_in_access_log_is_applied() {
+    let toml_str = r#"
+      listen_port = 8080
+      redact_query_in_access_log = true
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert!(proxy_config.redact_query_in_access_log);
   }
 
   #[test]

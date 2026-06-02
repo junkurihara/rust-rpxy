@@ -109,6 +109,8 @@ If you set `--log-dir=<log_dir>`, the log files are created in the specified dir
 
 The log verbosity is controlled by the `RUST_LOG` environment variable (e.g., `RUST_LOG=debug`). At `debug` level, the request-forwarding log redacts the values of sensitive headers (`Authorization`, `Cookie`, `Proxy-Authorization`) as `<redacted>`. For troubleshooting only, you can disable this redaction by setting `RPXY_UNSAFE_DEBUG_HEADERS` to `1`, `true`, or `yes`; rpxy then prints these header values verbatim and emits a warning at startup. This is read once at startup and must not be left enabled in production.
 
+The access log line includes the request host, client address, method, path and query string, HTTP version, status, a reconstructed request URL (scheme, host, and path only, without the query string), `User-Agent`, `X-Forwarded-For`, `Forwarded`, and the upstream URL. Because query strings can carry tokens or personal data (e.g. `?token=...`, `?email=...`), you can set the global option `redact_query_in_access_log = true` in `config.toml` to mask query-string values (the keys and path are kept, values become `<redacted>`) in both the request path+query and the upstream URL. It defaults to `false`, preserving full query logging.
+
 That's all!
 
 ## Basic Configuration

@@ -64,7 +64,7 @@ where
     tls_server_name: Option<ServerName>,
   ) -> RpxyResult<Response<ResponseBody>> {
     // preparing log data
-    let mut log_data = HttpMessageLog::from(&req);
+    let mut log_data = HttpMessageLog::new(&req, self.globals.proxy_config.redact_query_in_access_log);
     log_data.client_addr(&client_addr);
 
     let http_result = self

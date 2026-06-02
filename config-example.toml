@@ -68,6 +68,13 @@ max_clients = 512
 # For full dual-stack trust-all, specify both "0.0.0.0/0" and "::/0".
 # trusted_forwarded_proxies = []
 
+# Optional. Redact query-string values in the access log so URLs that carry tokens or PII
+# (e.g. ?token=..., ?code=..., ?email=...) are not logged verbatim. Default: false (full query
+# strings are logged). When enabled, parameter values are replaced with <redacted> while the
+# keys and path are kept. Enable this when applications may put secrets or personal data in
+# query strings.
+# redact_query_in_access_log = true
+
 # Optional. Required when any reverse_proxy entry uses load_balance = "sticky".
 # Value must be a 32-byte secret encoded as unpadded base64url.
 # Generate with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'
