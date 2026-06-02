@@ -31,6 +31,7 @@
 
 - Document that `connection_handling_timeout = 0` (the default) means no forced timeout, and recommend a non-zero value in production unless long-lived connections (e.g. WebSocket) are required.
 - Document the HTTP/3 `request_max_body_size` default of 256 MiB and recommend setting a lower explicit value in production when large uploads are not required.
+- Add an optional global `redact_query_in_access_log` setting. When enabled, query-string values in the access log (both the request path+query and the upstream URL) are masked as `<redacted>` while the parameter keys and the path are kept, so URLs that carry tokens or PII (e.g. `?token=...`, `?email=...`) are not logged verbatim. It defaults to `false`, preserving the current full-query access-log behavior; redaction is performed when the access-log record is built, so the raw query values are never retained.
 - deps and refactor
 
 ## 0.11.3

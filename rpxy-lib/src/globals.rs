@@ -72,6 +72,10 @@ pub struct ProxyConfig {
   pub max_concurrent_streams: u32, // when instantiate server
   pub keepalive: bool,             // when instantiate server
 
+  /// Redact query-string values in the access log so URLs carrying tokens or PII are not logged
+  /// verbatim. Opt-in; default false (full query strings are logged).
+  pub redact_query_in_access_log: bool,
+
   // experimentals
   /// SNI consistency check
   pub sni_consistency: bool, // Handler
@@ -133,6 +137,8 @@ impl Default for ProxyConfig {
       max_clients_per_ip: MAX_CLIENTS_PER_IP,
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,
       keepalive: true,
+
+      redact_query_in_access_log: false,
 
       sni_consistency: true,
       trusted_forwarded_proxies: Vec::new(),
