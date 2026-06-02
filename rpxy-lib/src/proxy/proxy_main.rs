@@ -77,18 +77,16 @@ async fn serve_tls_handshake(
 ) -> RpxyResult<TlsHandshakeResult> {
   let acceptor = tokio_rustls::LazyConfigAcceptor::new(tokio_rustls::rustls::server::Acceptor::default(), raw_stream).await;
   if let Err(e) = acceptor {
-    warn!(peer = %client_addr, failure = "acceptor", reason = %e, "TLS handshake failed");
+    warn!(peer = %client_addr, sni = "-", failure = "acceptor", reason = %e, "TLS handshake failed");
     return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
   }
   let start = acceptor.unwrap();
   let client_hello = start.client_hello();
   let sni = client_hello.server_name();
   debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", sni.unwrap_or("None"));
-  // Owned copy of the SNI for audit logging, so it can be logged after `start` is consumed by into_stream.
-  let sni_str = sni.map(|s| s.to_string());
   let server_name = sni.map(ServerName::from);
   if server_name.is_none() {
-    info!(peer = %client_addr, failure = "no_sni", "TLS handshake failed");
+    info!(peer = %client_addr, sni = "-", failure = "no_sni", "TLS handshake failed");
     return Err(RpxyError::NoServerNameInClientHello);
   }
   #[cfg(feature = "acme")]
@@ -100,14 +98,14 @@ async fn serve_tls_handshake(
     if rpxy_acme::reexports::is_tls_alpn_challenge(&client_hello) {
       info!("ACME TLS ALPN challenge received");
       let Some(server_crypto_acme) = server_configs_acme_challenge.get(&sni.unwrap().to_ascii_lowercase()) else {
-        info!(peer = %client_addr, sni = sni_str.as_deref().unwrap_or("-"), failure = "acme_no_config", "TLS handshake failed");
+        info!(peer = %client_addr, sni = sni.unwrap_or("-"), failure = "acme_no_config", "TLS handshake failed");
         return Err(RpxyError::NoAcmeServerConfig);
       };
       is_handshake_acme = true;
       (server_crypto_acme.clone(), false)
     } else {
       let Some(server_crypto) = server_crypto_map.as_ref().get(server_name.as_ref().unwrap()) else {
-        info!(peer = %client_addr, sni = sni_str.as_deref().unwrap_or("-"), failure = "unknown_sni", "TLS handshake failed");
+        info!(peer = %client_addr, sni = sni.unwrap_or("-"), failure = "unknown_sni", "TLS handshake failed");
         return Err(RpxyError::NoTlsServingApp(
           server_name.as_ref().unwrap().try_into().unwrap_or_default(),
         ));
@@ -119,7 +117,7 @@ async fn serve_tls_handshake(
   #[cfg(not(feature = "acme"))]
   let (server_crypto, is_mutual_tls) = {
     let Some(server_crypto) = server_crypto_map.get(server_name.as_ref().unwrap()) else {
-      info!(peer = %client_addr, sni = sni_str.as_deref().unwrap_or("-"), failure = "unknown_sni", "TLS handshake failed");
+      info!(peer = %client_addr, sni = sni.unwrap_or("-"), failure = "unknown_sni", "TLS handshake failed");
       return Err(RpxyError::NoTlsServingApp(
         server_name.as_ref().unwrap().try_into().unwrap_or_default(),
       ));
@@ -137,7 +135,8 @@ async fn serve_tls_handshake(
         Some(rustls::Error::InvalidCertificate(_)) | Some(rustls::Error::NoCertificatesPresented) => "client_cert",
         _ => "handshake",
       };
-      warn!(peer = %client_addr, sni = sni_str.as_deref().unwrap_or("-"), failure, mtls = is_mutual_tls, reason = %e, "TLS handshake failed");
+      let sni = server_name.as_ref().and_then(|n| std::str::from_utf8(n.as_ref()).ok()).unwrap_or("-");
+      warn!(peer = %client_addr, sni, failure, mtls = is_mutual_tls, reason = %e, "TLS handshake failed");
       return Err(RpxyError::TlsHandshakeFailed(e.to_string()));
     }
   };
@@ -547,7 +546,7 @@ where
 
       // timeout is introduced to avoid get stuck here.
       let Ok(tls_handshake_result) = timeout(Duration::from_secs(TLS_HANDSHAKE_TIMEOUT_SEC), tls_handshake_fut).await else {
-        warn!(peer = %client_addr, failure = "timeout", "TLS handshake failed");
+        warn!(peer = %client_addr, sni = "-", failure = "timeout", "TLS handshake failed");
         return;
       };
       /* ------------------ */

@@ -196,6 +196,14 @@ mod tests {
     crypto_file_source.unwrap().read().await.unwrap()
   }
 
+  async fn read_file_source_without_client_ca() -> SingleServerCertsKeys {
+    let crypto_file_source = CryptoFileSourceBuilder::default()
+      .tls_cert_key_path("../example-certs/server.key")
+      .tls_cert_path("../example-certs/server.crt")
+      .build();
+    crypto_file_source.unwrap().read().await.unwrap()
+  }
+
   #[tokio::test]
   async fn test_server_crypto_base_try_into() {
     #[cfg(not(feature = "post-quantum"))]
@@ -207,8 +215,26 @@ mod tests {
 
     let single_certs_keys = read_file_source().await;
     server_crypto_base.inner.insert(b"localhost".to_vec(), single_certs_keys);
+    let single_certs_keys_no_mtls = read_file_source_without_client_ca().await;
+    server_crypto_base
+      .inner
+      .insert(b"example.com".to_vec(), single_certs_keys_no_mtls);
     let server_crypto: Arc<ServerCrypto> = (&server_crypto_base).try_into().unwrap();
-    assert_eq!(server_crypto.individual_config_map.len(), 1);
+    assert_eq!(server_crypto.individual_config_map.len(), 2);
+
+    // The per-SNI mTLS flag drives the `mtls` field of handshake-failure audit logs.
+    assert!(
+      server_crypto.individual_config_map.get(b"localhost".as_slice()).unwrap().is_mutual_tls,
+      "localhost has a client CA configured, so it must be marked as mutual TLS"
+    );
+    assert!(
+      !server_crypto
+        .individual_config_map
+        .get(b"example.com".as_slice())
+        .unwrap()
+        .is_mutual_tls,
+      "example.com has no client CA, so it must not be marked as mutual TLS"
+    );
 
     #[cfg(feature = "http3")]
     {
