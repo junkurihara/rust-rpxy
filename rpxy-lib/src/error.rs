@@ -12,6 +12,8 @@ pub enum RpxyError {
   // TLS errors
   #[error("Failed to build TLS acceptor: {0}")]
   FailedToTlsHandshake(String),
+  #[error("TLS handshake failed after ClientHello: {0}")]
+  TlsHandshakeFailed(String),
   #[error("No server name in ClientHello")]
   NoServerNameInClientHello,
   #[error("No TLS serving app: {0}")]

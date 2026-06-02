@@ -12,6 +12,7 @@ use crate::{
   message_handler::HttpMessageHandler,
   name_exp::ServerName,
 };
+#[cfg(feature = "acme")]
 use ahash::HashMap;
 use futures::{FutureExt, select};
 use http::{Request, Response};
@@ -65,14 +66,18 @@ struct TlsHandshakeResult {
   is_handshake_acme: bool, // for shutdown just after TLS handshake
 }
 
-/// TLS handshake and certificate management for TLS listener service
+/// TLS handshake and certificate management for TLS listener service.
+/// `client_addr` is taken only so handshake failures can be logged as structured audit
+/// records (peer / SNI / failure category) at the point where the SNI and failure are known.
 async fn serve_tls_handshake(
   raw_stream: TcpStream,
+  client_addr: SocketAddr,
   #[cfg(feature = "acme")] server_configs_acme_challenge: Arc<HashMap<String, Arc<rustls::ServerConfig>>>,
-  server_crypto_map: Arc<HashMap<ServerName, Arc<rustls::ServerConfig>>>,
+  server_crypto_map: Arc<super::SniServerCryptoMap>,
 ) -> RpxyResult<TlsHandshakeResult> {
   let acceptor = tokio_rustls::LazyConfigAcceptor::new(tokio_rustls::rustls::server::Acceptor::default(), raw_stream).await;
   if let Err(e) = acceptor {
+    warn!(peer = %client_addr, sni = "-", failure = "acceptor", reason = %e, "TLS handshake failed");
     return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
   }
   let start = acceptor.unwrap();
@@ -81,6 +86,7 @@ async fn serve_tls_handshake(
   debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", sni.unwrap_or("None"));
   let server_name = sni.map(ServerName::from);
   if server_name.is_none() {
+    info!(peer = %client_addr, sni = "-", failure = "no_sni", "TLS handshake failed");
     return Err(RpxyError::NoServerNameInClientHello);
   }
   #[cfg(feature = "acme")]
@@ -88,40 +94,50 @@ async fn serve_tls_handshake(
   // ------------------
   // Check for ACME TLS ALPN challenge
   #[cfg(feature = "acme")]
-  let server_crypto = {
+  let (server_crypto, is_mutual_tls) = {
     if rpxy_acme::reexports::is_tls_alpn_challenge(&client_hello) {
       info!("ACME TLS ALPN challenge received");
       let Some(server_crypto_acme) = server_configs_acme_challenge.get(&sni.unwrap().to_ascii_lowercase()) else {
+        info!(peer = %client_addr, sni = sni.unwrap_or("-"), failure = "acme_no_config", "TLS handshake failed");
         return Err(RpxyError::NoAcmeServerConfig);
       };
       is_handshake_acme = true;
-      server_crypto_acme
+      (server_crypto_acme.clone(), false)
     } else {
-      let server_crypto = server_crypto_map.as_ref().get(server_name.as_ref().unwrap());
-      let Some(server_crypto) = server_crypto else {
+      let Some(server_crypto) = server_crypto_map.as_ref().get(server_name.as_ref().unwrap()) else {
+        info!(peer = %client_addr, sni = sni.unwrap_or("-"), failure = "unknown_sni", "TLS handshake failed");
         return Err(RpxyError::NoTlsServingApp(
           server_name.as_ref().unwrap().try_into().unwrap_or_default(),
         ));
       };
-      server_crypto
+      (server_crypto.server_config.clone(), server_crypto.is_mutual_tls)
     }
   };
   // ------------------
   #[cfg(not(feature = "acme"))]
-  let server_crypto = {
-    let server_crypto = server_crypto_map.get(server_name.as_ref().unwrap());
-    let Some(server_crypto) = server_crypto else {
+  let (server_crypto, is_mutual_tls) = {
+    let Some(server_crypto) = server_crypto_map.get(server_name.as_ref().unwrap()) else {
+      info!(peer = %client_addr, sni = sni.unwrap_or("-"), failure = "unknown_sni", "TLS handshake failed");
       return Err(RpxyError::NoTlsServingApp(
         server_name.as_ref().unwrap().try_into().unwrap_or_default(),
       ));
     };
-    server_crypto
+    (server_crypto.server_config.clone(), server_crypto.is_mutual_tls)
   };
   // ------------------
-  let stream = match start.into_stream(server_crypto.clone()).await {
+  let stream = match start.into_stream(server_crypto).await {
     Ok(s) => TokioIo::new(s),
     Err(e) => {
-      return Err(RpxyError::FailedToTlsHandshake(e.to_string()));
+      // Classify by the underlying rustls error: a missing or invalid client certificate is an
+      // mTLS authentication failure; everything else (including received alerts) is a generic
+      // handshake failure. `mtls` records whether the selected vhost required client auth.
+      let failure = match e.get_ref().and_then(|inner| inner.downcast_ref::<rustls::Error>()) {
+        Some(rustls::Error::InvalidCertificate(_)) | Some(rustls::Error::NoCertificatesPresented) => "client_cert",
+        _ => "handshake",
+      };
+      let sni = server_name.as_ref().and_then(|n| std::str::from_utf8(n.as_ref()).ok()).unwrap_or("-");
+      warn!(peer = %client_addr, sni, failure, mtls = is_mutual_tls, reason = %e, "TLS handshake failed");
+      return Err(RpxyError::TlsHandshakeFailed(e.to_string()));
     }
   };
   Ok(TlsHandshakeResult {
@@ -524,13 +540,13 @@ where
       };
 
       #[cfg(feature = "acme")]
-      let tls_handshake_fut = serve_tls_handshake(raw_stream, server_configs_acme_challenge, server_crypto_map);
+      let tls_handshake_fut = serve_tls_handshake(raw_stream, client_addr, server_configs_acme_challenge, server_crypto_map);
       #[cfg(not(feature = "acme"))]
-      let tls_handshake_fut = serve_tls_handshake(raw_stream, server_crypto_map);
+      let tls_handshake_fut = serve_tls_handshake(raw_stream, client_addr, server_crypto_map);
 
       // timeout is introduced to avoid get stuck here.
       let Ok(tls_handshake_result) = timeout(Duration::from_secs(TLS_HANDSHAKE_TIMEOUT_SEC), tls_handshake_fut).await else {
-        error!("Timeout to handshake TLS");
+        warn!(peer = %client_addr, sni = "-", failure = "timeout", "TLS handshake failed");
         return;
       };
       /* ------------------ */
@@ -550,8 +566,8 @@ where
             }
             self_inner.serve_connection(stream, client_addr, Some(server_name), per_ip_guard);
           }
-          Err(e) => {
-            error!("{}", e);
+          Err(_) => {
+            // The structured handshake-failure audit record is already emitted inside serve_tls_handshake.
           }
         }
       }
@@ -562,8 +578,8 @@ where
           Ok(TlsHandshakeResult { stream, server_name }) => {
             self_inner.serve_connection(stream, client_addr, Some(server_name), per_ip_guard);
           }
-          Err(e) => {
-            error!("{}", e);
+          Err(_) => {
+            // The structured handshake-failure audit record is already emitted inside serve_tls_handshake.
           }
         }
       }

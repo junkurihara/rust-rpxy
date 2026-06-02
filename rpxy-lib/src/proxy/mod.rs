@@ -16,11 +16,11 @@ use crate::{
   name_exp::ServerName,
 };
 use hyper_util::server::{self, conn::auto::Builder as ConnectionBuilder};
-use rustls::ServerConfig;
+use rpxy_certs::ServerCryptoForSni;
 use std::sync::Arc;
 
-/// SNI to ServerConfig map type
-pub type SniServerCryptoMap = std::collections::HashMap<ServerName, Arc<ServerConfig>, ahash::RandomState>;
+/// SNI to per-SNI server crypto map type (carries the config and whether the vhost enforces mTLS)
+pub type SniServerCryptoMap = std::collections::HashMap<ServerName, ServerCryptoForSni, ahash::RandomState>;
 
 pub use proxy_main::{ListenerKind, ListenerSpecBuilder, ListenerSpecBuilderError, ProxyBuilder, ProxyBuilderError};
 

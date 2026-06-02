@@ -20,7 +20,7 @@ pub use crate::{
   certs::SingleServerCertsKeys,
   crypto_source::{CryptoFileSource, CryptoFileSourceBuilder, CryptoFileSourceBuilderError, CryptoSource},
   reloader_service::CryptoReloader,
-  server_crypto::{ServerCrypto, ServerCryptoBase},
+  server_crypto::{ServerCrypto, ServerCryptoBase, ServerCryptoForSni},
 };
 
 /* ------------------------------------------------ */
