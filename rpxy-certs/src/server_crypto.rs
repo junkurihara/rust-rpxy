@@ -16,8 +16,15 @@ fn server_name_bytes_to_string(server_name_bytes: &ServerNameBytes) -> Result<St
   Ok(server_name)
 }
 
+/// Per-SNI server config together with whether it enforces mutual TLS (client certificate auth)
+#[derive(Clone)]
+pub struct ServerCryptoForSni {
+  pub server_config: Arc<ServerConfig>,
+  pub is_mutual_tls: bool,
+}
+
 /// ServerName (SNI) to ServerConfig map type
-pub type ServerNameCryptoMap = HashMap<ServerNameBytes, Arc<ServerConfig>>;
+pub type ServerNameCryptoMap = HashMap<ServerNameBytes, ServerCryptoForSni>;
 
 /// ServerName (SNI) to ServerConfig map
 pub struct ServerCrypto {
@@ -85,7 +92,13 @@ impl ServerCryptoBase {
         {
           server_crypto_local.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         }
-        server_crypto_map.insert(server_name_bytes.clone(), Arc::new(server_crypto_local));
+        server_crypto_map.insert(
+          server_name_bytes.clone(),
+          ServerCryptoForSni {
+            server_config: Arc::new(server_crypto_local),
+            is_mutual_tls: false,
+          },
+        );
         continue;
       }
 
@@ -109,7 +122,13 @@ impl ServerCryptoBase {
         .with_client_cert_verifier(client_cert_verifier)
         .with_cert_resolver(Arc::new(resolver_local));
       server_crypto_local.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-      server_crypto_map.insert(server_name_bytes.clone(), Arc::new(server_crypto_local));
+      server_crypto_map.insert(
+        server_name_bytes.clone(),
+        ServerCryptoForSni {
+          server_config: Arc::new(server_crypto_local),
+          is_mutual_tls: true,
+        },
+      );
     }
 
     Ok(server_crypto_map)
