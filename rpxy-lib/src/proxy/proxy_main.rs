@@ -31,6 +31,18 @@ use tokio_util::sync::CancellationToken;
 use crate::globals::TcpRecvProxyProtocolConfig;
 
 /* -------------------------------------------------------------------------------------------------------- */
+/// Disable Nagle's algorithm (`TCP_NODELAY`) on an accepted connection. rpxy relays many small
+/// request/response exchanges, so this avoids Nagle / delayed-ACK latency on small writes. It is
+/// applied to the raw `TcpStream` right after accept (before it is wrapped / handed to the TLS
+/// handshake), so it also covers the TLS handshake and the post-handshake data phase. Best-effort:
+/// a (rare) failure is logged at `debug!` and does not drop the connection.
+fn set_tcp_nodelay(stream: &TcpStream, peer: SocketAddr) {
+  if let Err(e) = stream.set_nodelay(true) {
+    debug!("Failed to set TCP_NODELAY for {peer}: {e}");
+  }
+}
+
+/* -------------------------------------------------------------------------------------------------------- */
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
 async fn serve_request<T>(
@@ -323,6 +335,7 @@ where
       #[cfg(not(feature = "proxy-protocol"))]
       while let Ok((stream, client_addr)) = tcp_listener.accept().await {
         trace!("Accepted TCP connection from {client_addr}");
+        set_tcp_nodelay(&stream, client_addr);
         let Some(per_ip_guard) = self.globals.per_ip_connection_count.try_acquire(client_addr.ip()) else {
           debug!("Per-IP connection limit reached for {client_addr}, dropping connection");
           continue;
@@ -335,6 +348,7 @@ where
         let pp_semaphore = Arc::new(tokio::sync::Semaphore::new(self.globals.proxy_config.max_clients));
         while let Ok((mut stream, client_addr)) = tcp_listener.accept().await {
           trace!("Accepted TCP connection from {client_addr}");
+          set_tcp_nodelay(&stream, client_addr);
           // [PROXY-PROTOCOL] Parse PROXY header before serving connection
           if self.globals.proxy_config.tcp_recv_proxy_protocol.is_some() {
             let permit = match pp_semaphore.clone().try_acquire_owned() {
@@ -487,6 +501,7 @@ where
     #[cfg(not(feature = "proxy-protocol"))]
     let (raw_stream, client_addr) = tcp_cnx.unwrap();
     trace!("Accepted TCP connection from {client_addr} at TLS listener");
+    set_tcp_nodelay(&raw_stream, client_addr);
 
     #[cfg(feature = "proxy-protocol")]
     let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone();
@@ -609,5 +624,22 @@ where
     };
 
     proxy_service.await
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use tokio::net::TcpListener;
+
+  #[tokio::test]
+  async fn set_tcp_nodelay_enables_nodelay() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    // An accepted TcpStream defaults to nodelay = false; the helper must flip it on.
+    let _client = TcpStream::connect(addr).await.unwrap();
+    let (server, peer) = listener.accept().await.unwrap();
+    set_tcp_nodelay(&server, peer);
+    assert!(server.nodelay().unwrap(), "set_tcp_nodelay must enable TCP_NODELAY");
   }
 }
