@@ -1,6 +1,10 @@
 # CHANGELOG
 
-## 0.12.1 or 0.13.0 (Unreleased)
+## 0.12.1 (Unreleased)
+
+### Bugfix
+
+- **Fix: the cache no longer truncates responses larger than `cache_max_each_size`.** With the `cache` feature enabled, a cacheable response whose body exceeded `cache_max_each_size` (default 65535 bytes) was truncated when delivered to the client, because the caching worker stopped forwarding the response body to the client as soon as the size limit was crossed. Depending on framing this surfaced either as a silently short body (chunked / unknown-length responses) or as a body/protocol error (when `Content-Length` was present). Such over-limit responses are now forwarded to the client in full and simply not cached; within-limit responses are cached as before. Relatedly, a response whose upstream body errors mid-stream now propagates that error to the client (failing as it did upstream) instead of the cache layer masking it as a clean, truncated end-of-stream.
 
 ## 0.12.0
 

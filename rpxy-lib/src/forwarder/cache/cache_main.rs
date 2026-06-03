@@ -96,7 +96,7 @@ impl RpxyCache {
   }
 
   /// Put response into the cache
-  pub(crate) async fn put(&self, uri: &hyper::Uri, mut body: Incoming, policy: &CachePolicy) -> CacheResult<UnboundedStreamBody> {
+  pub(crate) async fn put(&self, uri: &hyper::Uri, body: Incoming, policy: &CachePolicy) -> CacheResult<UnboundedStreamBody> {
     let cache_manager = self.inner.clone();
     let mut file_store = self.file_store.clone();
     let uri = uri.clone();
@@ -108,56 +108,20 @@ impl RpxyCache {
     let (body_tx, body_rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
 
     self.runtime_handle.spawn(async move {
-      let mut size = 0usize;
-      let mut buf = BytesMut::new();
+      // Forward the whole response body downstream while buffering up to `max_each_size`
+      // for caching. `body_tx` is moved into `spool_body` and dropped there, so an
+      // over-limit (or upstream-errored) response is delivered to the client in full and
+      // simply not cached - the cache layer never truncates it.
+      let Some(buf) = spool_body(body, body_tx, max_each_size).await else {
+        return Ok(()) as CacheResult<()>;
+      };
 
-      loop {
-        let frame = match body.frame().await {
-          Some(frame) => frame,
-          None => {
-            debug!("Response body finished");
-            break;
-          }
-        };
-        let frame_size = frame.as_ref().map(|f| {
-          if f.is_data() {
-            f.data_ref().map(|bytes| bytes.remaining()).unwrap_or_default()
-          } else {
-            0
-          }
-        });
-        size += frame_size.unwrap_or_default();
-
-        // check size
-        if size > max_each_size {
-          warn!("Too large to cache");
-          return Err(CacheError::TooLargeToCache);
-        }
-        frame
-          .as_ref()
-          .map(|f| {
-            if f.is_data() {
-              let data_bytes = f.data_ref().unwrap().clone();
-              // debug!("cache data bytes of {} bytes", data_bytes.len());
-              // We do not use stream-type buffering since it needs to lock file during operation.
-              buf.extend(data_bytes.as_ref());
-            }
-          })
-          .map_err(|e| CacheError::FailedToCacheBytes(e.to_string()))?;
-
-        // send data to use response downstream
-        body_tx
-          .unbounded_send(frame)
-          .map_err(|e| CacheError::FailedToSendFrameToCache(e.to_string()))?;
-      }
-
-      let buf = buf.freeze();
       // Calculate hash of the cached data, after all data is received.
       // In-operation calculation is possible but it blocks sending data.
       let mut hasher = Sha256::new();
       hasher.update(buf.as_ref());
       let hash_bytes = Bytes::copy_from_slice(hasher.finalize().as_ref());
-      trace!("Cached data: {} bytes, hash = {:?}", size, hash_bytes);
+      trace!("Cached data: {} bytes, hash = {:?}", buf.len(), hash_bytes);
 
       // Create cache object
       let cache_key = derive_cache_key_from_uri(&uri);
@@ -167,12 +131,12 @@ impl RpxyCache {
         hash: hash_bytes,
       };
 
-      if let Some((k, v)) = cache_manager.push(&cache_key, &cache_object)? {
-        if k != cache_key {
-          info!("Over the cache capacity. Evict least recent used entry");
-          if let CacheFileOrOnMemory::File(path) = v.target {
-            file_store.evict(&path).await;
-          }
+      if let Some((k, v)) = cache_manager.push(&cache_key, &cache_object)?
+        && k != cache_key
+      {
+        info!("Over the cache capacity. Evict least recent used entry");
+        if let CacheFileOrOnMemory::File(path) = v.target {
+          file_store.evict(&path).await;
         }
       }
       // store cache object to file
@@ -242,6 +206,67 @@ impl RpxyCache {
     };
     Some(Response::from_parts(res_parts, response_body))
   }
+}
+
+/* ---------------------------------------------- */
+/// Stream `body` to `body_tx` while buffering up to `max_each_size` bytes for caching.
+///
+/// Every frame (data, trailers, and any error frame) is forwarded downstream unchanged, so
+/// the response reaches the client in full regardless of the cache decision. Returns
+/// `Some(buf)` with the fully buffered body when it stayed within `max_each_size` (and may
+/// therefore be cached); returns `None` when the object is too large, the upstream body
+/// errored, or the downstream receiver went away. In every `None` case the frames seen so
+/// far have already been forwarded, so the cache layer never truncates the response.
+///
+/// `body_tx` is taken by value and dropped on return, so `body_rx` reaches a clean EOF as
+/// soon as streaming finishes.
+async fn spool_body<B, E>(
+  mut body: B,
+  body_tx: mpsc::UnboundedSender<Result<Frame<Bytes>, E>>,
+  max_each_size: usize,
+) -> Option<Bytes>
+where
+  B: hyper::body::Body<Data = Bytes, Error = E> + Unpin,
+{
+  let mut buf = BytesMut::new();
+  let mut cacheable = true;
+
+  while let Some(frame) = body.frame().await {
+    if cacheable {
+      match frame.as_ref() {
+        // Data frames are buffered up to the limit; non-data frames (e.g. trailers) carry
+        // no data and are forwarded only. `data_ref()` is `None` exactly for non-data frames,
+        // so this also avoids panicking on an unexpected frame shape.
+        Ok(f) => {
+          if let Some(data) = f.data_ref() {
+            // `saturating_add` keeps the size check correct even against a pathologically
+            // large frame length, so the limit can never be bypassed by integer overflow.
+            if buf.len().saturating_add(data.len()) > max_each_size {
+              debug!("Response exceeds max_each_size ({max_each_size} bytes); forwarding without caching");
+              cacheable = false;
+              buf = BytesMut::new(); // release buffered bytes; this object will not be cached
+            } else {
+              buf.extend_from_slice(data.as_ref());
+            }
+          }
+        }
+        // Upstream body error: a complete object cannot be cached. The error frame is still
+        // forwarded below so the downstream consumer observes it instead of a silent EOF.
+        Err(_) => {
+          cacheable = false;
+          buf = BytesMut::new();
+        }
+      }
+    }
+
+    // Always forward the frame downstream, regardless of the cache decision.
+    if body_tx.unbounded_send(frame).is_err() {
+      // Downstream receiver is gone; nothing left to forward or cache.
+      return None;
+    }
+  }
+
+  cacheable.then(|| buf.freeze())
 }
 
 /* ---------------------------------------------- */
@@ -515,4 +540,114 @@ fn derive_filename_from_uri(uri: &hyper::Uri) -> String {
 
 fn derive_cache_key_from_uri(uri: &hyper::Uri) -> String {
   uri.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use futures::{StreamExt, stream};
+
+  /// Build an `Ok` data frame from a static byte slice.
+  fn data_frame(bytes: &'static [u8]) -> Result<Frame<Bytes>, hyper::Error> {
+    Ok(Frame::data(Bytes::from_static(bytes)))
+  }
+
+  /// Build a test body from a list of frames. Only `Ok` frames are constructed, so no
+  /// `hyper::Error` needs to be built.
+  fn body_from(
+    frames: Vec<Result<Frame<Bytes>, hyper::Error>>,
+  ) -> impl hyper::body::Body<Data = Bytes, Error = hyper::Error> + Unpin {
+    StreamBody::new(stream::iter(frames))
+  }
+
+  /// Concatenate the data bytes of all forwarded frames in order.
+  fn forwarded_data(frames: Vec<Result<Frame<Bytes>, hyper::Error>>) -> Vec<u8> {
+    frames
+      .into_iter()
+      .filter_map(|f| f.ok())
+      .filter_map(|f| f.into_data().ok())
+      .flat_map(|b| b.to_vec())
+      .collect()
+  }
+
+  #[tokio::test]
+  async fn within_limit_caches_and_forwards_all() {
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let body = body_from(vec![data_frame(b"hello"), data_frame(b"world")]);
+    let cached = spool_body(body, tx, 1024).await;
+    assert_eq!(cached.as_deref(), Some(&b"helloworld"[..]));
+    assert_eq!(forwarded_data(rx.collect::<Vec<_>>().await), b"helloworld");
+  }
+
+  /// Regression test for the truncation bug: an over-limit cacheable response must still be
+  /// forwarded to the client in full, just not cached.
+  #[tokio::test]
+  async fn over_limit_forwards_all_but_does_not_cache() {
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    // three 5-byte frames = 15 bytes total, over the 8-byte limit
+    let body = body_from(vec![data_frame(b"aaaaa"), data_frame(b"bbbbb"), data_frame(b"ccccc")]);
+    let cached = spool_body(body, tx, 8).await;
+    assert!(cached.is_none(), "over-limit object must not be cached");
+    assert_eq!(
+      forwarded_data(rx.collect::<Vec<_>>().await),
+      b"aaaaabbbbbccccc",
+      "all frames must be forwarded, not truncated"
+    );
+  }
+
+  #[tokio::test]
+  async fn boundary_exactly_max_is_cached() {
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    // 5 + 3 = 8 == limit (matches the original `size > max_each_size` boundary)
+    let body = body_from(vec![data_frame(b"aaaaa"), data_frame(b"bbb")]);
+    let cached = spool_body(body, tx, 8).await;
+    assert_eq!(cached.as_deref(), Some(&b"aaaaabbb"[..]));
+    assert_eq!(forwarded_data(rx.collect::<Vec<_>>().await), b"aaaaabbb");
+  }
+
+  /// This only pins down trailer *forwarding* and that `buf` holds data bytes only. It does
+  /// not assert that trailer-bearing responses are cacheable as a spec (a cache hit does not
+  /// reproduce trailers); that is pre-existing behaviour and out of scope (design doc 3/8).
+  #[tokio::test]
+  async fn forwards_trailers_without_buffering_them() {
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let mut trailers = http::HeaderMap::new();
+    trailers.insert("x-trailer", http::HeaderValue::from_static("v"));
+    let body = body_from(vec![data_frame(b"data"), Ok(Frame::trailers(trailers))]);
+    let cached = spool_body(body, tx, 1024).await;
+    assert_eq!(cached.as_deref(), Some(&b"data"[..]));
+    let forwarded = rx.collect::<Vec<_>>().await;
+    assert_eq!(forwarded.len(), 2);
+    assert!(forwarded[1].as_ref().unwrap().is_trailers());
+  }
+
+  #[tokio::test]
+  async fn returns_none_when_downstream_dropped() {
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    drop(rx);
+    let body = body_from(vec![data_frame(b"a"), data_frame(b"b")]);
+    let cached = spool_body(body, tx, 1024).await;
+    assert!(cached.is_none());
+  }
+
+  /// Stand-in body error type. `hyper::Error` has no public constructor, so the error path is
+  /// exercised with a body whose `Error` is this type; `spool_body` is generic over the error.
+  #[derive(Debug)]
+  struct TestBodyError;
+
+  /// Regression test for the upstream-error path: an error frame must be propagated downstream
+  /// (not masked as a clean EOF), and the object must not be cached.
+  #[tokio::test]
+  async fn upstream_error_is_propagated_and_not_cached() {
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> =
+      vec![Ok(Frame::data(Bytes::from_static(b"partial"))), Err(TestBodyError)];
+    let body = StreamBody::new(stream::iter(frames));
+    let cached = spool_body(body, tx, 1024).await;
+    assert!(cached.is_none(), "an errored upstream body must not be cached");
+    let forwarded = rx.collect::<Vec<_>>().await;
+    assert_eq!(forwarded.len(), 2, "the data frame and the error frame are both forwarded");
+    assert!(forwarded[0].is_ok());
+    assert!(forwarded[1].is_err(), "the upstream error must be propagated downstream");
+  }
 }
