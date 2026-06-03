@@ -220,13 +220,13 @@ impl RpxyCache {
 ///
 /// `body_tx` is taken by value and dropped on return, so `body_rx` reaches a clean EOF as
 /// soon as streaming finishes.
-async fn spool_body<B>(
+async fn spool_body<B, E>(
   mut body: B,
-  body_tx: mpsc::UnboundedSender<Result<Frame<Bytes>, hyper::Error>>,
+  body_tx: mpsc::UnboundedSender<Result<Frame<Bytes>, E>>,
   max_each_size: usize,
 ) -> Option<Bytes>
 where
-  B: hyper::body::Body<Data = Bytes, Error = hyper::Error> + Unpin,
+  B: hyper::body::Body<Data = Bytes, Error = E> + Unpin,
 {
   let mut buf = BytesMut::new();
   let mut cacheable = true;
@@ -234,18 +234,22 @@ where
   while let Some(frame) = body.frame().await {
     if cacheable {
       match frame.as_ref() {
-        Ok(f) if f.is_data() => {
-          let data = f.data_ref().expect("data frame must hold data");
-          if buf.len() + data.len() > max_each_size {
-            debug!("Response exceeds max_each_size ({max_each_size} bytes); forwarding without caching");
-            cacheable = false;
-            buf = BytesMut::new(); // release buffered bytes; this object will not be cached
-          } else {
-            buf.extend_from_slice(data.as_ref());
+        // Data frames are buffered up to the limit; non-data frames (e.g. trailers) carry
+        // no data and are forwarded only. `data_ref()` is `None` exactly for non-data frames,
+        // so this also avoids panicking on an unexpected frame shape.
+        Ok(f) => {
+          if let Some(data) = f.data_ref() {
+            // `saturating_add` keeps the size check correct even against a pathologically
+            // large frame length, so the limit can never be bypassed by integer overflow.
+            if buf.len().saturating_add(data.len()) > max_each_size {
+              debug!("Response exceeds max_each_size ({max_each_size} bytes); forwarding without caching");
+              cacheable = false;
+              buf = BytesMut::new(); // release buffered bytes; this object will not be cached
+            } else {
+              buf.extend_from_slice(data.as_ref());
+            }
           }
         }
-        // Non-data frames (e.g. trailers) are forwarded but not buffered.
-        Ok(_) => {}
         // Upstream body error: a complete object cannot be cached. The error frame is still
         // forwarded below so the downstream consumer observes it instead of a silent EOF.
         Err(_) => {
@@ -624,5 +628,26 @@ mod tests {
     let body = body_from(vec![data_frame(b"a"), data_frame(b"b")]);
     let cached = spool_body(body, tx, 1024).await;
     assert!(cached.is_none());
+  }
+
+  /// Stand-in body error type. `hyper::Error` has no public constructor, so the error path is
+  /// exercised with a body whose `Error` is this type; `spool_body` is generic over the error.
+  #[derive(Debug)]
+  struct TestBodyError;
+
+  /// Regression test for the upstream-error path: an error frame must be propagated downstream
+  /// (not masked as a clean EOF), and the object must not be cached.
+  #[tokio::test]
+  async fn upstream_error_is_propagated_and_not_cached() {
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> =
+      vec![Ok(Frame::data(Bytes::from_static(b"partial"))), Err(TestBodyError)];
+    let body = StreamBody::new(stream::iter(frames));
+    let cached = spool_body(body, tx, 1024).await;
+    assert!(cached.is_none(), "an errored upstream body must not be cached");
+    let forwarded = rx.collect::<Vec<_>>().await;
+    assert_eq!(forwarded.len(), 2, "the data frame and the error frame are both forwarded");
+    assert!(forwarded[0].is_ok());
+    assert!(forwarded[1].is_err(), "the upstream error must be propagated downstream");
   }
 }
