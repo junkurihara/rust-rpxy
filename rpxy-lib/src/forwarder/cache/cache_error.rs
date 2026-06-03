@@ -24,15 +24,6 @@ pub enum CacheError {
   #[error("Failed to open cache file")]
   FailedToOpenCacheFile,
 
-  #[error("Too large to cache")]
-  TooLargeToCache,
-
-  #[error("Failed to cache bytes: {0}")]
-  FailedToCacheBytes(String),
-
-  #[error("Failed to send frame to cache {0}")]
-  FailedToSendFrameToCache(String),
-
   #[error("Failed to send frame from file cache {0}")]
   FailedToSendFrameFromCache(String),
 
