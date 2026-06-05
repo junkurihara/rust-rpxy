@@ -1,6 +1,18 @@
 # CHANGELOG
 
-## 0.12.1 or 0.13.0 (Unreleased)
+## 0.12.2 or 0.13.0 (Unreleased)
+
+## 0.12.1
+
+### Bugfix
+
+- **Fix: the cache no longer truncates responses larger than `cache_max_each_size`.** With the `cache` feature enabled, a cacheable response whose body exceeded `cache_max_each_size` (default 65535 bytes) was truncated when delivered to the client, because the caching worker stopped forwarding the response body to the client as soon as the size limit was crossed. Depending on framing this surfaced either as a silently short body (chunked / unknown-length responses) or as a body/protocol error (when `Content-Length` was present). Such over-limit responses are now forwarded to the client in full and simply not cached; within-limit responses are cached as before. Relatedly, a response whose upstream body errors mid-stream now propagates that error to the client (failing as it did upstream) instead of the cache layer masking it as a clean, truncated end-of-stream.
+- **Fix: ACME no longer panics with `static str is not valid path` (`acme = true`).** With ACME enabled, rpxy aborted with that message as soon as it contacted the ACME server. The cause was a transitive dependency used for ACME requests (`async-web-client`, pulled in via `rustls-acme`) that unconditionally constructed `PathAndQuery::from_static("")` on every outgoing request; this panics under `http` 1.4.1, which started rejecting paths that do not begin with `/` (the empty string included). The `http` 1.3 -> 1.4 bump shipped in 0.12.0, so ACME was broken there. rpxy now builds `rustls-acme` against a patched `async-web-client`, restoring ACME certificate provisioning. Configurations that do not use ACME were unaffected. (GitHub Discussion #581.)
+
+### Improvement
+
+- **Enable `TCP_NODELAY` on downstream and upstream connections.** rpxy now disables Nagle's algorithm on accepted client connections (both cleartext and TLS, set on the raw socket right after accept) and on the forwarder's upstream HTTP connector, matching common reverse-proxy practice. This avoids Nagle / delayed-ACK latency on the many small writes a proxy relays; the effect is most visible over connections with non-trivial round-trip time. Health-check probe connections and HTTP/3 (QUIC, UDP) are intentionally left unaffected.
+- **Build the access-log record lazily to cut per-request allocations.** The access-log record is now captured as cheap, reference-counted handles (request URI, method, headers) and formatted only when a log line is actually emitted, instead of eagerly building roughly eight owned strings on every request. This removes that per-request work when access logging is filtered out (for example, the stdout logger at `RUST_LOG=warn` or higher; a configured file logger always emits the access log). The emitted log line is byte-for-byte unchanged, and the query-redaction guarantee of `redact_query_in_access_log` is preserved: when redaction is enabled, query values are still masked at capture time so raw query strings are never retained in the record.
 
 ## 0.12.0
 

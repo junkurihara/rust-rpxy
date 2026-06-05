@@ -244,8 +244,7 @@ dependencies = [
 [[package]]
 name = "async-web-client"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37381fb4fad3cd9b579628c21a58f528ef029d1f072d10f16cb9431aa2236d29"
+source = "git+https://github.com/junkurihara/async-web-client?branch=fix%2Fempty-path-and-query-panic#bf3c4b838b1c1dd36c53dbe7020b49d1ad182196"
 dependencies = [
  "async-http-codec",
  "async-net",
@@ -255,6 +254,7 @@ dependencies = [
  "lazy_static",
  "log",
  "rustls-pki-types",
+ "serde",
  "thiserror 1.0.69",
  "webpki-roots 0.26.11",
 ]
@@ -398,9 +398,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.44"
+version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
  "num-traits",
@@ -1612,9 +1612,9 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "log"
-version = "0.4.31"
+version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "113b30b4cd05f7c06868fdb2854f66a7b9fece9a48425351cd532e810d74024f"
+checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
 name = "lru"
@@ -2245,7 +2245,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2269,7 +2269,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-acme"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-certs"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2311,7 +2311,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-lib"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "aes-gcm",
  "ahash",
@@ -2361,7 +2361,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-trusted-proxies"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "rustls-acme"
-version = "0.15.1"
+version = "0.15.2"
 dependencies = [
  "async-io",
  "async-trait",
@@ -4022,9 +4022,9 @@ dependencies = [
 
 [[package]]
 name = "yoke"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abe8c5fda708d9ca3df187cae8bfb9ceda00dd96231bed36e445a1a48e66f9ca"
+checksum = "709fe23a0424b6a435d82152b1bd3fdfb0833487d5fa90d05d42762a9891fef5"
 dependencies = [
  "stable_deref_trait",
  "yoke-derive",
