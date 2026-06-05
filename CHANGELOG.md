@@ -9,6 +9,7 @@
 ### Improvement
 
 - **Enable `TCP_NODELAY` on downstream and upstream connections.** rpxy now disables Nagle's algorithm on accepted client connections (both cleartext and TLS, set on the raw socket right after accept) and on the forwarder's upstream HTTP connector, matching common reverse-proxy practice. This avoids Nagle / delayed-ACK latency on the many small writes a proxy relays; the effect is most visible over connections with non-trivial round-trip time. Health-check probe connections and HTTP/3 (QUIC, UDP) are intentionally left unaffected.
+- **Build the access-log record lazily to cut per-request allocations.** The access-log record is now captured as cheap, reference-counted handles (request URI, method, headers) and formatted only when a log line is actually emitted, instead of eagerly building roughly eight owned strings on every request. This removes that per-request work when access logging is filtered out (for example, the stdout logger at `RUST_LOG=warn` or higher; a configured file logger always emits the access log). The emitted log line is byte-for-byte unchanged, and the query-redaction guarantee of `redact_query_in_access_log` is preserved: when redaction is enabled, query values are still masked at capture time so raw query strings are never retained in the record.
 
 ## 0.12.0
 
