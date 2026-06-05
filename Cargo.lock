@@ -244,8 +244,7 @@ dependencies = [
 [[package]]
 name = "async-web-client"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37381fb4fad3cd9b579628c21a58f528ef029d1f072d10f16cb9431aa2236d29"
+source = "git+https://github.com/junkurihara/async-web-client?branch=fix%2Fempty-path-and-query-panic#bf3c4b838b1c1dd36c53dbe7020b49d1ad182196"
 dependencies = [
  "async-http-codec",
  "async-net",
@@ -255,6 +254,7 @@ dependencies = [
  "lazy_static",
  "log",
  "rustls-pki-types",
+ "serde",
  "thiserror 1.0.69",
  "webpki-roots 0.26.11",
 ]
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "rustls-acme"
-version = "0.15.1"
+version = "0.15.2"
 dependencies = [
  "async-io",
  "async-trait",
