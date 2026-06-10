@@ -19,8 +19,11 @@ impl<B> InspectParseHost for Request<B> {
       if v.starts_with(b"[") {
         // v6 address with bracket case. if port is specified, always it is in this case.
         let mut iter = v.split(|ptr| ptr == &b'[' || ptr == &b']');
-        iter.next().ok_or(anyhow!("Invalid Host header"))?; // first item is always blank
-        iter.next().ok_or(anyhow!("Invalid Host header")).map(|b| b.to_owned())
+        iter.next().ok_or_else(|| anyhow!("Invalid Host header"))?; // first item is always blank
+        iter
+          .next()
+          .ok_or_else(|| anyhow!("Invalid Host header"))
+          .map(|b| b.to_owned())
       } else if v.len() - v.split(|v| v == &b':').fold(0, |acc, s| acc + s.len()) >= 2 {
         // v6 address case, if 2 or more ':' is contained
         Ok(v.to_owned())
@@ -28,7 +31,7 @@ impl<B> InspectParseHost for Request<B> {
         // v4 address or hostname
         v.split(|colon| colon == &b':')
           .next()
-          .ok_or(anyhow!("Invalid Host header"))
+          .ok_or_else(|| anyhow!("Invalid Host header"))
           .map(|v| v.to_ascii_lowercase())
       }
     };
