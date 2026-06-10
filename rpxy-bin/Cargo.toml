@@ -44,6 +44,9 @@ acme = ["rpxy-lib/acme", "rpxy-acme"]
 post-quantum = ["rpxy-lib/post-quantum"]
 sticky-cookie = ["rpxy-lib/sticky-cookie"]
 health-check = ["rpxy-lib/health-check"]
+# Developer-only heap profiling. Replaces the global allocator with dhat's and
+# writes `dhat-heap.json` on graceful shutdown. Off by default; not for release.
+dhat-heap = ["dep:dhat", "tokio/signal"]
 
 [dependencies]
 rpxy-lib = { path = "../rpxy-lib/", default-features = false }
@@ -87,6 +90,9 @@ rpxy-certs = { path = "../rpxy-certs/", default-features = false, features = [
 ] }
 
 rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true }
+
+# Developer-only heap profiler, enabled via the `dhat-heap` feature.
+dhat = { version = "0.3", optional = true }
 
 [target.'cfg(not(target_os = "illumos"))'.dependencies]
 mimalloc = { version = "0.1.52", default-features = false }

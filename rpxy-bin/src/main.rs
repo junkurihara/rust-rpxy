@@ -1,4 +1,13 @@
-#[cfg(not(target_os = "illumos"))]
+// Global allocator selection.
+// - `dhat-heap` (developer-only profiling): use dhat's allocator on every OS.
+// - otherwise: mimalloc, except on illumos where the implicit system allocator is used.
+// The cfgs are mutually exclusive, so at most one `#[global_allocator]` is defined
+// (none in the non-`dhat-heap` illumos case, which falls back to the system allocator).
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
+#[cfg(all(not(feature = "dhat-heap"), not(target_os = "illumos")))]
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -25,15 +34,21 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 fn main() {
+  // Keep the heap profiler alive for the whole process. On drop it writes
+  // `dhat-heap.json`; because `std::process::exit` skips destructors, the exit
+  // call below is moved out of the async block and the profiler is dropped first.
+  #[cfg(feature = "dhat-heap")]
+  let dhat_profiler = dhat::Profiler::new_heap();
+
   let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
   runtime_builder.enable_all();
   runtime_builder.thread_name("rpxy");
   let runtime = runtime_builder.build().unwrap();
 
-  runtime.block_on(async {
+  let exit_code: i32 = runtime.block_on(async {
     // Initially load options
     let Ok(parsed_opts) = parse_opts() else {
-      std::process::exit(1);
+      return 1;
     };
 
     init_logger(parsed_opts.log_dir_path.as_deref());
@@ -49,22 +64,51 @@ fn main() {
         .await
         .unwrap();
 
+    // When profiling, allow Ctrl-C to return gracefully so the dhat profiler is
+    // dropped and `dhat-heap.json` is flushed. In normal builds this future never
+    // resolves, so the select arm is inert and process behavior is unchanged.
+    let shutdown_signal = async {
+      #[cfg(feature = "dhat-heap")]
+      {
+        let _ = tokio::signal::ctrl_c().await;
+      }
+      #[cfg(not(feature = "dhat-heap"))]
+      {
+        std::future::pending::<()>().await;
+      }
+    };
+
     tokio::select! {
       config_res = config_service.start_with_realtime() => {
         if let Err(e) = config_res {
           error!("config reloader service exited: {e}");
-          std::process::exit(1);
+          return 1;
         }
       }
       rpxy_res = rpxy_service(config_rx, runtime.handle().clone(), unsafe_debug_headers) => {
         if let Err(e) = rpxy_res {
           error!("rpxy service exited: {e}");
-          std::process::exit(1);
+          return 1;
         }
       }
+      _ = shutdown_signal => {
+        info!("SIGINT received; shutting down to flush the dhat heap profile");
+      }
     }
-    std::process::exit(0);
+    0
   });
+
+  // Quiesce the runtime before flushing the heap profile: stop the worker threads
+  // (giving in-flight tasks a brief grace period) so they are not still allocating
+  // while the profiler is dropped and `dhat-heap.json` is written. Then drop the
+  // profiler explicitly, since the exit below skips destructors.
+  #[cfg(feature = "dhat-heap")]
+  {
+    runtime.shutdown_timeout(std::time::Duration::from_millis(200));
+    drop(dhat_profiler);
+  }
+
+  std::process::exit(exit_code);
 }
 
 /// rpxy service definition
