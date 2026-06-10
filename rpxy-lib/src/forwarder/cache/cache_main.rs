@@ -27,6 +27,14 @@ use tokio::{
   sync::RwLock,
 };
 
+/// File-cache read chunk size: large enough that a typical cached object is read in one or a
+/// few iterations (vs the ~64 B that `BytesMut` auto-grows per `read_buf`). Each read fills at
+/// most one chunk-sized buffer, so we never load the whole object into a single `BytesMut`
+/// (matters when `max_each_size` is configured large). This bounds the per-read buffer, not
+/// total live memory: the `mpsc::unbounded` stream can still queue chunks if the downstream is
+/// slow (a separate concern).
+const FILE_CACHE_READ_CHUNK: usize = 64 * 1024;
+
 /* ---------------------------------------------- */
 #[derive(Clone, Debug)]
 /// Cache main manager
@@ -365,12 +373,19 @@ impl FileStoreInner {
 
     self.runtime_handle.spawn(async move {
       let mut hasher = Sha256::new();
-      let mut buf = BytesMut::new();
+      let mut buf = BytesMut::with_capacity(FILE_CACHE_READ_CHUNK);
       loop {
+        // Reserve a fresh chunk only when the spare capacity is exhausted. After `split()` the
+        // buffer keeps whatever spare it had, so a small object is read into the initial
+        // capacity and the EOF-confirming read reuses the leftover spare without allocating.
+        if buf.capacity() == buf.len() {
+          buf.reserve(FILE_CACHE_READ_CHUNK);
+        }
         match file.read_buf(&mut buf).await {
           Ok(0) => break,
           Ok(_) => {
-            let bytes = buf.copy_to_bytes(buf.remaining());
+            // Hand the filled bytes off zero-copy; `buf` keeps the remaining spare capacity.
+            let bytes = buf.split().freeze();
             hasher.update(bytes.as_ref());
             body_tx
               .unbounded_send(Ok(Frame::data(bytes)))
@@ -649,5 +664,56 @@ mod tests {
     assert_eq!(forwarded.len(), 2, "the data frame and the error frame are both forwarded");
     assert!(forwarded[0].is_ok());
     assert!(forwarded[1].is_err(), "the upstream error must be propagated downstream");
+  }
+
+  /// Unique temp path for a file-cache test object.
+  fn temp_cache_path(tag: &str) -> PathBuf {
+    let nanos = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    std::env::temp_dir().join(format!("rpxy-cache-test-{tag}-{}-{nanos}", std::process::id()))
+  }
+
+  /// A cached file larger than `FILE_CACHE_READ_CHUNK` must be streamed back intact, exercising
+  /// the multi-chunk read path. Guards correct reassembly across chunk boundaries.
+  #[tokio::test]
+  async fn file_store_read_streams_object_across_chunks() {
+    let path = temp_cache_path("ok");
+    // ~200 KB so the read spans several FILE_CACHE_READ_CHUNK (64 KiB) iterations.
+    let content: Vec<u8> = (0..200_000usize).map(|i| (i % 251) as u8).collect();
+    fs::write(&path, &content).await.unwrap();
+    let hash = Bytes::copy_from_slice(Sha256::digest(&content).as_ref());
+
+    let file_store = FileStoreInner {
+      cnt: 0,
+      runtime_handle: tokio::runtime::Handle::current(),
+    };
+    let body = file_store.read(path.clone(), &hash).await.unwrap();
+    let got = BodyExt::collect(body).await.unwrap().to_bytes();
+    assert_eq!(got.as_ref(), content.as_slice());
+    // The happy path leaves the file in place.
+    assert!(fs::metadata(&path).await.is_ok());
+    let _ = fs::remove_file(&path).await;
+  }
+
+  /// On a hash mismatch the file is evicted. `read()` returns the stream immediately and the
+  /// integrity check + removal run at the end of the spawned task, so the stream is drained to
+  /// EOF before asserting the file is gone (draining to EOF implies the task finished, since it
+  /// awaits the removal before dropping the sender that closes the stream).
+  #[tokio::test]
+  async fn file_store_read_evicts_on_hash_mismatch() {
+    let path = temp_cache_path("bad");
+    let content = b"some cached bytes".to_vec();
+    fs::write(&path, &content).await.unwrap();
+    let wrong_hash = Bytes::from_static(&[0u8; 32]);
+
+    let file_store = FileStoreInner {
+      cnt: 1, // removal decrements the counter; start at 1 to avoid an underflow in the test
+      runtime_handle: tokio::runtime::Handle::current(),
+    };
+    let body = file_store.read(path.clone(), &wrong_hash).await.unwrap();
+    let _ = BodyExt::collect(body).await; // drain to EOF; data frames are all Ok, the mismatch is internal
+    assert!(
+      fs::metadata(&path).await.is_err(),
+      "a corrupted cache file must be removed on hash mismatch"
+    );
   }
 }
