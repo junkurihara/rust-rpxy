@@ -2,6 +2,10 @@
 
 ## 0.12.2 or 0.13.0 (Unreleased)
 
+### Improvement
+
+- **Reduce per-request allocations in the forwarding-header path.** Building the outgoing `X-Forwarded-*` / `Proxy` headers no longer re-validates or re-allocates values that are already known: the constant headers (`X-Forwarded-Proto`, `X-Forwarded-Ssl`, `Proxy`) are written via `HeaderValue::from_static`, `X-Forwarded-Port` via `HeaderValue::from(u16)`, and `X-Real-IP` reuses the IP string already computed for `X-Forwarded-For` and is handed to `HeaderValue` without an extra copy. The immediate-peer forwarding entry is also no longer built twice per request, and request host parsing no longer constructs an error value on the success path. The forwarding/trust-boundary logic and every emitted header value are byte-for-byte unchanged. This trims roughly ten heap allocations per request on the common path; it is a CPU/allocation cleanup, not a measured throughput change (no throughput difference was observed on a loopback benchmark).
+
 ### Internal
 
 - **Add an off-by-default `dhat-heap` feature for developer heap profiling.** Building `rpxy` with `--features dhat-heap` swaps the global allocator for the [dhat](https://crates.io/crates/dhat) heap profiler and writes a `dhat-heap.json` (viewable with `dhat/dh_view.html`) on a Ctrl-C graceful shutdown, so per-request allocation call-sites can be measured before micro-optimizing the request hot path. The feature is off by default and not built into release binaries: normal builds keep mimalloc (and the system allocator on illumos) and are unchanged in both behavior and dependencies. This is a development aid only; it is not a runtime or configuration change.

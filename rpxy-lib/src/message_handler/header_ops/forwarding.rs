@@ -90,25 +90,29 @@ pub(in crate::message_handler) fn add_forwarding_header(
   let peer_ip = canonicalize_ip(client_addr.to_canonical().ip());
   let has_forwarded = headers.contains_key(header::FORWARDED);
   let normalized_chain = normalize_forwarding_chain(headers, &peer_ip, tls, original_uri, trusted_forwarded_proxies);
-  let peer_entry = build_peer_forwarded_entry(headers, peer_ip, tls, original_uri);
 
   let (normalized_chain, normalized_for_ip_chain) = match forwarded_chain_to_xff(&normalized_chain) {
     Some(ip_chain) => (normalized_chain, ip_chain),
     None => {
       warn!("Normalized forwarding chain contains non-IP hops; falling back to peer-only forwarding view");
-      (vec![peer_entry.clone()], vec![peer_ip.to_string()])
+      // Only this rare fallback needs a freshly built peer entry, so build it here instead
+      // of eagerly on every request.
+      let peer_entry = build_peer_forwarded_entry(headers, peer_ip, tls, original_uri);
+      (vec![peer_entry], vec![peer_ip.to_string()])
     }
   };
 
-  // For X-Real-IP
-  let authoritative_client_ip = normalized_chain
-    .first()
-    .and_then(|entry| entry.for_node.ip_addr())
-    .map(|ip| ip.to_string())
-    .unwrap_or_else(|| peer_ip.to_string());
-
   // Update X-Forwarded-For with normalized chain
   overwrite_header_with_csv(headers, X_FORWARDED_FOR, &normalized_for_ip_chain)?;
+
+  // For X-Real-IP: reuse the IP string already formatted as the first element of the XFF
+  // chain (moved out by value, no clone or re-format). The chain is non-empty in both
+  // branches above, so the fallback to peer_ip only guards an impossible empty case and
+  // keeps the result byte-identical to formatting normalized_chain.first()'s IP directly.
+  let authoritative_client_ip = normalized_for_ip_chain
+    .into_iter()
+    .next()
+    .unwrap_or_else(|| peer_ip.to_string());
 
   // Preserve/update Forwarded only if it was present on input. If callers want to force
   // Forwarded generation, apply_upstream_options_to_header() will regenerate it later.
@@ -126,20 +130,26 @@ pub(in crate::message_handler) fn add_forwarding_header(
   make_cookie_single_line(headers)?;
 
   // Always overwrite these headers with rpxy's authoritative downstream view.
-  add_header_entry_overwrite_if_exist(headers, X_FORWARDED_PROTO, if tls { "https" } else { "http" })?;
-  add_header_entry_overwrite_if_exist(headers, X_FORWARDED_PORT, listen_addr.port().to_string())?;
+  // Constant values use HeaderValue::from_static (no runtime byte validation or allocation);
+  // the port uses HeaderValue::from(u16) (lighter than to_string() + parse). insert() replaces
+  // any existing values with a single value, matching add_header_entry_overwrite_if_exist.
+  headers.insert(
+    X_FORWARDED_PROTO,
+    HeaderValue::from_static(if tls { "https" } else { "http" }),
+  );
+  headers.insert(X_FORWARDED_PORT, HeaderValue::from(listen_addr.port()));
 
   /////////// As Nginx-Proxy
-  // x-real-ip
-  add_header_entry_overwrite_if_exist(headers, X_REAL_IP, authoritative_client_ip)?;
+  // x-real-ip: hand the owned String to HeaderValue without re-copying its bytes.
+  headers.insert(X_REAL_IP, HeaderValue::try_from(authoritative_client_ip)?);
   // x-forwarded-ssl
-  add_header_entry_overwrite_if_exist(headers, X_FORWARDED_SSL, if tls { "on" } else { "off" })?;
+  headers.insert(X_FORWARDED_SSL, HeaderValue::from_static(if tls { "on" } else { "off" }));
   // x-original-uri
   add_header_entry_overwrite_if_exist(headers, X_ORIGINAL_URI, original_uri.to_string())?;
   // x-forwarded-host
   overwrite_x_forwarded_host_from_original(headers, original_uri)?;
   // proxy
-  add_header_entry_overwrite_if_exist(headers, PROXY, "")?;
+  headers.insert(PROXY, HeaderValue::from_static(""));
 
   Ok(())
 }
@@ -1245,6 +1255,50 @@ mod tests {
       generate_forwarded_header(&chain).unwrap(),
       "for=192.0.2.1;proto=https;host=\"example.com:8443\""
     );
+  }
+
+  #[test]
+  fn constant_overwrite_headers_are_byte_identical_non_tls() {
+    // Guards the HeaderValue::from_static / from(u16) overwrites against accidental drift:
+    // the constant downstream-view headers must keep their exact byte values.
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    add_forwarding_header(
+      &mut headers,
+      &"203.0.113.10:4321".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &[],
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(X_FORWARDED_PROTO).unwrap(), "http");
+    assert_eq!(headers.get(X_FORWARDED_PORT).unwrap(), "8080");
+    assert_eq!(headers.get(X_FORWARDED_SSL).unwrap(), "off");
+    assert_eq!(headers.get(PROXY).unwrap(), "");
+  }
+
+  #[test]
+  fn constant_overwrite_headers_are_byte_identical_tls() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    add_forwarding_header(
+      &mut headers,
+      &"203.0.113.10:4321".parse().unwrap(),
+      &"192.0.2.1:8443".parse().unwrap(),
+      true,
+      &Uri::from_static("/"),
+      &[],
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(X_FORWARDED_PROTO).unwrap(), "https");
+    assert_eq!(headers.get(X_FORWARDED_PORT).unwrap(), "8443");
+    assert_eq!(headers.get(X_FORWARDED_SSL).unwrap(), "on");
+    assert_eq!(headers.get(PROXY).unwrap(), "");
   }
 
   /* ---------------------- client_visible_secure ---------------------- */
