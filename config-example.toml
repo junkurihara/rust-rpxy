@@ -32,10 +32,10 @@ listen_port_tls = 8443
 # [default: false]
 listen_ipv6 = false
 
-# Optional. If you listen on a custom port like 8443 but redirect with firewall to 443
-# When you specify this, the server uses this port in an "Alt-SVC" header for e.g. indicating support for HTTP/3 and also sends a redirection response 301 with specified port to the client for plaintext http request
-# Otherwise, the server sends Alt-SVC and 301 with the same port as `listen_port_tls`.
-# https_redirection_port = 443
+# Optional. Client-visible HTTPS/H3 port when it differs from `listen_port_tls`
+# (for example, when running behind a load balancer, firewall, or container port mapping).
+# Used for HTTP->HTTPS redirects and HTTP/3 Alt-Svc. Usually unnecessary if clients use `listen_port_tls`.
+# public_https_port = 443
 
 # Optional for h2 and http1.1
 tcp_listen_backlog = 1024
