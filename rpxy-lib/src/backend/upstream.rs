@@ -93,21 +93,26 @@ impl PathManager {
   /// trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
   /// コスト的にこの程度で十分では。
   pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamCandidates> {
-    let path_name = &path_str.to_path_name();
+    // Match directly on the request path bytes. `to_path_name()`/`PathName::from(&str)` does not
+    // lowercase (paths are case-sensitive), so `path_str.as_bytes()` is exactly the bytes that
+    // matching used before, just without allocating a `PathName` per request.
+    let path_str = path_str.into();
+    let path_bytes = path_str.as_bytes();
 
     let matched_upstream = self
       .inner
       .iter()
-      .filter(|(route_bytes, _)| {
-        path_name.starts_with(route_bytes) && {
+      .filter(|(route, _)| {
+        let route_bytes: &[u8] = route.as_ref();
+        path_bytes.starts_with(route_bytes) && {
           route_bytes.len() == 1 // route = '/', i.e., default
-            || path_name.get(route_bytes.len()).map_or(
+            || path_bytes.get(route_bytes.len()).map_or(
               true, // exact case
               |p| p == &b'/'
             ) // sub-path case
         }
       })
-      .max_by_key(|(route_bytes, _)| route_bytes.len());
+      .max_by_key(|(route, _)| route.len());
     matched_upstream.map(|(path, u)| {
       trace!(
         "Found upstream: {:?}",
@@ -295,6 +300,43 @@ impl UpstreamCandidates {
 mod test {
   #[allow(unused)]
   use super::*;
+
+  #[test]
+  fn path_manager_get_matches_longest_prefix_and_path_boundary() {
+    use crate::globals::{AppConfig, ReverseProxyConfig, UpstreamUri};
+
+    fn rp(path: Option<&str>) -> ReverseProxyConfig {
+      ReverseProxyConfig {
+        path: path.map(str::to_string),
+        replace_path: None,
+        upstream: vec![UpstreamUri {
+          inner: "http://127.0.0.1:8080".parse().unwrap(),
+        }],
+        upstream_options: None,
+        load_balance: None,
+        #[cfg(feature = "health-check")]
+        health_check: None,
+      }
+    }
+
+    let cfg = AppConfig {
+      app_name: "test".to_string(),
+      server_name: "example.com".to_string(),
+      reverse_proxy: vec![rp(None), rp(Some("/foo"))], // None => default "/"
+      tls: None,
+    };
+    let pm = PathManager::try_from(&cfg).unwrap();
+
+    // exact match on /foo
+    assert_eq!(pm.get("/foo").unwrap().path, "/foo".to_path_name());
+    // sub-path under /foo matches /foo (the boundary after the prefix is '/')
+    assert_eq!(pm.get("/foo/bar").unwrap().path, "/foo".to_path_name());
+    // /foobar must NOT be matched by /foo (boundary is not '/'); falls back to default "/"
+    assert_eq!(pm.get("/foobar").unwrap().path, "/".to_path_name());
+    // default route
+    assert_eq!(pm.get("/").unwrap().path, "/".to_path_name());
+    assert_eq!(pm.get("/other").unwrap().path, "/".to_path_name());
+  }
 
   #[cfg(feature = "sticky-cookie")]
   #[test]
