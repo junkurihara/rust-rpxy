@@ -56,7 +56,7 @@ pub struct ProxyConfig {
   /// https port listening for TLS by default
   pub https_port: Option<u16>,
   /// https redirection port that notifies the client the port to connect to.
-  /// Tis is used when the reverse proxy is behind a middlebox mapping the https port A to the reverse proxy's https port B.
+  /// This is used when the reverse proxy is behind a middlebox mapping the https port A to the reverse proxy's https port B.
   /// Typically, it is the container environment. (e.g. the host exposes 443 and the container exposes 8443 for https, then the redirection port is 443)
   pub https_redirection_port: Option<u16>,
   /// tcp listen backlog
