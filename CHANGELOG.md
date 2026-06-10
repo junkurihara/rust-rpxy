@@ -2,6 +2,10 @@
 
 ## 0.12.2 or 0.13.0 (Unreleased)
 
+### Internal
+
+- **Add an off-by-default `dhat-heap` feature for developer heap profiling.** Building `rpxy` with `--features dhat-heap` swaps the global allocator for the [dhat](https://crates.io/crates/dhat) heap profiler and writes a `dhat-heap.json` (viewable with `dhat/dh_view.html`) on a Ctrl-C graceful shutdown, so per-request allocation call-sites can be measured before micro-optimizing the request hot path. The feature is off by default and not built into release binaries: normal builds keep mimalloc (and the system allocator on illumos) and are unchanged in both behavior and dependencies. This is a development aid only; it is not a runtime or configuration change.
+
 ## 0.12.1
 
 ### Bugfix
