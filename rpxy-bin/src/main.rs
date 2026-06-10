@@ -1,7 +1,8 @@
 // Global allocator selection.
 // - `dhat-heap` (developer-only profiling): use dhat's allocator on every OS.
-// - otherwise: mimalloc, except on illumos where the system allocator is used.
-// The two are mutually exclusive so only one `#[global_allocator]` is defined.
+// - otherwise: mimalloc, except on illumos where the implicit system allocator is used.
+// The cfgs are mutually exclusive, so at most one `#[global_allocator]` is defined
+// (none in the non-`dhat-heap` illumos case, which falls back to the system allocator).
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
@@ -97,9 +98,15 @@ fn main() {
     0
   });
 
-  // Drop the profiler (flushing `dhat-heap.json`) before the exit that skips destructors.
+  // Quiesce the runtime before flushing the heap profile: stop the worker threads
+  // (giving in-flight tasks a brief grace period) so they are not still allocating
+  // while the profiler is dropped and `dhat-heap.json` is written. Then drop the
+  // profiler explicitly, since the exit below skips destructors.
   #[cfg(feature = "dhat-heap")]
-  drop(dhat_profiler);
+  {
+    runtime.shutdown_timeout(std::time::Duration::from_millis(200));
+    drop(dhat_profiler);
+  }
 
   std::process::exit(exit_code);
 }
