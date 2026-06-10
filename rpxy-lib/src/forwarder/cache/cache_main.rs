@@ -200,15 +200,14 @@ impl RpxyCache {
         ResponseBody::Streamed(stream_body)
       }
       CacheFileOrOnMemory::OnMemory(object) => {
+        // No integrity re-check here, unlike the file target. A file-backed object lives on disk
+        // (an external, mutable resource that can be corrupted or overwritten independently), so
+        // `FileStoreInner::read` re-verifies its hash on every read. An on-memory object is an
+        // immutable `Bytes` held inside the same `CacheObject` as its `hash` and is never mutated
+        // after insertion, with no external aliasing. Re-hashing it on every hit only guards
+        // against in-RAM corruption, which the stored `hash` itself equally suffers, so it is not
+        // worth a full SHA-256 per hit.
         debug!("Cache hit from on memory: {cache_key}");
-        let mut hasher = Sha256::new();
-        hasher.update(object.as_ref());
-        let hash_bytes = Bytes::copy_from_slice(hasher.finalize().as_ref());
-        if hash_bytes != cached_object.hash {
-          warn!("Hash mismatched. Cache object is corrupted");
-          let _evicted_entry = self.inner.evict(&cache_key);
-          return None;
-        }
         ResponseBody::Boxed(BoxBody::new(full(object)))
       }
     };
@@ -452,7 +451,9 @@ struct CacheObject {
   policy: CachePolicy,
   /// Cache target: on-memory object or temporary file
   target: CacheFileOrOnMemory,
-  /// SHA256 hash of target to strongly bind the cache metadata (this object) and file target
+  /// SHA256 hash used to verify file-backed cache targets on read; still computed at store time
+  /// before the file/on-memory target is selected. Not consulted on on-memory hits (the object is
+  /// an immutable in-process `Bytes`, so there is no external mutation to detect).
   hash: Bytes,
 }
 
@@ -714,6 +715,61 @@ mod tests {
     assert!(
       fs::metadata(&path).await.is_err(),
       "a corrupted cache file must be removed on hash mismatch"
+    );
+  }
+
+  /// An on-memory cache hit serves the stored object directly, without re-hashing it. The entry is
+  /// inserted with an intentionally wrong `hash`: before slice 2 the per-hit re-hash would have
+  /// detected the mismatch, evicted the entry, and returned `None`; now the immutable in-process
+  /// object is trusted and returned as-is. Drives `get()` end-to-end and asserts the served body.
+  ///
+  /// The entry is inserted directly via the cache manager rather than through `put()`: `put()`
+  /// spawns a background task that returns the downstream stream first and only pushes the cache
+  /// entry afterwards, so an immediate `get()` would race. Direct insertion is deterministic.
+  #[tokio::test]
+  async fn on_memory_hit_serves_object_without_rehash() {
+    let cache = RpxyCache {
+      inner: LruCacheManager::new(10),
+      file_store: FileStore {
+        inner: Arc::new(RwLock::new(FileStoreInner {
+          cnt: 0,
+          runtime_handle: tokio::runtime::Handle::current(),
+        })),
+      },
+      runtime_handle: tokio::runtime::Handle::current(),
+      max_each_size: 65_535,
+      max_each_size_on_memory: 4_096,
+      cache_dir: std::env::temp_dir(),
+    };
+
+    let uri: Uri = "http://example.com/onmem".parse().unwrap();
+    let object = Bytes::from_static(b"on-memory cached body");
+
+    // Build a fresh, storable policy so get()'s freshness gate (policy.before_request) is Fresh.
+    let policy_req = Request::builder().uri(uri.clone()).body(()).unwrap();
+    let policy_res = Response::builder()
+      .header("cache-control", "public, max-age=3600")
+      .body(())
+      .unwrap();
+    let policy = get_policy_if_cacheable(Some(&policy_req), Some(&policy_res))
+      .unwrap()
+      .unwrap();
+
+    let cache_object = CacheObject {
+      policy,
+      target: CacheFileOrOnMemory::OnMemory(object.clone()),
+      // Intentionally wrong: an on-memory hit must not consult this hash.
+      hash: Bytes::from_static(&[0u8; 32]),
+    };
+    let cache_key = derive_cache_key_from_uri(&uri);
+    cache.inner.push(&cache_key, &cache_object).unwrap();
+
+    let req = Request::builder().uri(uri.clone()).body(()).unwrap();
+    let response = cache.get(&req).await.expect("an on-memory hit must return a response");
+    let got = BodyExt::collect(response.into_body()).await.unwrap().to_bytes();
+    assert_eq!(
+      got, object,
+      "an on-memory hit must serve the stored object even with a stale hash"
     );
   }
 }
