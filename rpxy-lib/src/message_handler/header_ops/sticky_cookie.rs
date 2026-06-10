@@ -32,12 +32,13 @@ pub(crate) fn takeout_sticky_cookie_lb_context(
       .iter()
       .flat_map(|v| v.to_str().unwrap_or("").split(';').map(|v| v.trim()))
       .partition(|v| v.starts_with(&sticky_cookie_prefix));
+    // Return early before joining: requests that carry cookies but no sticky cookie (the common
+    // case) must not pay the join allocation.
+    if sticky.is_empty() {
+      return Ok(None);
+    }
     (sticky.iter().map(|s| s.to_string()).collect(), without_sticky.join("; "))
   };
-
-  if sticky_cookies.is_empty() {
-    return Ok(None);
-  }
 
   // Strip the sticky cookie from what is forwarded upstream. This still runs for the
   // multiple-sticky-cookie case below (the count check is intentionally after the mutation).
