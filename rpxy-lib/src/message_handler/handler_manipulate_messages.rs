@@ -3,10 +3,10 @@ use crate::{
   backend::{BackendApp, UpstreamCandidates},
   constants::RESPONSE_HEADER_SERVER,
   log::*,
-  name_exp::ServerName,
+  name_exp::{PathName, ServerName},
 };
 use anyhow::{Result, anyhow, ensure};
-use http::{HeaderValue, Request, Response, Uri, header};
+use http::{HeaderValue, Request, Response, Uri, header, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::Connect;
 use std::net::SocketAddr;
 
@@ -190,23 +190,13 @@ where
     let new_uri = Uri::builder()
       .scheme(upstream_chosen.uri.scheme().unwrap().as_str())
       .authority(upstream_chosen.uri.authority().unwrap().as_str());
-    let org_pq = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/").as_bytes();
 
-    // replace some parts of path if opt_replace_path is enabled for chosen upstream
-    let new_pq = match &upstream_candidates.replace_path {
-      Some(new_path) => {
-        let matched_path: &[u8] = upstream_candidates.path.as_ref();
-        ensure!(
-          !matched_path.is_empty() && org_pq.len() >= matched_path.len(),
-          "Upstream uri `path and query` is broken"
-        );
-        let mut new_pq = Vec::<u8>::with_capacity(org_pq.len() - matched_path.len() + new_path.len());
-        new_pq.extend_from_slice(new_path.as_ref());
-        new_pq.extend_from_slice(&org_pq[matched_path.len()..]);
-        new_pq
-      }
-      None => org_pq.to_vec(),
-    };
+    // Build the upstream path+query (applying replace_path if configured for this group).
+    let new_pq = rebuild_path_and_query(
+      req.uri(),
+      upstream_candidates.replace_path.as_ref(),
+      &upstream_candidates.path,
+    )?;
     *req.uri_mut() = new_uri.path_and_query(new_pq).build()?;
 
     // upgrade
@@ -222,5 +212,67 @@ where
     }
 
     Ok(context)
+  }
+}
+
+/// Build the path-and-query for the outgoing upstream request.
+///
+/// Without `replace_path`, the original request path+query is reused as-is via a shallow
+/// `PathAndQuery` clone (no byte copy or re-validation), falling back to `/` when the request
+/// carries none. With `replace_path`, the matched route prefix is swapped for the replacement
+/// path while preserving the remainder (and any query string).
+fn rebuild_path_and_query(req_uri: &Uri, replace_path: Option<&PathName>, matched_path: &PathName) -> Result<PathAndQuery> {
+  let Some(new_path) = replace_path else {
+    return Ok(
+      req_uri
+        .path_and_query()
+        .cloned()
+        .unwrap_or_else(|| PathAndQuery::from_static("/")),
+    );
+  };
+
+  let org_pq = req_uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/").as_bytes();
+  let matched: &[u8] = matched_path.as_ref();
+  ensure!(
+    !matched.is_empty() && org_pq.len() >= matched.len(),
+    "Upstream uri `path and query` is broken"
+  );
+  let mut v = Vec::<u8>::with_capacity(org_pq.len() - matched.len() + new_path.len());
+  v.extend_from_slice(new_path.as_ref());
+  v.extend_from_slice(&org_pq[matched.len()..]);
+  // Wrap InvalidUri in http::Error so the error type matches the previous
+  // `.path_and_query(Vec).build()?` path exactly.
+  let pq = PathAndQuery::try_from(v).map_err(http::Error::from)?;
+  Ok(pq)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::name_exp::ByteName;
+
+  #[test]
+  fn rebuild_path_and_query_none_preserves_path_and_query() {
+    let uri = Uri::from_static("http://example.com/a/b?x=1&y=2");
+    let matched = "/".to_path_name();
+    let pq = rebuild_path_and_query(&uri, None, &matched).unwrap();
+    assert_eq!(pq.as_str(), "/a/b?x=1&y=2");
+  }
+
+  #[test]
+  fn rebuild_path_and_query_none_defaults_to_root_when_absent() {
+    let uri = Uri::from_static("http://example.com");
+    let matched = "/".to_path_name();
+    let pq = rebuild_path_and_query(&uri, None, &matched).unwrap();
+    assert_eq!(pq.as_str(), "/");
+  }
+
+  #[test]
+  fn rebuild_path_and_query_replaces_matched_prefix_keeping_query() {
+    let uri = Uri::from_static("http://example.com/foo/bar?q=1");
+    let matched = "/foo".to_path_name();
+    let replace = "/new".to_path_name();
+    let pq = rebuild_path_and_query(&uri, Some(&replace), &matched).unwrap();
+    assert_eq!(pq.as_str(), "/new/bar?q=1");
   }
 }

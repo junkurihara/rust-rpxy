@@ -5,6 +5,7 @@
 ### Improvement
 
 - **Reduce per-request allocations in the forwarding-header path.** Building the outgoing `X-Forwarded-*` / `Proxy` headers no longer re-validates or re-allocates values that are already known: the constant headers (`X-Forwarded-Proto`, `X-Forwarded-Ssl`, `Proxy`) are written via `HeaderValue::from_static`, `X-Forwarded-Port` via `HeaderValue::from(u16)`, and `X-Real-IP` reuses the IP string already computed for `X-Forwarded-For` and is handed to `HeaderValue` without an extra copy. The immediate-peer forwarding entry is also no longer built twice per request, and request host parsing no longer constructs an error value on the success path. The forwarding/trust-boundary logic and every emitted header value are byte-for-byte unchanged. This trims roughly ten heap allocations per request on the common path; it is a CPU/allocation cleanup, not a measured throughput change (no throughput difference was observed on a loopback benchmark).
+- **Reduce per-request allocations in path routing and request-URI rebuilding.** Longest-prefix route matching now compares the request path bytes directly instead of allocating a `PathName` per request, and rebuilding the outgoing request URI now reuses the original path-and-query via a shallow clone (instead of copying it into a `Vec` and re-validating it) when no `replace_path` is configured. Routing decisions and the rewritten URI are byte-for-byte unchanged. Like the forwarding-header change above, this is a CPU/allocation cleanup rather than a measured throughput change.
 
 ### Internal
 
