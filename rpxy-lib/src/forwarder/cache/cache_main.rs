@@ -719,9 +719,9 @@ mod tests {
   }
 
   /// An on-memory cache hit serves the stored object directly, without re-hashing it. The entry is
-  /// inserted with an intentionally wrong `hash`: before slice 2 the per-hit re-hash would have
-  /// detected the mismatch, evicted the entry, and returned `None`; now the immutable in-process
-  /// object is trusted and returned as-is. Drives `get()` end-to-end and asserts the served body.
+  /// inserted with an intentionally wrong `hash`: the previous per-hit re-hash would have detected
+  /// the mismatch, evicted the entry, and returned `None`; the immutable in-process object is now
+  /// trusted and returned as-is. Drives `get()` end-to-end and asserts the served body.
   ///
   /// The entry is inserted directly via the cache manager rather than through `put()`: `put()`
   /// spawns a background task that returns the downstream stream first and only pushes the cache
