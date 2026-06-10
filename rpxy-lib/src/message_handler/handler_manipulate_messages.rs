@@ -20,7 +20,12 @@ where
 
   #[allow(unused_variables)]
   /// Manipulate a response message sent from a backend application to forward downstream to a client.
-  pub(super) fn generate_response_forwarded<B>(&self, response: &mut Response<B>, backend_app: &BackendApp) -> Result<()> {
+  pub(super) fn generate_response_forwarded<B>(
+    &self,
+    response: &mut Response<B>,
+    backend_app: &BackendApp,
+    is_secure_transport: bool,
+  ) -> Result<()> {
     let headers = response.headers_mut();
     remove_connection_header(headers);
     remove_hop_header(headers);
@@ -30,17 +35,12 @@ where
     {
       // Manipulate ALT_SVC allowing h3 in response message only when mutual TLS is not enabled
       // TODO: This is a workaround for avoiding a client authentication in HTTP/3
-      if self.globals.proxy_config.http3
-        && backend_app.https_redirection.is_some()
-        && backend_app.mutual_tls.as_ref().is_some_and(|v| !v)
-      {
-        if let Some(port) = self.globals.proxy_config.https_redirection_port {
-          add_header_entry_overwrite_if_exist(
-            headers,
-            header::ALT_SVC,
-            format!("h3=\":{}\"; ma={}", port, self.globals.proxy_config.h3_alt_svc_max_age),
-          )?;
-        }
+      if let Some(port) = h3_alt_svc_port(&self.globals.proxy_config, backend_app.mutual_tls, is_secure_transport) {
+        add_header_entry_overwrite_if_exist(
+          headers,
+          header::ALT_SVC,
+          format!("h3=\":{}\"; ma={}", port, self.globals.proxy_config.h3_alt_svc_max_age),
+        )?;
       } else {
         // remove alt-svc to disallow requests via http3
         headers.remove(header::ALT_SVC);
@@ -215,6 +215,19 @@ where
   }
 }
 
+#[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+fn h3_alt_svc_port(
+  proxy_config: &crate::globals::ProxyConfig,
+  backend_mutual_tls: Option<bool>,
+  is_secure_transport: bool,
+) -> Option<u16> {
+  if proxy_config.http3 && is_secure_transport && backend_mutual_tls == Some(false) {
+    proxy_config.public_https_port
+  } else {
+    None
+  }
+}
+
 /// Build the path-and-query for the outgoing upstream request.
 ///
 /// Without `replace_path`, the original request path+query is reused as-is via a shallow
@@ -250,6 +263,47 @@ fn rebuild_path_and_query(req_uri: &Uri, replace_path: Option<&PathName>, matche
 mod tests {
   use super::*;
   use crate::name_exp::ByteName;
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  fn proxy_config_for_h3_alt_svc(http3: bool, public_https_port: Option<u16>) -> crate::globals::ProxyConfig {
+    crate::globals::ProxyConfig {
+      http3,
+      public_https_port,
+      ..Default::default()
+    }
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn h3_alt_svc_port_advertises_on_secure_non_mtls_transport() {
+    let proxy_config = proxy_config_for_h3_alt_svc(true, Some(443));
+    assert_eq!(h3_alt_svc_port(&proxy_config, Some(false), true), Some(443));
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn h3_alt_svc_port_does_not_advertise_on_plain_http() {
+    let proxy_config = proxy_config_for_h3_alt_svc(true, Some(443));
+    assert_eq!(h3_alt_svc_port(&proxy_config, Some(false), false), None);
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn h3_alt_svc_port_does_not_advertise_for_mtls_or_plaintext_app() {
+    let proxy_config = proxy_config_for_h3_alt_svc(true, Some(443));
+    assert_eq!(h3_alt_svc_port(&proxy_config, Some(true), true), None);
+    assert_eq!(h3_alt_svc_port(&proxy_config, None, true), None);
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn h3_alt_svc_port_requires_h3_enabled_and_public_port() {
+    let h3_disabled = proxy_config_for_h3_alt_svc(false, Some(443));
+    assert_eq!(h3_alt_svc_port(&h3_disabled, Some(false), true), None);
+
+    let no_public_port = proxy_config_for_h3_alt_svc(true, None);
+    assert_eq!(h3_alt_svc_port(&no_public_port, Some(false), true), None);
+  }
 
   #[test]
   fn rebuild_path_and_query_none_preserves_path_and_query() {

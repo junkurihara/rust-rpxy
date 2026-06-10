@@ -1,9 +1,14 @@
 # CHANGELOG
 
-## 0.12.2 or 0.13.0 (Unreleased)
+## 0.13.0 (Unreleased)
+
+### Important Changes
+
+- **Breaking: rename `https_redirection_port` to `public_https_port`.** The option now represents the client-visible HTTPS/H3 port used by both HTTP->HTTPS redirects and HTTP/3 `Alt-Svc` advertisement. Existing configs using `https_redirection_port` must be updated. If clients already reach the same port as `listen_port_tls`, this option is still unnecessary.
 
 ### Improvement
 
+- **Fix HTTP/3 `Alt-Svc` advertisement for HTTPS-only deployments.** rpxy now advertises HTTP/3 on secure non-mTLS responses when HTTP/3 is enabled, independent of per-app HTTP redirect settings. Plain HTTP responses and mTLS apps do not advertise HTTP/3.
 - **Reduce per-request allocations in the forwarding-header path.** Building the outgoing `X-Forwarded-*` / `Proxy` headers no longer re-validates or re-allocates values that are already known: the constant headers (`X-Forwarded-Proto`, `X-Forwarded-Ssl`, `Proxy`) are written via `HeaderValue::from_static`, `X-Forwarded-Port` via `HeaderValue::from(u16)`, and `X-Real-IP` reuses the IP string already computed for `X-Forwarded-For` and is handed to `HeaderValue` without an extra copy. The immediate-peer forwarding entry is also no longer built twice per request, and request host parsing no longer constructs an error value on the success path. The forwarding/trust-boundary logic and every emitted header value are byte-for-byte unchanged. This trims roughly ten heap allocations per request on the common path; it is a CPU/allocation cleanup, not a measured throughput change (no throughput difference was observed on a loopback benchmark).
 - **Reduce per-request allocations in path routing and request-URI rebuilding.** Longest-prefix route matching now compares the request path bytes directly instead of allocating a `PathName` per request, and rebuilding the outgoing request URI now reuses the original path-and-query via a shallow clone (instead of copying it into a `Vec` and re-validating it) when no `replace_path` is configured. Routing decisions and the rewritten URI are byte-for-byte unchanged. Like the forwarding-header change above, this is a CPU/allocation cleanup rather than a measured throughput change.
 - **Avoid cloning the whole request header map on the sticky-cookie path (`sticky-cookie` feature).** When a request reaches a sticky-session (`StickyRoundRobin`) upstream group, extracting the sticky cookie no longer clones the entire `HeaderMap`; it reads the `Cookie` header(s) directly and only re-materializes the cookie tokens. Which cookie is consumed versus forwarded upstream, the recovered backend id, and all reject/ignore paths are unchanged. CPU/allocation cleanup only.
