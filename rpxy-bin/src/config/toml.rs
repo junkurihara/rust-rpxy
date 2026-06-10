@@ -129,7 +129,7 @@ impl ConfigTomlExt for ConfigToml {
       // This includes a case that plaintext HTTP listener is not enabled.
       ensure!(
         proxy_config.https_port.is_some(),
-        "public_https_port must be some only when https_port is specified"
+        "`public_https_port` can only be set when the TLS listener `listen_port_tls` is configured"
       );
     }
     if !(proxy_config.https_port.is_some() && proxy_config.http_port.is_some()) {
@@ -342,7 +342,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
     if self.public_https_port.is_some() {
       ensure!(
         proxy_config.https_port.is_some(),
-        "public_https_port can be explicitly specified only when https_port is specified"
+        "`public_https_port` can only be set when the TLS listener `listen_port_tls` is configured"
       );
     }
 
