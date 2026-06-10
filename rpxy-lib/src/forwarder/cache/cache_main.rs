@@ -376,7 +376,7 @@ where
       buf = BytesMut::new();
       continue;
     }
-    size += data.len();
+    size = size.saturating_add(data.len());
     hasher.update(data.as_ref());
 
     if spill.is_some() {
@@ -385,26 +385,28 @@ where
         cacheable = false;
         spill.take().unwrap().abort().await;
       }
-    } else {
-      // Phase M: buffer on memory until we cross the on-memory threshold, then spill to a file.
-      buf.extend_from_slice(data.as_ref());
-      if buf.len() > max_each_size_on_memory {
-        match SpillFile::create(cache_dir, uri).await {
-          Ok(mut s) => {
-            if s.write(buf.as_ref()).await.is_err() {
-              cacheable = false;
-              s.abort().await;
-            } else {
-              spill = Some(s);
-            }
-          }
-          Err(_) => {
-            // Could not create a temp file; give up caching but keep forwarding.
+    } else if buf.len().saturating_add(data.len()) > max_each_size_on_memory {
+      // Phase M crossing the on-memory threshold: spill to a temp file. Write the already-buffered
+      // bytes and this frame straight to disk rather than first growing `buf` by a potentially
+      // large frame, which would defeat the point of bounding store-path memory.
+      match SpillFile::create(cache_dir, uri).await {
+        Ok(mut s) => {
+          if s.write(buf.as_ref()).await.is_err() || s.write(data.as_ref()).await.is_err() {
             cacheable = false;
+            s.abort().await;
+          } else {
+            spill = Some(s);
           }
         }
-        buf = BytesMut::new(); // free the in-memory copy regardless of spill outcome
+        Err(_) => {
+          // Could not create a temp file; give up caching but keep forwarding.
+          cacheable = false;
+        }
       }
+      buf = BytesMut::new(); // free the in-memory copy regardless of spill outcome
+    } else {
+      // Phase M still under the on-memory threshold: keep buffering on memory.
+      buf.extend_from_slice(data.as_ref());
     }
   }
 
@@ -1102,6 +1104,41 @@ mod tests {
       entries.next_entry().await.unwrap().is_none(),
       "no file must be created for an on-memory object"
     );
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// A single frame larger than the on-memory threshold spills directly to a file (the buffer is
+  /// not first grown by the whole frame), forwards in full, and round-trips intact. Guards the
+  /// spill-first-on-threshold-crossing path that bounds store-path memory against a large frame.
+  #[tokio::test]
+  async fn store_single_large_frame_spills_directly() {
+    let dir = temp_cache_dir("single-large").await;
+    let uri: Uri = "http://example.com/onebig".parse().unwrap();
+    let data = vec![3u8; 50_000]; // one frame, well over the 4096 threshold
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> = vec![Ok(Frame::data(Bytes::from(data)))];
+    let body = StreamBody::new(stream::iter(frames));
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+
+    let (target, hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
+      .await
+      .expect("cacheable");
+    let CacheFileOrOnMemory::File(path) = target else {
+      panic!("a single frame over the threshold must spill to a file target");
+    };
+    assert_eq!(
+      forwarded_len(rx.collect::<Vec<_>>().await),
+      50_000,
+      "the whole frame is forwarded"
+    );
+
+    let file_store = FileStoreInner {
+      cnt: 0,
+      runtime_handle: tokio::runtime::Handle::current(),
+    };
+    let read_body = file_store.read(path.clone(), &hash).await.unwrap();
+    let got = BodyExt::collect(read_body).await.unwrap().to_bytes();
+    assert_eq!(got.len(), 50_000);
+    assert!(got.iter().all(|&b| b == 3), "round-tripped bytes must match");
     let _ = fs::remove_dir_all(&dir).await;
   }
 
