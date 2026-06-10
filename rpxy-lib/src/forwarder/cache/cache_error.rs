@@ -21,6 +21,9 @@ pub enum CacheError {
   #[error("Failed to write file cache")]
   FailedToWriteFileCache,
 
+  #[error("Failed to rename cache file")]
+  FailedToRenameCacheFile,
+
   #[error("Failed to open cache file")]
   FailedToOpenCacheFile,
 
@@ -29,9 +32,6 @@ pub enum CacheError {
 
   #[error("Failed to remove cache file: {0}")]
   FailedToRemoveCacheFile(String),
-
-  #[error("Invalid cache target")]
-  InvalidCacheTarget,
 
   #[error("Hash mismatched in cache file")]
   HashMismatchedInCacheFile,

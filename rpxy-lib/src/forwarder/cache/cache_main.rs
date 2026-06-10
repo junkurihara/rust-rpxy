@@ -5,7 +5,7 @@ use crate::{
   log::*,
 };
 use base64::{Engine as _, engine::general_purpose};
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use futures::channel::mpsc;
 use http::{Request, Response, Uri};
 use http_body_util::{BodyExt, StreamBody};
@@ -17,12 +17,12 @@ use std::{
   path::{Path, PathBuf},
   sync::{
     Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicU64, AtomicUsize, Ordering},
   },
   time::SystemTime,
 };
 use tokio::{
-  fs::{self, File},
+  fs::{self, File, OpenOptions},
   io::{AsyncReadExt, AsyncWriteExt},
   sync::RwLock,
 };
@@ -99,14 +99,18 @@ impl RpxyCache {
   pub(crate) async fn count(&self) -> (usize, usize, usize) {
     let total = self.inner.count();
     let file = self.file_store.count().await;
-    let on_memory = total - file;
+    // `total` (LRU) and `file` (file store) are tracked under different locks and updated in
+    // separate steps while publishing/evicting, so a concurrent store can transiently make
+    // `file > total` (a file counted just before its metadata is published). Saturate instead of
+    // underflowing; the count is best-effort and converges once the publish completes.
+    let on_memory = total.saturating_sub(file);
     (total, on_memory, file)
   }
 
   /// Put response into the cache
   pub(crate) async fn put(&self, uri: &hyper::Uri, body: Incoming, policy: &CachePolicy) -> CacheResult<UnboundedStreamBody> {
     let cache_manager = self.inner.clone();
-    let mut file_store = self.file_store.clone();
+    let file_store = self.file_store.clone();
     let uri = uri.clone();
     let policy_clone = policy.clone();
     let max_each_size = self.max_each_size;
@@ -116,43 +120,21 @@ impl RpxyCache {
     let (body_tx, body_rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
 
     self.runtime_handle.spawn(async move {
-      // Forward the whole response body downstream while buffering up to `max_each_size`
-      // for caching. `body_tx` is moved into `spool_body` and dropped there, so an
-      // over-limit (or upstream-errored) response is delivered to the client in full and
-      // simply not cached - the cache layer never truncates it.
-      let Some(buf) = spool_body(body, body_tx, max_each_size).await else {
-        return Ok(()) as CacheResult<()>;
+      // Forward the whole response body downstream while incrementally hashing it and either
+      // buffering it on memory (small objects) or streaming it to a temp file (larger ones).
+      // `body_tx` is moved into `spool_and_store` and dropped there, so an over-limit,
+      // upstream-errored, or store-failed response is delivered to the client in full and simply
+      // not cached - the cache layer never truncates the response on any cache-side failure.
+      let Some((target, hash)) = spool_and_store(body, body_tx, max_each_size, max_each_size_on_memory, &cache_dir, &uri).await
+      else {
+        return;
       };
 
-      // Calculate hash of the cached data, after all data is received.
-      // In-operation calculation is possible but it blocks sending data.
-      let mut hasher = Sha256::new();
-      hasher.update(buf.as_ref());
-      let hash_bytes = Bytes::copy_from_slice(hasher.finalize().as_ref());
-      trace!("Cached data: {} bytes, hash = {:?}", buf.len(), hash_bytes);
-
-      // Create cache object
       let cache_key = derive_cache_key_from_uri(&uri);
-      let cache_object = CacheObject {
-        policy: policy_clone,
-        target: CacheFileOrOnMemory::build(&cache_dir, &uri, &buf, max_each_size_on_memory),
-        hash: hash_bytes,
-      };
-
-      if let Some((k, v)) = cache_manager.push(&cache_key, &cache_object)?
-        && k != cache_key
-      {
-        info!("Over the cache capacity. Evict least recent used entry");
-        if let CacheFileOrOnMemory::File(path) = v.target {
-          file_store.evict(&path).await;
-        }
-      }
-      // store cache object to file
-      if let CacheFileOrOnMemory::File(_) = cache_object.target {
-        file_store.create(&cache_object, &buf).await?;
-      }
-
-      Ok(()) as CacheResult<()>
+      let cache_object = CacheObject::new(policy_clone, target, hash);
+      // The file (if any) is now fully written and renamed into place, so it is safe to publish
+      // the metadata; this also accounts for the file count and evicts any displaced file.
+      publish_cache_object(&cache_manager, &file_store, &cache_key, cache_object).await;
     });
 
     let stream_body = StreamBody::new(body_rx);
@@ -175,10 +157,13 @@ impl RpxyCache {
       // This might be okay to keep as is since it would be updated later.
       // However, there is no guarantee that newly got objects will be still cacheable.
       // So, we have to evict stale cache entries and cache file objects if found.
+      // Only evict if this exact generation is still current: a concurrent re-store may have
+      // already replaced it with a fresh (live) entry that must not be removed, and whose file the
+      // replacing store now owns.
       debug!("Stale cache entry: {cache_key}");
-      let _evicted_entry = self.inner.evict(&cache_key);
-      // For cache file
-      if let CacheFileOrOnMemory::File(path) = &cached_object.target {
+      if self.inner.evict_if_generation(&cache_key, cached_object.generation).is_some()
+        && let CacheFileOrOnMemory::File(path) = &cached_object.target
+      {
         self.file_store.evict(&path).await;
       }
       return None;
@@ -191,8 +176,11 @@ impl RpxyCache {
           Ok(s) => s,
           Err(e) => {
             warn!("Failed to read from file cache: {e}");
-            let _evicted_entry = self.inner.evict(&cache_key);
-            self.file_store.evict(path).await;
+            // Conditional eviction: only drop this entry/file if a concurrent re-store has not
+            // already replaced it under the same key (the replacement owns its own file).
+            if self.inner.evict_if_generation(&cache_key, cached_object.generation).is_some() {
+              self.file_store.evict(path).await;
+            }
             return None;
           }
         };
@@ -216,64 +204,276 @@ impl RpxyCache {
 }
 
 /* ---------------------------------------------- */
-/// Stream `body` to `body_tx` while buffering up to `max_each_size` bytes for caching.
+/// Monotonic counter making temp/final cache file names process-unique (see `unique_cache_paths`).
+static CACHE_FILE_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Build a `(temp, final)` path pair with a process-unique name in `cache_dir`. The final name is
+/// generation-unique - not merely URI-derived - so concurrent stores of the same URI never collide
+/// or clobber each other's file; each cache entry references its own immutable file. The
+/// URI-derived prefix is kept only for human debuggability.
+fn unique_cache_paths(cache_dir: &Path, uri: &Uri) -> (PathBuf, PathBuf) {
+  let base = derive_filename_from_uri(uri);
+  let nanos = SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|d| d.as_nanos())
+    .unwrap_or(0);
+  let seq = CACHE_FILE_SEQ.fetch_add(1, Ordering::Relaxed);
+  let unique = format!("{base}-{}-{nanos}-{seq}", std::process::id());
+  let final_path = cache_dir.join(&unique);
+  let temp_path = cache_dir.join(format!("{unique}.tmp"));
+  (temp_path, final_path)
+}
+
+/// Unlink a not-yet-counted cache file (a temp file that never reached commit) without touching the
+/// file-store count. A missing file is ignored. Files that have already been counted are removed via
+/// `FileStore::evict`, which also decrements the count.
+async fn remove_uncounted_file(path: &Path) {
+  if let Err(e) = fs::remove_file(path).await
+    && e.kind() != std::io::ErrorKind::NotFound
+  {
+    warn!("Failed to remove uncommitted cache file {path:?}: {e}");
+  }
+}
+
+/// An in-progress file-cache write: data is appended to a temp file that is atomically renamed to
+/// its final path on `commit`. The file-store count is intentionally NOT touched here; it is bumped
+/// by `publish_cache_object` (just before publishing the metadata).
+struct SpillFile {
+  file: File,
+  temp_path: PathBuf,
+  final_path: PathBuf,
+}
+
+impl SpillFile {
+  /// Create a fresh temp file with a generation-unique name in `cache_dir`. `create_new(true)`
+  /// refuses to follow or overwrite an existing file/symlink.
+  async fn create(cache_dir: &Path, uri: &Uri) -> CacheResult<Self> {
+    let (temp_path, final_path) = unique_cache_paths(cache_dir, uri);
+    let file = OpenOptions::new()
+      .write(true)
+      .create_new(true)
+      .open(&temp_path)
+      .await
+      .map_err(|e| {
+        error!("Failed to create temp cache file {temp_path:?}: {e}");
+        CacheError::FailedToCreateFileCache
+      })?;
+    Ok(Self {
+      file,
+      temp_path,
+      final_path,
+    })
+  }
+
+  /// Append `data` to the temp file.
+  async fn write(&mut self, data: &[u8]) -> CacheResult<()> {
+    self.file.write_all(data).await.map_err(|e| {
+      error!("Failed to write temp cache file {:?}: {e}", self.temp_path);
+      CacheError::FailedToWriteFileCache
+    })
+  }
+
+  /// Flush and atomically rename the temp file to its final path, returning that path. On any
+  /// failure the temp file is removed and an error is returned.
+  async fn commit(self) -> CacheResult<PathBuf> {
+    let SpillFile {
+      mut file,
+      temp_path,
+      final_path,
+    } = self;
+    if let Err(e) = file.flush().await {
+      error!("Failed to flush temp cache file {temp_path:?}: {e}");
+      drop(file);
+      remove_uncounted_file(&temp_path).await;
+      return Err(CacheError::FailedToWriteFileCache);
+    }
+    drop(file); // close the handle before renaming
+    if let Err(e) = fs::rename(&temp_path, &final_path).await {
+      error!("Failed to rename cache file {temp_path:?} -> {final_path:?}: {e}");
+      remove_uncounted_file(&temp_path).await;
+      return Err(CacheError::FailedToRenameCacheFile);
+    }
+    Ok(final_path)
+  }
+
+  /// Discard the in-progress temp file (close + unlink). Does not touch the file-store count.
+  async fn abort(self) {
+    let SpillFile { file, temp_path, .. } = self;
+    drop(file);
+    remove_uncounted_file(&temp_path).await;
+  }
+}
+
+/// Forward `body` downstream frame by frame while attempting to cache it.
 ///
-/// Every frame (data, trailers, and any error frame) is forwarded downstream unchanged, so
-/// the response reaches the client in full regardless of the cache decision. Returns
-/// `Some(buf)` with the fully buffered body when it stayed within `max_each_size` (and may
-/// therefore be cached); returns `None` when the object is too large, the upstream body
-/// errored, or the downstream receiver went away. In every `None` case the frames seen so
-/// far have already been forwarded, so the cache layer never truncates the response.
+/// Hard invariant: a cache-side failure - too-large body, upstream body error, or any file I/O
+/// failure - must NEVER cut the downstream relay. Every frame is forwarded first; caching is then
+/// attempted as a side effect and silently abandoned (cleaning up any temp file) on failure.
 ///
-/// `body_tx` is taken by value and dropped on return, so `body_rx` reaches a clean EOF as
-/// soon as streaming finishes.
-async fn spool_body<B, E>(
+/// Returns `Some((target, hash))` when the object was fully and successfully stored (on memory, or
+/// streamed to a committed file), `None` otherwise. `body_tx` is taken by value and dropped on
+/// return, so `body_rx` reaches a clean EOF as soon as streaming finishes.
+async fn spool_and_store<B, E>(
   mut body: B,
   body_tx: mpsc::UnboundedSender<Result<Frame<Bytes>, E>>,
   max_each_size: usize,
-) -> Option<Bytes>
+  max_each_size_on_memory: usize,
+  cache_dir: &Path,
+  uri: &Uri,
+) -> Option<(CacheFileOrOnMemory, Bytes)>
 where
   B: hyper::body::Body<Data = Bytes, Error = E> + Unpin,
 {
-  let mut buf = BytesMut::new();
+  let mut hasher = Sha256::new();
+  let mut buf = BytesMut::new(); // Phase M: in-memory buffer until the on-memory threshold
+  let mut size: usize = 0;
   let mut cacheable = true;
+  let mut spill: Option<SpillFile> = None; // Phase F: present once spilled to a temp file
 
   while let Some(frame) = body.frame().await {
-    if cacheable {
-      match frame.as_ref() {
-        // Data frames are buffered up to the limit; non-data frames (e.g. trailers) carry
-        // no data and are forwarded only. `data_ref()` is `None` exactly for non-data frames,
-        // so this also avoids panicking on an unexpected frame shape.
-        Ok(f) => {
-          if let Some(data) = f.data_ref() {
-            // `saturating_add` keeps the size check correct even against a pathologically
-            // large frame length, so the limit can never be bypassed by integer overflow.
-            if buf.len().saturating_add(data.len()) > max_each_size {
-              debug!("Response exceeds max_each_size ({max_each_size} bytes); forwarding without caching");
-              cacheable = false;
-              buf = BytesMut::new(); // release buffered bytes; this object will not be cached
-            } else {
-              buf.extend_from_slice(data.as_ref());
-            }
-          }
-        }
-        // Upstream body error: a complete object cannot be cached. The error frame is still
-        // forwarded below so the downstream consumer observes it instead of a silent EOF.
-        Err(_) => {
-          cacheable = false;
-          buf = BytesMut::new();
-        }
-      }
-    }
+    // Take the cache-side data handle before the frame is moved into `unbounded_send`. `Bytes` is
+    // reference-counted, so this is a cheap Arc bump, not a body copy; `None` for an error item or
+    // a non-data frame (e.g. trailers).
+    let data = frame.as_ref().ok().and_then(|f| f.data_ref().cloned());
+    let was_err = frame.is_err();
 
-    // Always forward the frame downstream, regardless of the cache decision.
+    // Forward downstream first; the relay is never blocked or cut by cache work.
     if body_tx.unbounded_send(frame).is_err() {
       // Downstream receiver is gone; nothing left to forward or cache.
+      if let Some(s) = spill.take() {
+        s.abort().await;
+      }
       return None;
+    }
+
+    if !cacheable {
+      continue; // keep draining/forwarding, but no longer caching
+    }
+
+    // Upstream body error: a complete object cannot be cached. The error frame was already
+    // forwarded above so the downstream consumer observes it instead of a silent EOF.
+    if was_err {
+      cacheable = false;
+      if let Some(s) = spill.take() {
+        s.abort().await;
+      }
+      buf = BytesMut::new();
+      continue;
+    }
+
+    let Some(data) = data else {
+      continue; // non-data frame: forward only
+    };
+
+    // `saturating_add` keeps the size check correct even against a pathologically large frame
+    // length, so the limit can never be bypassed by integer overflow.
+    if size.saturating_add(data.len()) > max_each_size {
+      debug!("Response exceeds max_each_size ({max_each_size} bytes); forwarding without caching");
+      cacheable = false;
+      if let Some(s) = spill.take() {
+        s.abort().await;
+      }
+      buf = BytesMut::new();
+      continue;
+    }
+    size += data.len();
+    hasher.update(data.as_ref());
+
+    if spill.is_some() {
+      // Phase F: write straight to the temp file.
+      if spill.as_mut().unwrap().write(data.as_ref()).await.is_err() {
+        cacheable = false;
+        spill.take().unwrap().abort().await;
+      }
+    } else {
+      // Phase M: buffer on memory until we cross the on-memory threshold, then spill to a file.
+      buf.extend_from_slice(data.as_ref());
+      if buf.len() > max_each_size_on_memory {
+        match SpillFile::create(cache_dir, uri).await {
+          Ok(mut s) => {
+            if s.write(buf.as_ref()).await.is_err() {
+              cacheable = false;
+              s.abort().await;
+            } else {
+              spill = Some(s);
+            }
+          }
+          Err(_) => {
+            // Could not create a temp file; give up caching but keep forwarding.
+            cacheable = false;
+          }
+        }
+        buf = BytesMut::new(); // free the in-memory copy regardless of spill outcome
+      }
     }
   }
 
-  cacheable.then(|| buf.freeze())
+  if !cacheable {
+    return None; // any temp file was already aborted above
+  }
+
+  let hash = Bytes::copy_from_slice(hasher.finalize().as_ref());
+  match spill {
+    // Phase F: commit the temp file to its final path.
+    Some(s) => match s.commit().await {
+      Ok(final_path) => Some((CacheFileOrOnMemory::File(final_path), hash)),
+      Err(_) => None, // commit failed and cleaned up its temp; nothing to publish
+    },
+    // Phase M: small enough to stay on memory.
+    None => Some((CacheFileOrOnMemory::OnMemory(buf.freeze()), hash)),
+  }
+}
+
+/// Publish a freshly stored cache object's metadata into the LRU, accounting for the file-store
+/// count and evicting any displaced entry's file.
+///
+/// Ordering matters for correctness: a file is counted (`incr_count`) BEFORE its metadata is
+/// published, so a `File` entry visible in the LRU is always already counted and a concurrent
+/// eviction can never decrement a not-yet-counted file (the count and the LRU use separate locks).
+/// If `push()` fails (poisoned mutex), the just-counted file is rolled back (unlink + decrement) via
+/// `evict`. The displaced entry's file is evicted after a successful `push()`.
+async fn publish_cache_object(
+  cache_manager: &LruCacheManager,
+  file_store: &FileStore,
+  cache_key: &str,
+  cache_object: CacheObject,
+) {
+  let new_file_path = match &cache_object.target {
+    CacheFileOrOnMemory::File(path) => Some(path.clone()),
+    CacheFileOrOnMemory::OnMemory(_) => None,
+  };
+
+  // Count a file-backed object BEFORE publishing its metadata. The file count and the LRU map are
+  // guarded by different locks, so this ordering upholds the invariant "a File entry visible in the
+  // LRU has already been counted": any concurrent eviction that observes the published entry always
+  // finds a count it can safely decrement, instead of decrementing a not-yet-counted file (which
+  // would underflow). The transient `file > total` this opens (counted, not yet in the LRU) is
+  // tolerated by `count()` via `saturating_sub`.
+  if new_file_path.is_some() {
+    file_store.incr_count().await;
+  }
+
+  match cache_manager.push(cache_key, &cache_object) {
+    Err(e) => {
+      // Metadata could not be published; roll back both the count and the committed-but-unpublished
+      // file so neither leaks (the file was already counted just above).
+      warn!("Failed to publish cache entry: {e}");
+      if let Some(path) = &new_file_path {
+        file_store.evict(path).await;
+      }
+    }
+    Ok(displaced) => {
+      // Evict the displaced entry's file (same-key update or capacity eviction), unless it is the
+      // very file just published (only possible without generation-unique paths).
+      if let Some((_, v)) = displaced
+        && let CacheFileOrOnMemory::File(old_path) = v.target
+        && Some(&old_path) != new_file_path.as_ref()
+      {
+        info!("Evicting displaced cache file");
+        file_store.evict(&old_path).await;
+      }
+    }
+  }
 }
 
 /* ---------------------------------------------- */
@@ -297,10 +497,12 @@ impl FileStore {
     let inner = self.inner.read().await;
     inner.cnt
   }
-  /// Create a temporary file cache, returns error if file cannot be created or written
-  async fn create(&mut self, cache_object: &CacheObject, body_bytes: &Bytes) -> CacheResult<()> {
+  /// Account for a newly committed file-cache object whose file is already renamed into place.
+  /// Must be called BEFORE the corresponding metadata is published into the LRU, so that a visible
+  /// File entry is always already counted (see `publish_cache_object`).
+  async fn incr_count(&self) {
     let mut inner = self.inner.write().await;
-    inner.create(cache_object, body_bytes).await
+    inner.cnt += 1;
   }
   /// Evict a temporary file cache, logs warning if removal fails
   async fn evict(&self, path: impl AsRef<Path>) {
@@ -335,28 +537,6 @@ impl FileStoreInner {
       cnt: 0,
       runtime_handle: runtime_handle.clone(),
     }
-  }
-
-  /// Create a new temporary file cache
-  async fn create(&mut self, cache_object: &CacheObject, body_bytes: &Bytes) -> CacheResult<()> {
-    let cache_filepath = match cache_object.target {
-      CacheFileOrOnMemory::File(ref path) => path.clone(),
-      CacheFileOrOnMemory::OnMemory(_) => {
-        return Err(CacheError::InvalidCacheTarget);
-      }
-    };
-    let mut file = File::create(&cache_filepath)
-      .await
-      .map_err(|_| CacheError::FailedToCreateFileCache)?;
-    let mut bytes_clone = body_bytes.clone();
-    while bytes_clone.has_remaining() {
-      file.write_buf(&mut bytes_clone).await.map_err(|e| {
-        error!("Failed to write file cache: {e}");
-        CacheError::FailedToWriteFileCache
-      })?;
-    }
-    self.cnt += 1;
-    Ok(())
   }
 
   /// Retrieve a stored temporary file cache
@@ -408,13 +588,27 @@ impl FileStoreInner {
     Ok(stream_body)
   }
 
-  /// Remove file
+  /// Remove a counted file-cache object.
+  ///
+  /// The count is decremented **regardless of whether the unlink succeeds**: the caller has decided
+  /// to evict this counted file (its LRU metadata is already gone), so it is no longer a live counted
+  /// object even if the file was already removed externally or by the integrity-check path. Only a
+  /// genuine I/O error (not "already gone") is surfaced. Otherwise the file count leaks above the
+  /// number of live entries.
   async fn remove(&mut self, path: impl AsRef<Path>) -> CacheResult<()> {
-    fs::remove_file(path.as_ref())
-      .await
-      .map_err(|e| CacheError::FailedToRemoveCacheFile(e.to_string()))?;
-    self.cnt -= 1;
+    // Saturate rather than underflow: the count is updated under a different lock from the LRU, so
+    // a pathological concurrent ordering could otherwise drive a `usize` below zero (panic in debug,
+    // wraparound in release). `incr_count`-before-publish makes this unreachable in practice.
+    self.cnt = self.cnt.saturating_sub(1);
     debug!("Removed a cache file at {:?} (file count: {})", path.as_ref(), self.cnt);
+
+    match fs::remove_file(path.as_ref()).await {
+      Ok(()) => {}
+      // Already gone (e.g. removed externally or by the integrity-check path); the count correction
+      // above still stands, so this is not an error.
+      Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+      Err(e) => return Err(CacheError::FailedToRemoveCacheFile(e.to_string())),
+    }
 
     Ok(())
   }
@@ -431,18 +625,8 @@ pub(crate) enum CacheFileOrOnMemory {
   OnMemory(Bytes),
 }
 
-impl CacheFileOrOnMemory {
-  /// Get cache object target
-  fn build(cache_dir: &Path, uri: &Uri, object: &Bytes, max_each_size_on_memory: usize) -> Self {
-    if object.len() > max_each_size_on_memory {
-      let cache_filename = derive_filename_from_uri(uri);
-      let cache_filepath = cache_dir.join(cache_filename);
-      CacheFileOrOnMemory::File(cache_filepath)
-    } else {
-      CacheFileOrOnMemory::OnMemory(object.clone())
-    }
-  }
-}
+/// Monotonic counter assigning each stored `CacheObject` a unique generation (see `CacheObject`).
+static CACHE_OBJECT_GEN: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug)]
 /// Cache object definition
@@ -455,6 +639,22 @@ struct CacheObject {
   /// before the file/on-memory target is selected. Not consulted on on-memory hits (the object is
   /// an immutable in-process `Bytes`, so there is no external mutation to detect).
   hash: Bytes,
+  /// Process-unique generation id assigned at store time. Lets an eviction triggered from a stale
+  /// snapshot (e.g. a concurrent `get()`) pop the entry only if it is still the same generation,
+  /// so it cannot delete a newer live entry that a concurrent re-store published under the same key.
+  generation: u64,
+}
+
+impl CacheObject {
+  /// Build a cache object, assigning it a fresh generation id.
+  fn new(policy: CachePolicy, target: CacheFileOrOnMemory, hash: Bytes) -> Self {
+    Self {
+      policy,
+      target,
+      hash,
+      generation: CACHE_OBJECT_GEN.fetch_add(1, Ordering::Relaxed),
+    }
+  }
 }
 
 /* ---------------------------------------------- */
@@ -484,8 +684,14 @@ impl LruCacheManager {
     self.cnt.load(Ordering::Relaxed)
   }
 
-  /// Evict an entry from the LRU cache, logs error if mutex cannot be acquired
-  fn evict(&self, cache_key: &str) -> Option<(String, CacheObject)> {
+  /// Evict the entry for `cache_key` only if it is still the `generation` the caller observed.
+  ///
+  /// Eviction is sometimes triggered from a stale snapshot (e.g. a `get()` that cloned the entry,
+  /// then found it stale or failed to read its file). A concurrent re-store may have replaced that
+  /// entry with a newer live one under the same key in the meantime; popping unconditionally would
+  /// delete the live entry (orphaning its file and desyncing the file count). Peeking the current
+  /// generation and only popping on a match prevents that. Returns the popped entry when it matched.
+  fn evict_if_generation(&self, cache_key: &str, generation: u64) -> Option<(String, CacheObject)> {
     let mut lock = match self.inner.lock() {
       Ok(lock) => lock,
       Err(_) => {
@@ -493,6 +699,10 @@ impl LruCacheManager {
         return None;
       }
     };
+    // `peek` does not promote the entry; only pop when the generation still matches.
+    if lock.peek(cache_key).map(|o| o.generation) != Some(generation) {
+      return None;
+    }
     let res = lock.pop_entry(cache_key);
     // This may be inconsistent with the actual number of entries
     self.cnt.store(lock.len(), Ordering::Relaxed);
@@ -586,11 +796,68 @@ mod tests {
       .collect()
   }
 
+  /// Total number of data bytes across forwarded frames (works for any error type).
+  fn forwarded_len<E>(frames: Vec<Result<Frame<Bytes>, E>>) -> usize {
+    frames
+      .into_iter()
+      .filter_map(|f| f.ok())
+      .filter_map(|f| f.into_data().ok())
+      .map(|b| b.len())
+      .sum()
+  }
+
+  /// Drive the store path for a body that must stay on memory (threshold = `usize::MAX`, so it
+  /// never spills to a file) and return the stored bytes if cacheable. Mirrors the old
+  /// `spool_body` return shape for the existing on-memory tests.
+  async fn store_on_memory<B, E>(
+    body: B,
+    body_tx: mpsc::UnboundedSender<Result<Frame<Bytes>, E>>,
+    max_each_size: usize,
+  ) -> Option<Bytes>
+  where
+    B: hyper::body::Body<Data = Bytes, Error = E> + Unpin,
+  {
+    let uri: Uri = "http://example.com/onmem".parse().unwrap();
+    spool_and_store(body, body_tx, max_each_size, usize::MAX, &std::env::temp_dir(), &uri)
+      .await
+      .map(|(target, _hash)| match target {
+        CacheFileOrOnMemory::OnMemory(bytes) => bytes,
+        CacheFileOrOnMemory::File(_) => unreachable!("usize::MAX on-memory threshold never spills"),
+      })
+  }
+
+  /// Unique, freshly created temp directory for file-cache store tests.
+  async fn temp_cache_dir(tag: &str) -> PathBuf {
+    let dir = temp_cache_path(tag);
+    fs::create_dir_all(&dir).await.unwrap();
+    dir
+  }
+
+  /// A fresh, storable cache policy for `uri` (so the freshness gate passes).
+  fn fresh_policy(uri: &Uri) -> CachePolicy {
+    let req = Request::builder().uri(uri.clone()).body(()).unwrap();
+    let res = Response::builder()
+      .header("cache-control", "public, max-age=3600")
+      .body(())
+      .unwrap();
+    get_policy_if_cacheable(Some(&req), Some(&res)).unwrap().unwrap()
+  }
+
+  /// In-memory `FileStore` for store-path tests (no dir cleanup at construction).
+  fn test_file_store() -> FileStore {
+    FileStore {
+      inner: Arc::new(RwLock::new(FileStoreInner {
+        cnt: 0,
+        runtime_handle: tokio::runtime::Handle::current(),
+      })),
+    }
+  }
+
   #[tokio::test]
   async fn within_limit_caches_and_forwards_all() {
     let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
     let body = body_from(vec![data_frame(b"hello"), data_frame(b"world")]);
-    let cached = spool_body(body, tx, 1024).await;
+    let cached = store_on_memory(body, tx, 1024).await;
     assert_eq!(cached.as_deref(), Some(&b"helloworld"[..]));
     assert_eq!(forwarded_data(rx.collect::<Vec<_>>().await), b"helloworld");
   }
@@ -602,7 +869,7 @@ mod tests {
     let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
     // three 5-byte frames = 15 bytes total, over the 8-byte limit
     let body = body_from(vec![data_frame(b"aaaaa"), data_frame(b"bbbbb"), data_frame(b"ccccc")]);
-    let cached = spool_body(body, tx, 8).await;
+    let cached = store_on_memory(body, tx, 8).await;
     assert!(cached.is_none(), "over-limit object must not be cached");
     assert_eq!(
       forwarded_data(rx.collect::<Vec<_>>().await),
@@ -616,7 +883,7 @@ mod tests {
     let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
     // 5 + 3 = 8 == limit (matches the original `size > max_each_size` boundary)
     let body = body_from(vec![data_frame(b"aaaaa"), data_frame(b"bbb")]);
-    let cached = spool_body(body, tx, 8).await;
+    let cached = store_on_memory(body, tx, 8).await;
     assert_eq!(cached.as_deref(), Some(&b"aaaaabbb"[..]));
     assert_eq!(forwarded_data(rx.collect::<Vec<_>>().await), b"aaaaabbb");
   }
@@ -630,7 +897,7 @@ mod tests {
     let mut trailers = http::HeaderMap::new();
     trailers.insert("x-trailer", http::HeaderValue::from_static("v"));
     let body = body_from(vec![data_frame(b"data"), Ok(Frame::trailers(trailers))]);
-    let cached = spool_body(body, tx, 1024).await;
+    let cached = store_on_memory(body, tx, 1024).await;
     assert_eq!(cached.as_deref(), Some(&b"data"[..]));
     let forwarded = rx.collect::<Vec<_>>().await;
     assert_eq!(forwarded.len(), 2);
@@ -642,12 +909,12 @@ mod tests {
     let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
     drop(rx);
     let body = body_from(vec![data_frame(b"a"), data_frame(b"b")]);
-    let cached = spool_body(body, tx, 1024).await;
+    let cached = store_on_memory(body, tx, 1024).await;
     assert!(cached.is_none());
   }
 
   /// Stand-in body error type. `hyper::Error` has no public constructor, so the error path is
-  /// exercised with a body whose `Error` is this type; `spool_body` is generic over the error.
+  /// exercised with a body whose `Error` is this type; `spool_and_store` is generic over the error.
   #[derive(Debug)]
   struct TestBodyError;
 
@@ -659,7 +926,7 @@ mod tests {
     let frames: Vec<Result<Frame<Bytes>, TestBodyError>> =
       vec![Ok(Frame::data(Bytes::from_static(b"partial"))), Err(TestBodyError)];
     let body = StreamBody::new(stream::iter(frames));
-    let cached = spool_body(body, tx, 1024).await;
+    let cached = store_on_memory(body, tx, 1024).await;
     assert!(cached.is_none(), "an errored upstream body must not be cached");
     let forwarded = rx.collect::<Vec<_>>().await;
     assert_eq!(forwarded.len(), 2, "the data frame and the error frame are both forwarded");
@@ -755,12 +1022,12 @@ mod tests {
       .unwrap()
       .unwrap();
 
-    let cache_object = CacheObject {
+    let cache_object = CacheObject::new(
       policy,
-      target: CacheFileOrOnMemory::OnMemory(object.clone()),
+      CacheFileOrOnMemory::OnMemory(object.clone()),
       // Intentionally wrong: an on-memory hit must not consult this hash.
-      hash: Bytes::from_static(&[0u8; 32]),
-    };
+      Bytes::from_static(&[0u8; 32]),
+    );
     let cache_key = derive_cache_key_from_uri(&uri);
     cache.inner.push(&cache_key, &cache_object).unwrap();
 
@@ -770,6 +1037,326 @@ mod tests {
     assert_eq!(
       got, object,
       "an on-memory hit must serve the stored object even with a stale hash"
+    );
+  }
+
+  /// A body larger than the on-memory threshold spills to a file; the committed file is renamed
+  /// into `cache_dir`, the whole body is forwarded downstream, and reading the file back with the
+  /// returned hash succeeds (proving the incremental hash matches a one-shot hash of the bytes).
+  #[tokio::test]
+  async fn store_spills_large_object_to_file_and_round_trips() {
+    let dir = temp_cache_dir("spill").await;
+    let uri: Uri = "http://example.com/big".parse().unwrap();
+    // 5000 + 5000 = 10000 bytes, well over the 4096 on-memory threshold and under max_each_size.
+    let chunk = vec![7u8; 5000];
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> = vec![
+      Ok(Frame::data(Bytes::from(chunk.clone()))),
+      Ok(Frame::data(Bytes::from(chunk.clone()))),
+    ];
+    let body = StreamBody::new(stream::iter(frames));
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+
+    let (target, hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
+      .await
+      .expect("a within-limit object must be cacheable");
+    let CacheFileOrOnMemory::File(path) = target else {
+      panic!("an over-threshold object must spill to a file target");
+    };
+    assert!(path.starts_with(&dir), "the committed file must live in cache_dir");
+    assert_eq!(
+      forwarded_len(rx.collect::<Vec<_>>().await),
+      10000,
+      "the whole body is forwarded"
+    );
+
+    // Read the committed file back, verifying integrity against the incrementally computed hash.
+    let file_store = FileStoreInner {
+      cnt: 0,
+      runtime_handle: tokio::runtime::Handle::current(),
+    };
+    let read_body = file_store.read(path.clone(), &hash).await.unwrap();
+    let got = BodyExt::collect(read_body).await.unwrap().to_bytes();
+    assert_eq!(got.len(), 10000);
+    assert!(got.iter().all(|&b| b == 7), "round-tripped bytes must match");
+    assert!(fs::metadata(&path).await.is_ok(), "a verified file is left in place");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// A body within the on-memory threshold stays on memory and no file is created.
+  #[tokio::test]
+  async fn store_keeps_small_object_on_memory() {
+    let dir = temp_cache_dir("onmem-store").await;
+    let uri: Uri = "http://example.com/small".parse().unwrap();
+    let (tx, _rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let body = body_from(vec![data_frame(b"tiny")]);
+
+    let (target, _hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
+      .await
+      .expect("cacheable");
+    assert!(
+      matches!(target, CacheFileOrOnMemory::OnMemory(ref b) if b.as_ref() == b"tiny"),
+      "a sub-threshold object must stay on memory"
+    );
+    let mut entries = fs::read_dir(&dir).await.unwrap();
+    assert!(
+      entries.next_entry().await.unwrap().is_none(),
+      "no file must be created for an on-memory object"
+    );
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// Exceeding `max_each_size` *after* a spill keeps forwarding the full body, caches nothing, and
+  /// leaves no temp file behind.
+  #[tokio::test]
+  async fn store_too_large_after_spill_forwards_all_and_leaves_no_file() {
+    let dir = temp_cache_dir("toolarge").await;
+    let uri: Uri = "http://example.com/big".parse().unwrap();
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    // on-memory 4096, max_each_size 8000: 4000 (M) -> 8000 (spill) -> 12000 (too large).
+    let frame = |n: usize| Ok(Frame::data(Bytes::from(vec![1u8; n])));
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> = vec![frame(4000), frame(4000), frame(4000)];
+    let body = StreamBody::new(stream::iter(frames));
+
+    let out = spool_and_store(body, tx, 8000, 4096, &dir, &uri).await;
+    assert!(out.is_none(), "an over-limit object must not be cached");
+    assert_eq!(forwarded_len(rx.collect::<Vec<_>>().await), 12000, "all bytes are forwarded");
+    let mut entries = fs::read_dir(&dir).await.unwrap();
+    assert!(
+      entries.next_entry().await.unwrap().is_none(),
+      "the temp file must be cleaned up on abort"
+    );
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// An upstream error after a spill forwards the error, caches nothing, and cleans up the temp.
+  #[tokio::test]
+  async fn store_upstream_error_after_spill_forwards_and_cleans_temp() {
+    let dir = temp_cache_dir("err-spill").await;
+    let uri: Uri = "http://example.com/big".parse().unwrap();
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> =
+      vec![Ok(Frame::data(Bytes::from(vec![1u8; 5000]))), Err(TestBodyError)];
+    let body = StreamBody::new(stream::iter(frames));
+
+    let out = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri).await;
+    assert!(out.is_none(), "an errored body must not be cached");
+    let forwarded = rx.collect::<Vec<_>>().await;
+    assert!(
+      forwarded.iter().any(|f| f.is_err()),
+      "the upstream error is forwarded downstream"
+    );
+    let mut entries = fs::read_dir(&dir).await.unwrap();
+    assert!(
+      entries.next_entry().await.unwrap().is_none(),
+      "the temp file must be cleaned up after an upstream error"
+    );
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// A store-side I/O failure (here: a non-existent cache_dir so the spill cannot be created) must
+  /// never cut the downstream relay: the full body is still forwarded, and nothing is cached.
+  #[tokio::test]
+  async fn store_io_failure_keeps_forwarding_without_caching() {
+    let dir = temp_cache_path("missing-dir"); // intentionally NOT created
+    let uri: Uri = "http://example.com/big".parse().unwrap();
+    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> = vec![
+      Ok(Frame::data(Bytes::from(vec![9u8; 5000]))),
+      Ok(Frame::data(Bytes::from(vec![9u8; 1000]))),
+    ];
+    let body = StreamBody::new(stream::iter(frames));
+
+    let out = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri).await;
+    assert!(out.is_none(), "a failed store must not cache");
+    assert_eq!(
+      forwarded_len(rx.collect::<Vec<_>>().await),
+      6000,
+      "the full body must still reach downstream despite the store I/O failure"
+    );
+  }
+
+  /// Re-storing the same key with a new file evicts the old generation's file (no orphan) and the
+  /// file count stays at one.
+  #[tokio::test]
+  async fn publish_same_key_file_update_evicts_old_file() {
+    let dir = temp_cache_dir("pub-ff").await;
+    let manager = LruCacheManager::new(10);
+    let file_store = test_file_store();
+    let uri: Uri = "http://example.com/x".parse().unwrap();
+    let key = derive_cache_key_from_uri(&uri);
+
+    let path_a = dir.join("file-a");
+    fs::write(&path_a, b"AAAA").await.unwrap();
+    let obj_a = CacheObject::new(
+      fresh_policy(&uri),
+      CacheFileOrOnMemory::File(path_a.clone()),
+      Bytes::from_static(&[1u8; 32]),
+    );
+    publish_cache_object(&manager, &file_store, &key, obj_a).await;
+    assert_eq!(file_store.count().await, 1);
+
+    let path_b = dir.join("file-b");
+    fs::write(&path_b, b"BBBB").await.unwrap();
+    let obj_b = CacheObject::new(
+      fresh_policy(&uri),
+      CacheFileOrOnMemory::File(path_b.clone()),
+      Bytes::from_static(&[2u8; 32]),
+    );
+    publish_cache_object(&manager, &file_store, &key, obj_b).await;
+
+    assert!(
+      fs::metadata(&path_a).await.is_err(),
+      "the old generation's file must be evicted"
+    );
+    assert!(fs::metadata(&path_b).await.is_ok(), "the new file remains");
+    assert_eq!(file_store.count().await, 1, "exactly one committed file");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// Re-storing the same key as an on-memory object evicts the previously committed file and drops
+  /// the file count back to zero (Phase-M displaced-file eviction).
+  #[tokio::test]
+  async fn publish_file_then_on_memory_evicts_old_file() {
+    let dir = temp_cache_dir("pub-fm").await;
+    let manager = LruCacheManager::new(10);
+    let file_store = test_file_store();
+    let uri: Uri = "http://example.com/x".parse().unwrap();
+    let key = derive_cache_key_from_uri(&uri);
+
+    let path_a = dir.join("file-a");
+    fs::write(&path_a, b"AAAA").await.unwrap();
+    let obj_a = CacheObject::new(
+      fresh_policy(&uri),
+      CacheFileOrOnMemory::File(path_a.clone()),
+      Bytes::from_static(&[1u8; 32]),
+    );
+    publish_cache_object(&manager, &file_store, &key, obj_a).await;
+    assert_eq!(file_store.count().await, 1);
+
+    let obj_b = CacheObject::new(
+      fresh_policy(&uri),
+      CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"small")),
+      Bytes::from_static(&[2u8; 32]),
+    );
+    publish_cache_object(&manager, &file_store, &key, obj_b).await;
+
+    assert!(fs::metadata(&path_a).await.is_err(), "the displaced file must be evicted");
+    assert_eq!(file_store.count().await, 0, "the file count drops back to zero");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// Capacity eviction across keys also evicts the displaced file (insurance for the shared
+  /// displaced-file rule on a different-key eviction, not just a same-key update).
+  #[tokio::test]
+  async fn publish_capacity_eviction_removes_displaced_file() {
+    let dir = temp_cache_dir("pub-cap").await;
+    let manager = LruCacheManager::new(1); // capacity 1: the second push evicts the first
+    let file_store = test_file_store();
+
+    let uri_x: Uri = "http://example.com/x".parse().unwrap();
+    let path_a = dir.join("file-a");
+    fs::write(&path_a, b"AAAA").await.unwrap();
+    let obj_a = CacheObject::new(
+      fresh_policy(&uri_x),
+      CacheFileOrOnMemory::File(path_a.clone()),
+      Bytes::from_static(&[1u8; 32]),
+    );
+    publish_cache_object(&manager, &file_store, &derive_cache_key_from_uri(&uri_x), obj_a).await;
+    assert_eq!(file_store.count().await, 1);
+
+    let uri_y: Uri = "http://example.com/y".parse().unwrap();
+    let obj_b = CacheObject::new(
+      fresh_policy(&uri_y),
+      CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"small")),
+      Bytes::from_static(&[2u8; 32]),
+    );
+    publish_cache_object(&manager, &file_store, &derive_cache_key_from_uri(&uri_y), obj_b).await;
+
+    assert!(
+      fs::metadata(&path_a).await.is_err(),
+      "the capacity-evicted file must be removed"
+    );
+    assert_eq!(file_store.count().await, 0, "no committed files remain");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// Removing a file when the count is already zero must saturate, not underflow/panic. This
+  /// defends the cross-lock count race: the file count and the LRU map are updated under separate
+  /// locks, so a pathological concurrent ordering could otherwise drive the `usize` count below
+  /// zero (panic in debug, wraparound in release).
+  #[tokio::test]
+  async fn file_store_remove_count_saturates_at_zero() {
+    let dir = temp_cache_dir("saturate").await;
+    let path = dir.join("f");
+    fs::write(&path, b"x").await.unwrap();
+    let mut inner = FileStoreInner {
+      cnt: 0,
+      runtime_handle: tokio::runtime::Handle::current(),
+    };
+    inner.remove(&path).await.unwrap();
+    assert_eq!(inner.cnt, 0, "the file count must saturate at zero, not wrap around");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// Evicting a counted file entry must restore the count even when the file is already gone (e.g.
+  /// removed externally, or by the integrity-check path on a hash mismatch). Otherwise the file
+  /// count leaks above the number of live entries once the metadata is popped.
+  #[tokio::test]
+  async fn evict_missing_file_still_restores_count() {
+    let file_store = test_file_store();
+    file_store.incr_count().await; // a counted file entry exists
+    assert_eq!(file_store.count().await, 1);
+
+    // The file is already gone (never created here); eviction must still correct the count.
+    let missing = std::env::temp_dir().join("rpxy-cache-test-never-created-file");
+    file_store.evict(&missing).await;
+    assert_eq!(
+      file_store.count().await,
+      0,
+      "the file count must be restored even when the file was already gone"
+    );
+  }
+
+  /// A stale snapshot must not evict a newer live entry of the same key. Models the race where a
+  /// `get()` cloned generation A, a concurrent re-store published generation B under the same key,
+  /// and the stale `get()` then attempts eviction: B must survive, and only B's own generation can
+  /// evict B.
+  #[tokio::test]
+  async fn evict_if_generation_spares_newer_entry() {
+    let manager = LruCacheManager::new(10);
+    let uri: Uri = "http://example.com/x".parse().unwrap();
+    let key = derive_cache_key_from_uri(&uri);
+
+    let obj_a = CacheObject::new(
+      fresh_policy(&uri),
+      CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"A")),
+      Bytes::from_static(&[1u8; 32]),
+    );
+    let gen_a = obj_a.generation;
+    manager.push(&key, &obj_a).unwrap();
+
+    // A concurrent re-store replaces the entry under the same key with a newer generation.
+    let obj_b = CacheObject::new(
+      fresh_policy(&uri),
+      CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"B")),
+      Bytes::from_static(&[2u8; 32]),
+    );
+    let gen_b = obj_b.generation;
+    manager.push(&key, &obj_b).unwrap();
+
+    // The stale snapshot (generation A) must not evict the live entry B.
+    assert!(
+      manager.evict_if_generation(&key, gen_a).is_none(),
+      "a stale generation must not evict the newer entry"
+    );
+    let current = manager.get(&key).unwrap().expect("the newer entry must survive");
+    assert_eq!(current.generation, gen_b);
+
+    // The current generation can still be evicted.
+    assert!(manager.evict_if_generation(&key, gen_b).is_some());
+    assert!(
+      manager.get(&key).unwrap().is_none(),
+      "evicting the current generation removes it"
     );
   }
 }
