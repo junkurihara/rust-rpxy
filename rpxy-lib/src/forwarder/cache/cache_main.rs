@@ -24,7 +24,6 @@ use std::{
 use tokio::{
   fs::{self, File, OpenOptions},
   io::{AsyncReadExt, AsyncWriteExt},
-  sync::RwLock,
 };
 
 /// File-cache read chunk size: large enough that a typical cached object is read in one or a
@@ -49,7 +48,7 @@ const CACHE_STREAM_CHANNEL_CAPACITY: usize = 4;
 pub(crate) struct RpxyCache {
   /// Inner lru cache manager storing http message caching policy
   inner: LruCacheManager,
-  /// Managing cache file objects through RwLock's lock mechanism for file lock
+  /// Managing committed cache file objects (lock-free count; files are immutable once committed)
   file_store: FileStore,
   /// Async runtime
   runtime_handle: tokio::runtime::Handle,
@@ -201,7 +200,7 @@ impl RpxyCache {
       CacheFileOrOnMemory::OnMemory(object) => {
         // No integrity re-check here, unlike the file target. A file-backed object lives on disk
         // (an external, mutable resource that can be corrupted or overwritten independently), so
-        // `FileStoreInner::read` re-verifies its hash on every read. An on-memory object is an
+        // `FileStore::read` re-verifies its hash on every read. An on-memory object is an
         // immutable `Bytes` held inside the same `CacheObject` as its `hash` and is never mutated
         // after insertion, with no external aliasing. Re-hashing it on every hit only guards
         // against in-RAM corruption, which the stored `hash` itself equally suffers, so it is not
@@ -235,9 +234,12 @@ fn unique_cache_paths(cache_dir: &Path, uri: &Uri) -> (PathBuf, PathBuf) {
   (temp_path, final_path)
 }
 
-/// Unlink a not-yet-counted cache file (a temp file that never reached commit) without touching the
-/// file-store count. A missing file is ignored. Files that have already been counted are removed via
-/// `FileStore::evict`, which also decrements the count.
+/// Unlink a cache file WITHOUT adjusting the file-store count. A missing file is ignored. Used
+/// wherever the count must not change: temp files that never reached commit (never counted), and
+/// the integrity-check (hash mismatch) removal, where the file IS counted but its LRU metadata
+/// still exists - there the count is reconciled later, when that metadata is evicted via the
+/// counted `FileStore::evict`/`remove` (which tolerates the already-missing file). Counted files
+/// whose metadata is already gone go through `FileStore::evict` directly instead.
 async fn remove_uncounted_file(path: &Path) {
   if let Err(e) = fs::remove_file(path).await
     && e.kind() != std::io::ErrorKind::NotFound
@@ -497,75 +499,91 @@ async fn publish_cache_object(
 
 /* ---------------------------------------------- */
 #[derive(Debug, Clone)]
-/// Cache file manager outer that is responsible to handle `RwLock`
+/// Cache file manager. Lock-free by design: committed cache files are immutable and live at
+/// generation-unique paths, so the only shared mutable state is the best-effort count of
+/// committed file-cache objects. Keeping that count in an atomic (instead of a lock held across
+/// file I/O) means a store's publish can never queue behind another task's unlink or open -
+/// under sustained store-and-evict churn a single slow unlink previously serialized every
+/// in-flight publish behind one exclusive lock, stalling publication entirely while
+/// committed-but-unpublished files accumulated on disk without bound.
 struct FileStore {
-  /// Inner file store main object
-  inner: Arc<RwLock<FileStoreInner>>,
+  /// Approximate count of committed file-cache objects (best-effort by design; see `count`).
+  cnt: Arc<AtomicUsize>,
+  /// Async runtime
+  runtime_handle: tokio::runtime::Handle,
 }
+
 impl FileStore {
   #[allow(unused)]
   /// Build manager
   async fn new(runtime_handle: &tokio::runtime::Handle) -> Self {
     Self {
-      inner: Arc::new(RwLock::new(FileStoreInner::new(runtime_handle).await)),
+      cnt: Arc::new(AtomicUsize::new(0)),
+      runtime_handle: runtime_handle.clone(),
     }
   }
 
   /// Count file cache entries
   async fn count(&self) -> usize {
-    let inner = self.inner.read().await;
-    inner.cnt
+    self.cnt.load(Ordering::Relaxed)
   }
+
   /// Account for a newly committed file-cache object whose file is already renamed into place.
   /// Must be called BEFORE the corresponding metadata is published into the LRU, so that a visible
-  /// File entry is always already counted (see `publish_cache_object`).
+  /// File entry is always already counted (see `publish_cache_object`). That invariant is an
+  /// ordering property, not a mutual-exclusion one, so a plain atomic increment upholds it.
   async fn incr_count(&self) {
-    let mut inner = self.inner.write().await;
-    inner.cnt += 1;
+    self.cnt.fetch_add(1, Ordering::Relaxed);
   }
-  /// Evict a temporary file cache, logs warning if removal fails
+
+  /// Evict a counted file cache object, logs warning if removal fails
   async fn evict(&self, path: impl AsRef<Path>) {
-    let mut inner = self.inner.write().await;
-    if let Err(e) = inner.remove(path).await {
+    if let Err(e) = self.remove(path).await {
       warn!("Eviction failed during file object removal: {:?}", e);
     }
   }
-  /// Read a temporary file cache, returns error if file cannot be opened or hash mismatches
-  async fn read(&self, path: impl AsRef<Path> + Send + Sync + 'static, hash: &Bytes) -> CacheResult<BoundedStreamBody> {
-    let inner = self.inner.read().await;
-    inner.read(path, hash).await
-  }
-}
 
-#[derive(Debug, Clone)]
-/// Manager inner for cache on file system
-struct FileStoreInner {
-  /// Counter of current cached files
-  cnt: usize,
-  /// Async runtime
-  runtime_handle: tokio::runtime::Handle,
-}
+  /// Remove a counted file-cache object.
+  ///
+  /// The count is decremented **regardless of whether the unlink succeeds**: the caller has decided
+  /// to evict this counted file (its LRU metadata is already gone), so it is no longer a live counted
+  /// object even if the file was already removed externally or by the integrity-check path. Only a
+  /// genuine I/O error (not "already gone") is surfaced. Otherwise the file count leaks above the
+  /// number of live entries. No lock is held across the unlink: the file is immutable at a
+  /// generation-unique path, so the I/O needs no exclusion and concurrent removals proceed in
+  /// parallel instead of queueing publishers behind one another.
+  async fn remove(&self, path: impl AsRef<Path>) -> CacheResult<()> {
+    // Saturate rather than underflow: the count and the LRU are updated independently, so a
+    // pathological concurrent ordering could otherwise drive a `usize` below zero (wraparound).
+    // `incr_count`-before-publish makes this unreachable in practice.
+    let _ = self
+      .cnt
+      .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| Some(c.saturating_sub(1)));
+    debug!(
+      "Removed a cache file at {:?} (file count: {})",
+      path.as_ref(),
+      self.cnt.load(Ordering::Relaxed)
+    );
 
-impl FileStoreInner {
-  #[allow(unused)]
-  /// Build new cache file manager.
-  /// This first creates cache file dir if not exists, and cleans up the file inside the directory.
-  /// TODO: Persistent cache is really difficult. `sqlite` or something like that is needed.
-  async fn new(runtime_handle: &tokio::runtime::Handle) -> Self {
-    Self {
-      cnt: 0,
-      runtime_handle: runtime_handle.clone(),
+    match fs::remove_file(path.as_ref()).await {
+      Ok(()) => {}
+      // Already gone (e.g. removed externally or by the integrity-check path); the count correction
+      // above still stands, so this is not an error.
+      Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+      Err(e) => return Err(CacheError::FailedToRemoveCacheFile(e.to_string())),
     }
+
+    Ok(())
   }
 
-  /// Retrieve a stored temporary file cache
+  /// Read a stored file-cache object, returns error if the file cannot be opened. The integrity
+  /// hash is verified incrementally by the producer task and acted on at EOF.
   async fn read(&self, path: impl AsRef<Path> + Send + Sync + 'static, hash: &Bytes) -> CacheResult<BoundedStreamBody> {
     let Ok(mut file) = File::open(&path).await else {
       warn!("Cache file object cannot be opened");
       return Err(CacheError::FailedToOpenCacheFile);
     };
     let hash_clone = hash.clone();
-    let mut self_clone = self.clone();
 
     let (mut body_tx, body_rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(CACHE_STREAM_CHANNEL_CAPACITY);
 
@@ -600,8 +618,12 @@ impl FileStoreInner {
       let hash_bytes = Bytes::copy_from_slice(hasher.finalize().as_ref());
       if hash_bytes != hash_clone {
         warn!("Hash mismatched. Cache object is corrupted. Force to remove the cache file.");
-        // only file can be evicted
-        let _evicted_entry = self_clone.remove(&path).await;
+        // Unlink WITHOUT touching the count. The LRU entry pointing at this file still exists;
+        // the count is reconciled when that entry is evicted through the metadata path, whose
+        // counted removal tolerates the already-missing file. A counted removal here would
+        // decrement twice for one object. (This matches the previous behavior, where this path
+        // operated on a clone holding a copied counter.)
+        remove_uncounted_file(path.as_ref()).await;
         return Err(CacheError::HashMismatchedInCacheFile);
       }
       Ok(()) as CacheResult<()>
@@ -610,31 +632,6 @@ impl FileStoreInner {
     let stream_body = StreamBody::new(body_rx);
 
     Ok(stream_body)
-  }
-
-  /// Remove a counted file-cache object.
-  ///
-  /// The count is decremented **regardless of whether the unlink succeeds**: the caller has decided
-  /// to evict this counted file (its LRU metadata is already gone), so it is no longer a live counted
-  /// object even if the file was already removed externally or by the integrity-check path. Only a
-  /// genuine I/O error (not "already gone") is surfaced. Otherwise the file count leaks above the
-  /// number of live entries.
-  async fn remove(&mut self, path: impl AsRef<Path>) -> CacheResult<()> {
-    // Saturate rather than underflow: the count is updated under a different lock from the LRU, so
-    // a pathological concurrent ordering could otherwise drive a `usize` below zero (panic in debug,
-    // wraparound in release). `incr_count`-before-publish makes this unreachable in practice.
-    self.cnt = self.cnt.saturating_sub(1);
-    debug!("Removed a cache file at {:?} (file count: {})", path.as_ref(), self.cnt);
-
-    match fs::remove_file(path.as_ref()).await {
-      Ok(()) => {}
-      // Already gone (e.g. removed externally or by the integrity-check path); the count correction
-      // above still stands, so this is not an error.
-      Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-      Err(e) => return Err(CacheError::FailedToRemoveCacheFile(e.to_string())),
-    }
-
-    Ok(())
   }
 }
 
@@ -877,10 +874,8 @@ mod tests {
   /// In-memory `FileStore` for store-path tests (no dir cleanup at construction).
   fn test_file_store() -> FileStore {
     FileStore {
-      inner: Arc::new(RwLock::new(FileStoreInner {
-        cnt: 0,
-        runtime_handle: tokio::runtime::Handle::current(),
-      })),
+      cnt: Arc::new(AtomicUsize::new(0)),
+      runtime_handle: tokio::runtime::Handle::current(),
     }
   }
 
@@ -981,8 +976,8 @@ mod tests {
     fs::write(&path, &content).await.unwrap();
     let hash = Bytes::copy_from_slice(Sha256::digest(&content).as_ref());
 
-    let file_store = FileStoreInner {
-      cnt: 0,
+    let file_store = FileStore {
+      cnt: Arc::new(AtomicUsize::new(0)),
       runtime_handle: tokio::runtime::Handle::current(),
     };
     let body = file_store.read(path.clone(), &hash).await.unwrap();
@@ -1004,8 +999,8 @@ mod tests {
     fs::write(&path, &content).await.unwrap();
     let wrong_hash = Bytes::from_static(&[0u8; 32]);
 
-    let file_store = FileStoreInner {
-      cnt: 1, // removal decrements the counter; start at 1 to avoid an underflow in the test
+    let file_store = FileStore {
+      cnt: Arc::new(AtomicUsize::new(1)), // the entry for this file is still counted
       runtime_handle: tokio::runtime::Handle::current(),
     };
     let body = file_store.read(path.clone(), &wrong_hash).await.unwrap();
@@ -1013,6 +1008,13 @@ mod tests {
     assert!(
       fs::metadata(&path).await.is_err(),
       "a corrupted cache file must be removed on hash mismatch"
+    );
+    // The mismatch path unlinks WITHOUT decrementing: the LRU entry still exists and the count
+    // is reconciled when that entry is evicted through the metadata path (no double decrement).
+    assert_eq!(
+      file_store.count().await,
+      1,
+      "the integrity-check removal must not touch the count"
     );
   }
 
@@ -1029,10 +1031,8 @@ mod tests {
     let cache = RpxyCache {
       inner: LruCacheManager::new(10),
       file_store: FileStore {
-        inner: Arc::new(RwLock::new(FileStoreInner {
-          cnt: 0,
-          runtime_handle: tokio::runtime::Handle::current(),
-        })),
+        cnt: Arc::new(AtomicUsize::new(0)),
+        runtime_handle: tokio::runtime::Handle::current(),
       },
       runtime_handle: tokio::runtime::Handle::current(),
       max_each_size: 65_535,
@@ -1101,8 +1101,8 @@ mod tests {
     );
 
     // Read the committed file back, verifying integrity against the incrementally computed hash.
-    let file_store = FileStoreInner {
-      cnt: 0,
+    let file_store = FileStore {
+      cnt: Arc::new(AtomicUsize::new(0)),
       runtime_handle: tokio::runtime::Handle::current(),
     };
     let read_body = file_store.read(path.clone(), &hash).await.unwrap();
@@ -1160,8 +1160,8 @@ mod tests {
       "the whole frame is forwarded"
     );
 
-    let file_store = FileStoreInner {
-      cnt: 0,
+    let file_store = FileStore {
+      cnt: Arc::new(AtomicUsize::new(0)),
       runtime_handle: tokio::runtime::Handle::current(),
     };
     let read_body = file_store.read(path.clone(), &hash).await.unwrap();
@@ -1355,12 +1355,16 @@ mod tests {
     let dir = temp_cache_dir("saturate").await;
     let path = dir.join("f");
     fs::write(&path, b"x").await.unwrap();
-    let mut inner = FileStoreInner {
-      cnt: 0,
+    let store = FileStore {
+      cnt: Arc::new(AtomicUsize::new(0)),
       runtime_handle: tokio::runtime::Handle::current(),
     };
-    inner.remove(&path).await.unwrap();
-    assert_eq!(inner.cnt, 0, "the file count must saturate at zero, not wrap around");
+    store.remove(&path).await.unwrap();
+    assert_eq!(
+      store.count().await,
+      0,
+      "the file count must saturate at zero, not wrap around"
+    );
     let _ = fs::remove_dir_all(&dir).await;
   }
 
@@ -1507,8 +1511,8 @@ mod tests {
     let content = vec![5u8; FILE_CACHE_READ_CHUNK * (CACHE_STREAM_CHANNEL_CAPACITY + 4)];
     fs::write(&path, &content).await.unwrap();
     let wrong_hash = Bytes::from_static(&[0u8; 32]);
-    let file_store = FileStoreInner {
-      cnt: 1,
+    let file_store = FileStore {
+      cnt: Arc::new(AtomicUsize::new(1)),
       runtime_handle: tokio::runtime::Handle::current(),
     };
     let mut body = file_store.read(path.clone(), &wrong_hash).await.unwrap();
@@ -1562,6 +1566,48 @@ mod tests {
     let _ = fs::remove_dir_all(&dir).await;
   }
 
+  /// Concurrent count updates converge without locks. Phase-separated for a deterministic
+  /// expectation (free interleaving with the saturating decrement would make the final count
+  /// scheduling-dependent): phase 1 increments concurrently, phase 2 evicts each task's own
+  /// pre-created file concurrently.
+  #[tokio::test]
+  async fn file_store_count_concurrent_storm_phased() {
+    const N: usize = 64;
+    let dir = temp_cache_dir("storm").await;
+    let store = test_file_store();
+
+    // Phase 1: N concurrent increments (publish-side bookkeeping).
+    let handles: Vec<_> = (0..N)
+      .map(|_| {
+        let s = store.clone();
+        tokio::spawn(async move { s.incr_count().await })
+      })
+      .collect();
+    for h in handles {
+      h.await.unwrap();
+    }
+    assert_eq!(store.count().await, N, "all concurrent increments must be counted");
+
+    // Phase 2: N concurrent evictions, each of its own counted file.
+    let mut handles = Vec::with_capacity(N);
+    for i in 0..N {
+      let p = dir.join(format!("f{i}"));
+      fs::write(&p, b"x").await.unwrap();
+      let s = store.clone();
+      handles.push(tokio::spawn(async move { s.evict(&p).await }));
+    }
+    for h in handles {
+      h.await.unwrap();
+    }
+    assert_eq!(store.count().await, 0, "all concurrent evictions must be counted");
+    let mut entries = fs::read_dir(&dir).await.unwrap();
+    assert!(
+      entries.next_entry().await.unwrap().is_none(),
+      "every evicted file must be unlinked"
+    );
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
   /// Dropping the receiver mid-read must not evict the file. The file has more chunks than the
   /// channel can hold, so the producer cannot have reached EOF when the drop lands; the stored
   /// hash is intentionally wrong, so the file surviving proves the aborted read exits without
@@ -1572,8 +1618,8 @@ mod tests {
     let content = vec![6u8; FILE_CACHE_READ_CHUNK * (CACHE_STREAM_CHANNEL_CAPACITY + 4)];
     fs::write(&path, &content).await.unwrap();
     let wrong_hash = Bytes::from_static(&[0u8; 32]);
-    let file_store = FileStoreInner {
-      cnt: 1,
+    let file_store = FileStore {
+      cnt: Arc::new(AtomicUsize::new(1)),
       runtime_handle: tokio::runtime::Handle::current(),
     };
     let mut body = file_store.read(path.clone(), &wrong_hash).await.unwrap();
