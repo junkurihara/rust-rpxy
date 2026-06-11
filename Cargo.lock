@@ -2398,7 +2398,6 @@ dependencies = [
  "rustls",
  "rustls-acme",
  "rustls-platform-verifier 0.7.0",
- "rustls-post-quantum",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -2417,7 +2416,6 @@ dependencies = [
  "derive_builder",
  "hot_reload",
  "rustls",
- "rustls-post-quantum",
  "rustls-webpki",
  "tempfile",
  "thiserror 2.0.18",
@@ -2461,7 +2459,6 @@ dependencies = [
  "rpxy-acme",
  "rpxy-certs",
  "rustls",
- "rustls-post-quantum",
  "s2n-quic",
  "s2n-quic-core",
  "s2n-quic-h3",
@@ -2649,17 +2646,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
-name = "rustls-post-quantum"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0da3cd9229bac4fae1f589c8f875b3c891a058ddaa26eb3bde16b5e43dc174ce"
-dependencies = [
- "aws-lc-rs",
- "rustls",
- "rustls-webpki",
-]
-
-[[package]]
 name = "rustls-webpki"
 version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2770,7 +2756,6 @@ dependencies = [
  "bytes",
  "rustls",
  "rustls-pki-types",
- "rustls-post-quantum",
  "s2n-codec",
  "s2n-quic-core",
  "s2n-quic-crypto",

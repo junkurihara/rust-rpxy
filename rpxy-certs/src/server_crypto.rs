@@ -206,10 +206,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_server_crypto_base_try_into() {
-    #[cfg(not(feature = "post-quantum"))]
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
-    #[cfg(feature = "post-quantum")]
-    let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
     let mut server_crypto_base = ServerCryptoBase::default();
 
@@ -224,7 +221,11 @@ mod tests {
 
     // The per-SNI mTLS flag drives the `mtls` field of handshake-failure audit logs.
     assert!(
-      server_crypto.individual_config_map.get(b"localhost".as_slice()).unwrap().is_mutual_tls,
+      server_crypto
+        .individual_config_map
+        .get(b"localhost".as_slice())
+        .unwrap()
+        .is_mutual_tls,
       "localhost has a client CA configured, so it must be marked as mutual TLS"
     );
     assert!(
