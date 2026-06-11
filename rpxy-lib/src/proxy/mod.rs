@@ -28,12 +28,17 @@ pub use proxy_main::{ListenerKind, ListenerSpecBuilder, ListenerSpecBuilderError
 pub(crate) fn connection_builder(globals: &Arc<Globals>) -> Arc<ConnectionBuilder<LocalExecutor>> {
   let executor = LocalExecutor::new(globals.runtime_handle.clone());
   let mut http_server = server::conn::auto::Builder::new(executor);
+  // Do NOT enable hyper's experimental `pipeline_flush` here. Besides aggregating flushes for
+  // pipelined requests, it bypasses the per-connection write-buffer cap (`max_buf_size`) in
+  // hyper's h1 `can_buffer()`, so a client reading slower than the body is produced makes hyper
+  // buffer the entire response in memory - an unbounded-memory exposure for any large response.
+  // Leaving it at the default keeps the cap, so client-socket backpressure propagates to the
+  // response body (upstream relay / cache reads).
   http_server
     .http1()
     .keep_alive(globals.proxy_config.keepalive)
     .header_read_timeout(globals.proxy_config.proxy_idle_timeout)
-    .timer(TokioTimer)
-    .pipeline_flush(true);
+    .timer(TokioTimer);
   http_server
     .http2()
     .max_concurrent_streams(globals.proxy_config.max_concurrent_streams);
