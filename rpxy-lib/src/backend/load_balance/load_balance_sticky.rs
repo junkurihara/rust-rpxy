@@ -3,7 +3,7 @@ use super::{
   load_balance_main::{LoadBalanceContext, LoadBalanceWithPointer, PointerToUpstream, pick_nth_available_index},
   sticky_cookie::StickyCookieConfig,
 };
-use crate::{constants::STICKY_COOKIE_NAME, log::*};
+use crate::log::*;
 use ahash::HashMap;
 use derive_builder::Builder;
 use std::{
@@ -37,19 +37,11 @@ pub struct UpstreamMap {
   upstream_id_map: HashMap<String, usize>,
 }
 impl LoadBalanceStickyBuilder {
-  /// Set the information to build the cookie to stick clients to specific backends
-  pub fn sticky_config(&mut self, server_name: &str, path_opt: &Option<String>) -> &mut Self {
-    self.sticky_config = Some(StickyCookieConfig {
-      name: STICKY_COOKIE_NAME.to_string(), // TODO: config等で変更できるように
-      domain: server_name.to_ascii_lowercase(),
-      // Path is kept verbatim (route matching is case-sensitive); only the domain is lowercased.
-      path: if let Some(v) = path_opt {
-        v.clone()
-      } else {
-        "/".to_string()
-      },
-      duration: 300, // TODO: config等で変更できるように
-    });
+  /// Set the information to build the cookie to stick clients to specific backends. The config is
+  /// built (and validated) beforehand via `StickyCookieConfig::try_new`, since a custom
+  /// `derive_builder` setter cannot propagate an error.
+  pub fn sticky_config(&mut self, config: StickyCookieConfig) -> &mut Self {
+    self.sticky_config = Some(config);
     self
   }
   /// Set the hashmaps: upstream_index_map and upstream_id_map
@@ -151,7 +143,10 @@ impl LoadBalanceWithPointer for LoadBalanceSticky {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::backend::load_balance::sticky_cookie::{StickyCookie, StickyCookieValue};
+  use crate::{
+    backend::load_balance::sticky_cookie::{StickyCookie, StickyCookieValue},
+    constants::STICKY_COOKIE_NAME,
+  };
 
   fn make_upstream(uri_str: &str) -> Upstream {
     Upstream {
@@ -172,8 +167,9 @@ mod tests {
   }
 
   fn build_sticky_lb(upstreams: &[Upstream]) -> LoadBalanceSticky {
+    let config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "example.com", &Some("/".to_string()), 300).unwrap();
     LoadBalanceStickyBuilder::default()
-      .sticky_config("example.com", &Some("/".to_string()))
+      .sticky_config(config)
       .upstream_maps(upstreams)
       .build()
       .unwrap()

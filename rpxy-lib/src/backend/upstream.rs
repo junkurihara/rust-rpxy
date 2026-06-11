@@ -1,9 +1,11 @@
-#[cfg(feature = "sticky-cookie")]
-use super::load_balance::LoadBalanceStickyBuilder;
 use super::load_balance::{
   LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder, load_balance_options as lb_opts,
 };
+#[cfg(feature = "sticky-cookie")]
+use super::load_balance::{LoadBalanceStickyBuilder, StickyCookieConfig};
 use super::upstream_opts::UpstreamOption;
+#[cfg(feature = "sticky-cookie")]
+use crate::constants::STICKY_COOKIE_NAME;
 #[cfg(feature = "health-check")]
 use crate::globals::HealthCheckConfig;
 use crate::{
@@ -35,7 +37,10 @@ impl TryFrom<&AppConfig> for PathManager {
   fn try_from(app_config: &AppConfig) -> Result<Self, Self::Error> {
     let mut inner: HashMap<PathName, UpstreamCandidates> = HashMap::default();
 
-    app_config.reverse_proxy.iter().for_each(|rpc| {
+    // A plain `for` loop (not `for_each`) so configuration errors - e.g. an invalid sticky-cookie
+    // component caught while building the load balancer - propagate to the config loader instead
+    // of panicking.
+    for rpc in app_config.reverse_proxy.iter() {
       #[cfg(not(feature = "health-check"))]
       let upstream_vec: Vec<Upstream> = rpc.upstream.iter().map(Upstream::from).collect();
       #[cfg(feature = "health-check")]
@@ -56,16 +61,19 @@ impl TryFrom<&AppConfig> for PathManager {
       builder
         .upstream(&upstream_vec)
         .path(&rpc.path)
-        .replace_path(&rpc.replace_path)
-        .load_balance(&rpc.load_balance, &upstream_vec, &app_config.server_name, &rpc.path)
-        .options(&rpc.upstream_options);
+        .replace_path(&rpc.replace_path);
+      builder.load_balance(&rpc.load_balance, &upstream_vec, &app_config.server_name, &rpc.path)?;
+      builder.options(&rpc.upstream_options);
 
       #[cfg(feature = "health-check")]
       builder.health_check_config(&rpc.health_check);
 
-      let elem = builder.build().unwrap();
+      let elem = builder.build().map_err(|e| {
+        error!("Failed to build upstream candidates: {e}");
+        RpxyError::InvalidReverseProxyConfig
+      })?;
       inner.insert(elem.path.clone(), elem);
-    });
+    }
 
     if app_config.reverse_proxy.iter().filter(|rpc| rpc.path.is_none()).count() >= 2 {
       error!("Multiple default reverse proxy setting");
@@ -223,7 +231,9 @@ impl UpstreamCandidatesBuilder {
     self.replace_path = Some(v.to_owned().as_ref().map_or_else(|| None, |v| Some(v.to_path_name())));
     self
   }
-  /// Set the load balancing option
+  /// Set the load balancing option. Fallible: building the sticky-cookie config validates its
+  /// AAD components (and precomputes the AAD), so an invalid configuration is rejected here -
+  /// at backend build time - instead of panicking or failing per request.
   pub fn load_balance(
     &mut self,
     v: &Option<String>,
@@ -234,20 +244,24 @@ impl UpstreamCandidatesBuilder {
     #[cfg(not(feature = "sticky-cookie"))] _server_name: &str,
     #[cfg(feature = "sticky-cookie")] path_opt: &Option<String>,
     #[cfg(not(feature = "sticky-cookie"))] _path_opt: &Option<String>,
-  ) -> &mut Self {
+  ) -> Result<&mut Self, RpxyError> {
     let lb = if let Some(x) = v {
       match x.as_str() {
         lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
         lb_opts::RANDOM => LoadBalance::Random(LoadBalanceRandomBuilder::default().build().unwrap()),
         lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(LoadBalanceRoundRobinBuilder::default().build().unwrap()),
         #[cfg(feature = "sticky-cookie")]
-        lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
-          LoadBalanceStickyBuilder::default()
-            .sticky_config(server_name, path_opt)
-            .upstream_maps(upstream_vec) // TODO:
-            .build()
-            .unwrap(),
-        ),
+        lb_opts::STICKY_ROUND_ROBIN => {
+          // TODO: make the cookie name and duration configurable
+          let sticky_config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, server_name, path_opt, 300)?;
+          LoadBalance::StickyRoundRobin(
+            LoadBalanceStickyBuilder::default()
+              .sticky_config(sticky_config)
+              .upstream_maps(upstream_vec) // TODO:
+              .build()
+              .unwrap(),
+          )
+        }
         #[cfg(feature = "health-check")]
         lb_opts::PRIMARY_BACKUP => LoadBalance::PrimaryBackup(super::load_balance::LoadBalancePrimaryBackup),
         _ => {
@@ -259,7 +273,7 @@ impl UpstreamCandidatesBuilder {
       LoadBalance::default()
     };
     self.load_balance = Some(lb);
-    self
+    Ok(self)
   }
 
   #[cfg(feature = "health-check")]

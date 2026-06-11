@@ -1,7 +1,8 @@
-use super::{LoadBalanceError, LoadBalanceResult};
+use super::{LoadBalanceError, LoadBalanceResult, sticky_cookie_seal::build_sticky_cookie_aad};
+use crate::error::RpxyResult;
 use chrono::{TimeZone, Utc};
 use derive_builder::Builder;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 #[derive(Debug, Clone, Builder)]
 /// Cookie value only, used for COOKIE in req
@@ -151,7 +152,37 @@ pub struct StickyCookieConfig {
   pub domain: String,
   pub path: String,
   pub duration: i64,
+  /// Precomputed AEAD AAD framing name/domain/path. Private on purpose: `try_new` is the only
+  /// construction path, so a config can never carry an AAD inconsistent with its components.
+  aad: Arc<[u8]>,
 }
+
+impl StickyCookieConfig {
+  /// Build a validated config. The domain (server name) is lowercased here, the path defaults to
+  /// "/" but is otherwise kept verbatim (route matching is case-sensitive), and the AEAD AAD is
+  /// validated and precomputed once - per-request paths reuse it via `aad()` instead of
+  /// re-validating and re-allocating it on every request. An invalid component (NUL byte) is thus
+  /// rejected when the backend is built (startup/config reload), not on each request.
+  pub fn try_new(name: &str, server_name: &str, path_opt: &Option<String>, duration: i64) -> RpxyResult<Self> {
+    let name = name.to_string();
+    let domain = server_name.to_ascii_lowercase();
+    let path = path_opt.as_deref().unwrap_or("/").to_string();
+    let aad: Arc<[u8]> = build_sticky_cookie_aad(&name, &domain, &path)?.into();
+    Ok(Self {
+      name,
+      domain,
+      path,
+      duration,
+      aad,
+    })
+  }
+
+  /// Precomputed AEAD AAD for sealing/opening sticky cookie values under this config.
+  pub fn aad(&self) -> &[u8] {
+    &self.aad
+  }
+}
+
 impl<'a> StickyCookieConfig {
   pub fn build_sticky_cookie(&self, v: impl Into<Cow<'a, str>>) -> LoadBalanceResult<StickyCookie> {
     StickyCookieBuilder::default()
@@ -169,12 +200,7 @@ mod tests {
 
   #[test]
   fn config_works() {
-    let config = StickyCookieConfig {
-      name: STICKY_COOKIE_NAME.to_string(),
-      domain: "example.com".to_string(),
-      path: "/path".to_string(),
-      duration: 100,
-    };
+    let config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "example.com", &Some("/path".to_string()), 100).unwrap();
     let cookie = config.build_sticky_cookie("test_value").unwrap();
 
     // Pin both `expires` (read from the built cookie) and `now_ts` so Max-Age is
@@ -247,14 +273,29 @@ mod tests {
     assert!(StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}_shadow=value"), STICKY_COOKIE_NAME).is_err());
   }
 
+  /// The precomputed AAD must be byte-identical to a fresh build from the same components, so
+  /// cookies sealed before this change still open after it.
+  #[test]
+  fn try_new_precomputes_identical_aad() {
+    let config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "Example.COM", &Some("/App".to_string()), 300).unwrap();
+    let fresh = build_sticky_cookie_aad(&config.name, &config.domain, &config.path).unwrap();
+    assert_eq!(config.aad(), fresh.as_slice());
+  }
+
+  /// Validation moved to construction time, not lost: a NUL byte in any component is rejected by
+  /// `try_new` (i.e. at backend build / config reload), instead of failing every request.
+  #[test]
+  fn try_new_rejects_nul_components() {
+    assert!(StickyCookieConfig::try_new("na\0me", "example.com", &None, 300).is_err());
+    assert!(StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "exa\0mple.com", &None, 300).is_err());
+    assert!(StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "example.com", &Some("/pa\0th".to_string()), 300).is_err());
+  }
+
   #[test]
   fn sticky_cookie_path_preserves_case_domain_lowercased() {
-    let config = StickyCookieConfig {
-      name: STICKY_COOKIE_NAME.to_string(),
-      domain: "Example.COM".to_string(),
-      path: "/App/Sub".to_string(),
-      duration: 100,
-    };
+    let config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "Example.COM", &Some("/App/Sub".to_string()), 100).unwrap();
+    assert_eq!(config.domain, "example.com", "try_new must lowercase the domain");
+    assert_eq!(config.path, "/App/Sub", "try_new must keep the path verbatim");
     let cookie = config.build_sticky_cookie("v").unwrap();
     let info = cookie.info.as_ref().unwrap();
     assert_eq!(info.path, "/App/Sub", "path case must be preserved");
