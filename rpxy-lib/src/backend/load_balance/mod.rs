@@ -21,7 +21,7 @@ pub use sticky_cookie::{StickyCookie, StickyCookieConfig, StickyCookieValue};
 #[cfg(feature = "sticky-cookie")]
 pub use sticky_cookie_seal::{StickyCookieSecret, validate_sticky_cookie_aad_component};
 #[cfg(feature = "sticky-cookie")]
-pub(crate) use sticky_cookie_seal::{build_sticky_cookie_aad, build_sticky_cookie_cipher, open_server_id, seal_server_id};
+pub(crate) use sticky_cookie_seal::{build_sticky_cookie_cipher, open_server_id, seal_server_id};
 
 /// Result type for load balancing
 #[cfg(feature = "sticky-cookie")]

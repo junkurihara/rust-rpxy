@@ -1,4 +1,3 @@
-use super::StickyCookieConfig;
 use crate::error::{RpxyError, RpxyResult};
 use aes_gcm::{
   Aes256Gcm,
@@ -83,20 +82,22 @@ pub fn validate_sticky_cookie_aad_component(component: &str, value: &str) -> Rpx
   Ok(())
 }
 
-pub(crate) fn build_sticky_cookie_aad(config: &StickyCookieConfig) -> RpxyResult<Vec<u8>> {
-  validate_sticky_cookie_aad_component("name", &config.name)?;
-  validate_sticky_cookie_aad_component("domain", &config.domain)?;
-  validate_sticky_cookie_aad_component("path", &config.path)?;
+/// Validate the AAD components and assemble the framed AAD bytes. Called once per
+/// `StickyCookieConfig` at construction (`StickyCookieConfig::try_new`), not per request; the
+/// per-request paths use the precomputed `StickyCookieConfig::aad()`.
+pub(crate) fn build_sticky_cookie_aad(name: &str, domain: &str, path: &str) -> RpxyResult<Vec<u8>> {
+  validate_sticky_cookie_aad_component("name", name)?;
+  validate_sticky_cookie_aad_component("domain", domain)?;
+  validate_sticky_cookie_aad_component("path", path)?;
 
-  let mut aad =
-    Vec::with_capacity(b"rpxy-sticky-v1".len() + 1 + config.name.len() + 1 + config.domain.len() + 1 + config.path.len() + 1);
+  let mut aad = Vec::with_capacity(b"rpxy-sticky-v1".len() + 1 + name.len() + 1 + domain.len() + 1 + path.len() + 1);
   aad.extend_from_slice(b"rpxy-sticky-v1");
   aad.push(0);
-  aad.extend_from_slice(config.name.as_bytes());
+  aad.extend_from_slice(name.as_bytes());
   aad.push(0);
-  aad.extend_from_slice(config.domain.as_bytes());
+  aad.extend_from_slice(domain.as_bytes());
   aad.push(0);
-  aad.extend_from_slice(config.path.as_bytes());
+  aad.extend_from_slice(path.as_bytes());
   aad.push(0);
   Ok(aad)
 }

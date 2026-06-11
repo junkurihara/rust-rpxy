@@ -3,10 +3,7 @@ use anyhow::Result;
 use http::{HeaderMap, HeaderValue, header};
 
 use crate::{
-  backend::{
-    LoadBalanceContext, StickyCookie, StickyCookieConfig, StickyCookieValue, build_sticky_cookie_aad, open_server_id,
-    seal_server_id,
-  },
+  backend::{LoadBalanceContext, StickyCookie, StickyCookieConfig, StickyCookieValue, open_server_id, seal_server_id},
   log::*,
 };
 
@@ -18,7 +15,7 @@ pub(crate) fn takeout_sticky_cookie_lb_context(
   sticky_config: &StickyCookieConfig,
   cipher: &Aes256Gcm,
 ) -> Result<Option<LoadBalanceContext>> {
-  let expected_cookie_name = &sticky_config.name;
+  let expected_cookie_name = sticky_config.name();
   if !headers.contains_key(header::COOKIE) {
     return Ok(None);
   }
@@ -60,8 +57,9 @@ pub(crate) fn takeout_sticky_cookie_lb_context(
       return Ok(None);
     }
   };
-  let aad = build_sticky_cookie_aad(sticky_config)?;
-  let Some(server_id) = open_server_id(cipher, &aad, &raw_sticky_cookie.value) else {
+  // The AAD is precomputed at config build time (`StickyCookieConfig::try_new`); no per-request
+  // validation or allocation here.
+  let Some(server_id) = open_server_id(cipher, sticky_config.aad(), &raw_sticky_cookie.value) else {
     debug!("Ignoring invalid sticky cookie value");
     return Ok(None);
   };
@@ -88,16 +86,20 @@ pub(crate) fn set_sticky_cookie_lb_context(
   secure: bool,
   cipher: &Aes256Gcm,
 ) -> Result<()> {
-  let aad = build_sticky_cookie_aad(sticky_config)?;
   let Some(cookie_info) = context_from_lb.sticky_cookie.info.as_ref() else {
     anyhow::bail!("sticky cookie metadata is missing");
   };
-  let sealed_value = seal_server_id(cipher, &aad, &context_from_lb.sticky_cookie.value.value, cookie_info.expires)?;
+  let sealed_value = seal_server_id(
+    cipher,
+    sticky_config.aad(),
+    &context_from_lb.sticky_cookie.value.value,
+    cookie_info.expires,
+  )?;
   let sticky_cookie_string = context_from_lb
     .sticky_cookie
     .to_set_cookie_value_with_value(secure, &sealed_value)?;
   let new_header_val: HeaderValue = sticky_cookie_string.parse()?;
-  let expected_cookie_name = &sticky_config.name;
+  let expected_cookie_name = sticky_config.name();
   let expected_cookie_prefix = format!("{expected_cookie_name}=");
   match headers.entry(header::SET_COOKIE) {
     header::Entry::Vacant(entry) => {
@@ -135,12 +137,7 @@ mod tests {
   }
 
   fn sticky_config(domain: &str) -> StickyCookieConfig {
-    StickyCookieConfig {
-      name: STICKY_COOKIE_NAME.to_string(),
-      domain: domain.to_string(),
-      path: "/".to_string(),
-      duration: 300,
-    }
+    StickyCookieConfig::try_new(STICKY_COOKIE_NAME, domain, &None, 300).unwrap()
   }
 
   #[test]
@@ -203,18 +200,8 @@ mod tests {
   fn takeout_rejects_path_aad_mismatch() {
     // `path` is part of the AEAD AAD, so a cookie sealed for "/App" must not open under "/app".
     let cipher = cipher();
-    let config_mixed = StickyCookieConfig {
-      name: STICKY_COOKIE_NAME.to_string(),
-      domain: "example.com".to_string(),
-      path: "/App".to_string(),
-      duration: 300,
-    };
-    let config_lower = StickyCookieConfig {
-      name: STICKY_COOKIE_NAME.to_string(),
-      domain: "example.com".to_string(),
-      path: "/app".to_string(),
-      duration: 300,
-    };
+    let config_mixed = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "example.com", &Some("/App".to_string()), 300).unwrap();
+    let config_lower = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "example.com", &Some("/app".to_string()), 300).unwrap();
     let context = LoadBalanceContext {
       sticky_cookie: config_mixed.build_sticky_cookie("backend-a").unwrap(),
     };
@@ -294,8 +281,7 @@ mod tests {
   fn takeout_rejects_expired_sealed_cookie() {
     let cipher = cipher();
     let config = sticky_config("example.com");
-    let aad = build_sticky_cookie_aad(&config).unwrap();
-    let expired_value = seal_server_id(&cipher, &aad, "backend-a", 0).unwrap();
+    let expired_value = seal_server_id(&cipher, config.aad(), "backend-a", 0).unwrap();
     let mut req_headers = HeaderMap::new();
     req_headers.insert(
       header::COOKIE,
