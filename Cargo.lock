@@ -1929,9 +1929,9 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openssl-src"
-version = "300.6.0+3.6.2"
+version = "300.6.1+3.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8e8cbfd3a4a8c8f089147fd7aaa33cf8c7450c4d09f8f80698a0cf093abeff4"
+checksum = "46eb8fb9fb3b61ce1c0f8a026c4c1a0714d3a9e138e7fbde78753ce2babc3846"
 dependencies = [
  "cc",
 ]
@@ -2303,9 +2303,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
+checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reqwest"
@@ -2362,7 +2362,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2387,7 +2387,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-acme"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2410,7 +2410,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-certs"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2429,7 +2429,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-lib"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "aes-gcm",
  "ahash",
@@ -2479,7 +2479,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-trusted-proxies"
-version = "0.12.1"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2815,9 +2815,9 @@ dependencies = [
 
 [[package]]
 name = "s2n-tls"
-version = "0.3.37"
+version = "0.3.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f60ada8adc59c848686744ff0ca93f1d1edc565a69d96a58a26abd84a521a5a0"
+checksum = "6188b4ff1e1fe554f3ed53ef81c550760006ff8003f08c3539447afcd20b6e8b"
 dependencies = [
  "errno",
  "hex",
@@ -2828,9 +2828,9 @@ dependencies = [
 
 [[package]]
 name = "s2n-tls-sys"
-version = "0.3.37"
+version = "0.3.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6960ccb00e47fe4b641f9c7b769515a4f89cb65459ca7afbed20fa39aac0b1b"
+checksum = "bbe6d97b0ca3d01056eb1446912799181f1e1ec6922601f80446f4f0337edb67"
 dependencies = [
  "aws-lc-rs",
  "cc",
@@ -4198,18 +4198,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.50"
+version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b065d4f0e55f82fae73202e189638116a87c55ab6b8e6c2721e13dd9d854ad1"
+checksum = "ce1022995ff5ff5d841ad7d994facc23098cd40152f2c1d11cd607c6f530653f"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.50"
+version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b631b19d36a892ab55420c92dbc83ccd79274f25be714855d3074aa71cab639"
+checksum = "1ae7f38b72ec2a254e2b87ef277cf2cd4fb97cbebf944faa6f33354da0867930"
 dependencies = [
  "proc-macro2",
  "quote",
