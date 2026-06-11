@@ -383,7 +383,7 @@ If `[experimental.cache]` is specified in `config.toml`, you can leverage the lo
 cache_dir = './cache'                # optional. default is "./cache" relative to the current working directory
 max_cache_entry = 1000               # optional. default is 1k
 max_cache_each_size = 65535          # optional. default is 64k
-max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is always file cache.
+max_cache_each_size_on_memory = 65535 # optional. default is 64k, same as max_cache_each_size (cacheable objects are served from memory by default; the file tier engages when max_cache_each_size is raised beyond this). if 0, it is always file cache. Worst-case memory use is max_cache_entry x this value.
 ```
 
 A *storable* (in the context of an HTTP message) response is stored if its size is less than or equal to `max_cache_each_size` in bytes. If it is also less than or equal to `max_cache_each_size_on_memory`, it is stored as an in-memory object. Otherwise, it is stored as a temporary file. Note that `max_cache_each_size` must be greater than or equal to `max_cache_each_size_on_memory`. Also note that once `rpxy` restarts or the config is updated, the cache is completely eliminated not only from the in-memory table but also from the file system.
