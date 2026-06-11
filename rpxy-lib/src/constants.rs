@@ -29,8 +29,12 @@ pub const MAX_CACHE_ENTRY: usize = 1_000;
 // max size for each file in bytes
 pub const MAX_CACHE_EACH_SIZE: usize = 65_535;
 #[cfg(feature = "cache")]
-// on memory cache if less than or equel to
-pub const MAX_CACHE_EACH_SIZE_ON_MEMORY: usize = 4_096;
+// on memory cache if less than or equal to. Defaults to the same value as MAX_CACHE_EACH_SIZE:
+// serving a hit from memory is several times faster than the file-backed path (which opens and
+// reads the cache file on every hit), so by default every cacheable object stays on memory and
+// the file tier engages only when an operator raises max_cache_each_size beyond this. Worst-case
+// on-memory footprint at defaults is MAX_CACHE_ENTRY x this value (~64 MB).
+pub const MAX_CACHE_EACH_SIZE_ON_MEMORY: usize = 65_535;
 
 #[cfg(feature = "proxy-protocol")]
 pub mod proxy_protocol {
