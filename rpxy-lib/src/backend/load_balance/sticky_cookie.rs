@@ -148,12 +148,14 @@ impl StickyCookie {
 /// and expiration of cookie.
 /// "domain" and "path" in the cookie will be the same as the reverse proxy options.
 pub struct StickyCookieConfig {
-  pub name: String,
-  pub domain: String,
-  pub path: String,
-  pub duration: i64,
-  /// Precomputed AEAD AAD framing name/domain/path. Private on purpose: `try_new` is the only
-  /// construction path, so a config can never carry an AAD inconsistent with its components.
+  /// All fields are private on purpose: `try_new` is the only construction path and the
+  /// components are read-only afterwards (getters below), so a config can never carry - or be
+  /// mutated into carrying - an AAD inconsistent with its name/domain/path.
+  name: String,
+  domain: String,
+  path: String,
+  duration: i64,
+  /// Precomputed AEAD AAD framing name/domain/path.
   aad: Arc<[u8]>,
 }
 
@@ -180,6 +182,26 @@ impl StickyCookieConfig {
   /// Precomputed AEAD AAD for sealing/opening sticky cookie values under this config.
   pub fn aad(&self) -> &[u8] {
     &self.aad
+  }
+
+  /// Sticky cookie name.
+  pub fn name(&self) -> &str {
+    &self.name
+  }
+
+  /// Cookie domain (lowercased server name).
+  pub fn domain(&self) -> &str {
+    &self.domain
+  }
+
+  /// Cookie path (verbatim; route matching is case-sensitive).
+  pub fn path(&self) -> &str {
+    &self.path
+  }
+
+  /// Cookie lifetime in seconds.
+  pub fn duration(&self) -> i64 {
+    self.duration
   }
 }
 

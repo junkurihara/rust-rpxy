@@ -15,7 +15,7 @@ pub(crate) fn takeout_sticky_cookie_lb_context(
   sticky_config: &StickyCookieConfig,
   cipher: &Aes256Gcm,
 ) -> Result<Option<LoadBalanceContext>> {
-  let expected_cookie_name = &sticky_config.name;
+  let expected_cookie_name = sticky_config.name();
   if !headers.contains_key(header::COOKIE) {
     return Ok(None);
   }
@@ -99,7 +99,7 @@ pub(crate) fn set_sticky_cookie_lb_context(
     .sticky_cookie
     .to_set_cookie_value_with_value(secure, &sealed_value)?;
   let new_header_val: HeaderValue = sticky_cookie_string.parse()?;
-  let expected_cookie_name = &sticky_config.name;
+  let expected_cookie_name = sticky_config.name();
   let expected_cookie_prefix = format!("{expected_cookie_name}=");
   match headers.entry(header::SET_COOKIE) {
     header::Entry::Vacant(entry) => {
