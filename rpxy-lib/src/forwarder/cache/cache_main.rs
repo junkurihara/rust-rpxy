@@ -1,12 +1,12 @@
 use super::cache_error::*;
 use crate::{
   globals::Globals,
-  hyper_ext::body::{BoxBody, ResponseBody, UnboundedStreamBody, full},
+  hyper_ext::body::{BoundedStreamBody, BoxBody, ResponseBody, full},
   log::*,
 };
 use base64::{Engine as _, engine::general_purpose};
 use bytes::{Bytes, BytesMut};
-use futures::channel::mpsc;
+use futures::{SinkExt, channel::mpsc};
 use http::{Request, Response, Uri};
 use http_body_util::{BodyExt, StreamBody};
 use http_cache_semantics::CachePolicy;
@@ -30,10 +30,18 @@ use tokio::{
 /// File-cache read chunk size: large enough that a typical cached object is read in one or a
 /// few iterations (vs the ~64 B that `BytesMut` auto-grows per `read_buf`). Each read fills at
 /// most one chunk-sized buffer, so we never load the whole object into a single `BytesMut`
-/// (matters when `max_each_size` is configured large). This bounds the per-read buffer, not
-/// total live memory: the `mpsc::unbounded` stream can still queue chunks if the downstream is
-/// slow (a separate concern).
+/// (matters when `max_each_size` is configured large). This bounds the per-read buffer; how many
+/// such chunks can queue toward a slow downstream is bounded separately by
+/// `CACHE_STREAM_CHANNEL_CAPACITY`.
 const FILE_CACHE_READ_CHUNK: usize = 64 * 1024;
+
+/// Capacity of the bounded per-stream channels relaying cache-path bodies downstream (both the
+/// file-read hit path and the store/miss path). The producer awaits when the channel is full, so
+/// per-stream queued memory is capped at `capacity + 1` frames (futures-mpsc grants each sender
+/// one slot beyond the buffer) instead of the whole object when the consumer is slower than the
+/// producer. A few frames of slack keep a fast consumer fed without a producer/consumer wakeup
+/// ping-pong on every frame.
+const CACHE_STREAM_CHANNEL_CAPACITY: usize = 4;
 
 /* ---------------------------------------------- */
 #[derive(Clone, Debug)]
@@ -108,7 +116,7 @@ impl RpxyCache {
   }
 
   /// Put response into the cache
-  pub(crate) async fn put(&self, uri: &hyper::Uri, body: Incoming, policy: &CachePolicy) -> CacheResult<UnboundedStreamBody> {
+  pub(crate) async fn put(&self, uri: &hyper::Uri, body: Incoming, policy: &CachePolicy) -> CacheResult<BoundedStreamBody> {
     let cache_manager = self.inner.clone();
     let file_store = self.file_store.clone();
     let uri = uri.clone();
@@ -117,7 +125,7 @@ impl RpxyCache {
     let max_each_size_on_memory = self.max_each_size_on_memory;
     let cache_dir = self.cache_dir.clone();
 
-    let (body_tx, body_rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let (body_tx, body_rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(CACHE_STREAM_CHANNEL_CAPACITY);
 
     self.runtime_handle.spawn(async move {
       // Forward the whole response body downstream while incrementally hashing it and either
@@ -125,6 +133,9 @@ impl RpxyCache {
       // `body_tx` is moved into `spool_and_store` and dropped there, so an over-limit,
       // upstream-errored, or store-failed response is delivered to the client in full and simply
       // not cached - the cache layer never truncates the response on any cache-side failure.
+      // The channel is bounded: when the downstream consumer is slower than the upstream, the
+      // relay (and hence the upstream read and the store) pauses instead of queueing frames in
+      // memory without bound.
       let Some((target, hash)) = spool_and_store(body, body_tx, max_each_size, max_each_size_on_memory, &cache_dir, &uri).await
       else {
         return;
@@ -310,12 +321,17 @@ impl SpillFile {
 /// failure - must NEVER cut the downstream relay. Every frame is forwarded first; caching is then
 /// attempted as a side effect and silently abandoned (cleaning up any temp file) on failure.
 ///
+/// `body_tx` is bounded, so forwarding awaits a free slot when the downstream consumer lags:
+/// backpressure pauses the relay (and, transitively, the upstream read and the store) instead of
+/// queueing frames in memory without bound. Pausing is not cutting - the send fails only when the
+/// receiver is dropped, exactly the case the relay has nothing left to forward to.
+///
 /// Returns `Some((target, hash))` when the object was fully and successfully stored (on memory, or
 /// streamed to a committed file), `None` otherwise. `body_tx` is taken by value and dropped on
 /// return, so `body_rx` reaches a clean EOF as soon as streaming finishes.
 async fn spool_and_store<B, E>(
   mut body: B,
-  body_tx: mpsc::UnboundedSender<Result<Frame<Bytes>, E>>,
+  mut body_tx: mpsc::Sender<Result<Frame<Bytes>, E>>,
   max_each_size: usize,
   max_each_size_on_memory: usize,
   cache_dir: &Path,
@@ -331,14 +347,15 @@ where
   let mut spill: Option<SpillFile> = None; // Phase F: present once spilled to a temp file
 
   while let Some(frame) = body.frame().await {
-    // Take the cache-side data handle before the frame is moved into `unbounded_send`. `Bytes` is
+    // Take the cache-side data handle before the frame is moved into the send. `Bytes` is
     // reference-counted, so this is a cheap Arc bump, not a body copy; `None` for an error item or
     // a non-data frame (e.g. trailers).
     let data = frame.as_ref().ok().and_then(|f| f.data_ref().cloned());
     let was_err = frame.is_err();
 
-    // Forward downstream first; the relay is never blocked or cut by cache work.
-    if body_tx.unbounded_send(frame).is_err() {
+    // Forward downstream first; the relay is never cut by cache work. The bounded send awaits a
+    // free slot when the consumer lags (backpressure) and errs only on a dropped receiver.
+    if body_tx.send(frame).await.is_err() {
       // Downstream receiver is gone; nothing left to forward or cache.
       if let Some(s) = spill.take() {
         s.abort().await;
@@ -514,7 +531,7 @@ impl FileStore {
     }
   }
   /// Read a temporary file cache, returns error if file cannot be opened or hash mismatches
-  async fn read(&self, path: impl AsRef<Path> + Send + Sync + 'static, hash: &Bytes) -> CacheResult<UnboundedStreamBody> {
+  async fn read(&self, path: impl AsRef<Path> + Send + Sync + 'static, hash: &Bytes) -> CacheResult<BoundedStreamBody> {
     let inner = self.inner.read().await;
     inner.read(path, hash).await
   }
@@ -542,7 +559,7 @@ impl FileStoreInner {
   }
 
   /// Retrieve a stored temporary file cache
-  async fn read(&self, path: impl AsRef<Path> + Send + Sync + 'static, hash: &Bytes) -> CacheResult<UnboundedStreamBody> {
+  async fn read(&self, path: impl AsRef<Path> + Send + Sync + 'static, hash: &Bytes) -> CacheResult<BoundedStreamBody> {
     let Ok(mut file) = File::open(&path).await else {
       warn!("Cache file object cannot be opened");
       return Err(CacheError::FailedToOpenCacheFile);
@@ -550,7 +567,7 @@ impl FileStoreInner {
     let hash_clone = hash.clone();
     let mut self_clone = self.clone();
 
-    let (body_tx, body_rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let (mut body_tx, body_rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(CACHE_STREAM_CHANNEL_CAPACITY);
 
     self.runtime_handle.spawn(async move {
       let mut hasher = Sha256::new();
@@ -566,10 +583,15 @@ impl FileStoreInner {
           Ok(0) => break,
           Ok(_) => {
             // Hand the filled bytes off zero-copy; `buf` keeps the remaining spare capacity.
+            // The bounded send awaits a free slot when the consumer lags, so a slow client
+            // paces the file read instead of queueing the whole object in memory. It errs only
+            // when the receiver is dropped; the early return then skips the integrity check
+            // below (an incomplete hash proves nothing) and leaves the file in place.
             let bytes = buf.split().freeze();
             hasher.update(bytes.as_ref());
             body_tx
-              .unbounded_send(Ok(Frame::data(bytes)))
+              .send(Ok(Frame::data(bytes)))
+              .await
               .map_err(|e| CacheError::FailedToSendFrameFromCache(e.to_string()))?
           }
           Err(_) => break,
@@ -774,6 +796,17 @@ fn derive_cache_key_from_uri(uri: &hyper::Uri) -> String {
 mod tests {
   use super::*;
   use futures::{StreamExt, stream};
+  use std::{
+    pin::Pin,
+    task::{Context, Poll},
+  };
+
+  /// NOTE: the relay channels are bounded. A test that runs the producer to completion BEFORE
+  /// draining the receiver (the common pattern below) deadlocks once a body has more frames than
+  /// the channel capacity, so these tests create channels with a capacity comfortably above any
+  /// test body (16) - except the backpressure tests, which exercise the bound itself and drain
+  /// concurrently.
+  const TEST_CHANNEL_CAPACITY: usize = 16;
 
   /// Build an `Ok` data frame from a static byte slice.
   fn data_frame(bytes: &'static [u8]) -> Result<Frame<Bytes>, hyper::Error> {
@@ -811,11 +844,7 @@ mod tests {
   /// Drive the store path for a body that must stay on memory (threshold = `usize::MAX`, so it
   /// never spills to a file) and return the stored bytes if cacheable. Mirrors the old
   /// `spool_body` return shape for the existing on-memory tests.
-  async fn store_on_memory<B, E>(
-    body: B,
-    body_tx: mpsc::UnboundedSender<Result<Frame<Bytes>, E>>,
-    max_each_size: usize,
-  ) -> Option<Bytes>
+  async fn store_on_memory<B, E>(body: B, body_tx: mpsc::Sender<Result<Frame<Bytes>, E>>, max_each_size: usize) -> Option<Bytes>
   where
     B: hyper::body::Body<Data = Bytes, Error = E> + Unpin,
   {
@@ -857,7 +886,7 @@ mod tests {
 
   #[tokio::test]
   async fn within_limit_caches_and_forwards_all() {
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(TEST_CHANNEL_CAPACITY);
     let body = body_from(vec![data_frame(b"hello"), data_frame(b"world")]);
     let cached = store_on_memory(body, tx, 1024).await;
     assert_eq!(cached.as_deref(), Some(&b"helloworld"[..]));
@@ -868,7 +897,7 @@ mod tests {
   /// forwarded to the client in full, just not cached.
   #[tokio::test]
   async fn over_limit_forwards_all_but_does_not_cache() {
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(TEST_CHANNEL_CAPACITY);
     // three 5-byte frames = 15 bytes total, over the 8-byte limit
     let body = body_from(vec![data_frame(b"aaaaa"), data_frame(b"bbbbb"), data_frame(b"ccccc")]);
     let cached = store_on_memory(body, tx, 8).await;
@@ -882,7 +911,7 @@ mod tests {
 
   #[tokio::test]
   async fn boundary_exactly_max_is_cached() {
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(TEST_CHANNEL_CAPACITY);
     // 5 + 3 = 8 == limit (matches the original `size > max_each_size` boundary)
     let body = body_from(vec![data_frame(b"aaaaa"), data_frame(b"bbb")]);
     let cached = store_on_memory(body, tx, 8).await;
@@ -895,7 +924,7 @@ mod tests {
   /// reproduce trailers); that is pre-existing behaviour and out of scope (design doc 3/8).
   #[tokio::test]
   async fn forwards_trailers_without_buffering_them() {
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(TEST_CHANNEL_CAPACITY);
     let mut trailers = http::HeaderMap::new();
     trailers.insert("x-trailer", http::HeaderValue::from_static("v"));
     let body = body_from(vec![data_frame(b"data"), Ok(Frame::trailers(trailers))]);
@@ -908,7 +937,7 @@ mod tests {
 
   #[tokio::test]
   async fn returns_none_when_downstream_dropped() {
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(TEST_CHANNEL_CAPACITY);
     drop(rx);
     let body = body_from(vec![data_frame(b"a"), data_frame(b"b")]);
     let cached = store_on_memory(body, tx, 1024).await;
@@ -924,7 +953,7 @@ mod tests {
   /// (not masked as a clean EOF), and the object must not be cached.
   #[tokio::test]
   async fn upstream_error_is_propagated_and_not_cached() {
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CHANNEL_CAPACITY);
     let frames: Vec<Result<Frame<Bytes>, TestBodyError>> =
       vec![Ok(Frame::data(Bytes::from_static(b"partial"))), Err(TestBodyError)];
     let body = StreamBody::new(stream::iter(frames));
@@ -1056,7 +1085,7 @@ mod tests {
       Ok(Frame::data(Bytes::from(chunk.clone()))),
     ];
     let body = StreamBody::new(stream::iter(frames));
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CHANNEL_CAPACITY);
 
     let (target, hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
       .await
@@ -1089,7 +1118,7 @@ mod tests {
   async fn store_keeps_small_object_on_memory() {
     let dir = temp_cache_dir("onmem-store").await;
     let uri: Uri = "http://example.com/small".parse().unwrap();
-    let (tx, _rx) = mpsc::unbounded::<Result<Frame<Bytes>, hyper::Error>>();
+    let (tx, _rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(TEST_CHANNEL_CAPACITY);
     let body = body_from(vec![data_frame(b"tiny")]);
 
     let (target, _hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
@@ -1117,7 +1146,7 @@ mod tests {
     let data = vec![3u8; 50_000]; // one frame, well over the 4096 threshold
     let frames: Vec<Result<Frame<Bytes>, TestBodyError>> = vec![Ok(Frame::data(Bytes::from(data)))];
     let body = StreamBody::new(stream::iter(frames));
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CHANNEL_CAPACITY);
 
     let (target, hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
       .await
@@ -1148,7 +1177,7 @@ mod tests {
   async fn store_too_large_after_spill_forwards_all_and_leaves_no_file() {
     let dir = temp_cache_dir("toolarge").await;
     let uri: Uri = "http://example.com/big".parse().unwrap();
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CHANNEL_CAPACITY);
     // on-memory 4096, max_each_size 8000: 4000 (M) -> 8000 (spill) -> 12000 (too large).
     let frame = |n: usize| Ok(Frame::data(Bytes::from(vec![1u8; n])));
     let frames: Vec<Result<Frame<Bytes>, TestBodyError>> = vec![frame(4000), frame(4000), frame(4000)];
@@ -1170,7 +1199,7 @@ mod tests {
   async fn store_upstream_error_after_spill_forwards_and_cleans_temp() {
     let dir = temp_cache_dir("err-spill").await;
     let uri: Uri = "http://example.com/big".parse().unwrap();
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CHANNEL_CAPACITY);
     let frames: Vec<Result<Frame<Bytes>, TestBodyError>> =
       vec![Ok(Frame::data(Bytes::from(vec![1u8; 5000]))), Err(TestBodyError)];
     let body = StreamBody::new(stream::iter(frames));
@@ -1196,7 +1225,7 @@ mod tests {
   async fn store_io_failure_keeps_forwarding_without_caching() {
     let dir = temp_cache_path("missing-dir"); // intentionally NOT created
     let uri: Uri = "http://example.com/big".parse().unwrap();
-    let (tx, rx) = mpsc::unbounded::<Result<Frame<Bytes>, TestBodyError>>();
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CHANNEL_CAPACITY);
     let frames: Vec<Result<Frame<Bytes>, TestBodyError>> = vec![
       Ok(Frame::data(Bytes::from(vec![9u8; 5000]))),
       Ok(Frame::data(Bytes::from(vec![9u8; 1000]))),
@@ -1395,5 +1424,170 @@ mod tests {
       manager.get(&key).unwrap().is_none(),
       "evicting the current generation removes it"
     );
+  }
+
+  /// Body wrapper counting the frames pulled from it, to observe how far ahead of a stalled
+  /// consumer the spool producer runs.
+  struct CountingBody<B> {
+    inner: B,
+    pulled: Arc<AtomicUsize>,
+  }
+
+  impl<B> hyper::body::Body for CountingBody<B>
+  where
+    B: hyper::body::Body<Data = Bytes> + Unpin,
+  {
+    type Data = Bytes;
+    type Error = B::Error;
+
+    fn poll_frame(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
+      let this = self.get_mut();
+      let res = Pin::new(&mut this.inner).poll_frame(cx);
+      if let Poll::Ready(Some(_)) = &res {
+        this.pulled.fetch_add(1, Ordering::Relaxed);
+      }
+      res
+    }
+  }
+
+  /// The store/miss path must not race ahead of a stalled consumer: the producer parks once the
+  /// channel (capacity + the sender's guaranteed slot) is full instead of pulling the whole body.
+  /// Yielding cannot un-park it; only draining the receiver can.
+  #[tokio::test]
+  async fn store_backpressure_limits_producer_readahead() {
+    const TEST_CAPACITY: usize = 2;
+    const TOTAL_FRAMES: usize = 32;
+    let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CAPACITY);
+    let pulled = Arc::new(AtomicUsize::new(0));
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> = (0..TOTAL_FRAMES)
+      .map(|_| Ok(Frame::data(Bytes::from(vec![0u8; 1024]))))
+      .collect();
+    let body = CountingBody {
+      inner: StreamBody::new(stream::iter(frames)),
+      pulled: pulled.clone(),
+    };
+    let uri: Uri = "http://example.com/bp".parse().unwrap();
+    let dir = std::env::temp_dir();
+    let spool = tokio::spawn(async move {
+      // On-memory threshold usize::MAX: no disk involved, the only await point is the bounded send.
+      spool_and_store(body, tx, usize::MAX, usize::MAX, &dir, &uri).await
+    });
+
+    // Let the producer run until it parks on the full channel (single-threaded test runtime).
+    for _ in 0..50 {
+      tokio::task::yield_now().await;
+    }
+    let ahead = pulled.load(Ordering::Relaxed);
+    assert!(
+      ahead < TOTAL_FRAMES,
+      "the producer must be parked by backpressure, not run to EOF (pulled {ahead})"
+    );
+    // Bound: TEST_CAPACITY buffered + the sender's guaranteed slot + the frame parked in the send.
+    assert!(
+      ahead <= TEST_CAPACITY + 2,
+      "the producer read-ahead must be bounded by the channel capacity (pulled {ahead})"
+    );
+
+    // Draining un-parks the producer; the spool completes and the full object is cached.
+    assert_eq!(forwarded_len(rx.collect::<Vec<_>>().await), TOTAL_FRAMES * 1024);
+    let stored = spool.await.unwrap();
+    assert!(
+      matches!(stored, Some((CacheFileOrOnMemory::OnMemory(ref b), _)) if b.len() == TOTAL_FRAMES * 1024),
+      "the drained object must be cached in full"
+    );
+  }
+
+  /// A slow consumer paces the file-read hit path. Mismatch eviction happens only at EOF, and a
+  /// full channel provably keeps the producer from reaching EOF, so with only one frame consumed
+  /// the wrong-hashed file must still exist; draining to EOF must then evict it.
+  #[tokio::test]
+  async fn file_read_backpressure_holds_eof_eviction_until_drained() {
+    let path = temp_cache_path("bp-read");
+    // Enough chunks that the producer cannot reach EOF while the channel is full.
+    let content = vec![5u8; FILE_CACHE_READ_CHUNK * (CACHE_STREAM_CHANNEL_CAPACITY + 4)];
+    fs::write(&path, &content).await.unwrap();
+    let wrong_hash = Bytes::from_static(&[0u8; 32]);
+    let file_store = FileStoreInner {
+      cnt: 1,
+      runtime_handle: tokio::runtime::Handle::current(),
+    };
+    let mut body = file_store.read(path.clone(), &wrong_hash).await.unwrap();
+
+    // Consume a single frame, then stall.
+    assert!(body.frame().await.is_some(), "the first frame must arrive");
+    for _ in 0..50 {
+      tokio::task::yield_now().await;
+    }
+    assert!(
+      fs::metadata(&path).await.is_ok(),
+      "the producer must be parked before EOF, so the mismatch eviction has not run yet"
+    );
+
+    // Drain to EOF: the integrity check finally runs and evicts the corrupted file.
+    while body.frame().await.is_some() {}
+    assert!(
+      fs::metadata(&path).await.is_err(),
+      "draining to EOF must evict the wrong-hashed file"
+    );
+  }
+
+  /// Dropping the receiver mid-stream after the store has spilled to a temp file must abort the
+  /// store, clean up the temp file, and cache nothing (complements
+  /// `returns_none_when_downstream_dropped`, which covers the receiver being gone from the start).
+  #[tokio::test]
+  async fn store_dropped_receiver_after_spill_cleans_temp() {
+    let dir = temp_cache_dir("drop-spill").await;
+    let uri: Uri = "http://example.com/drop".parse().unwrap();
+    let (tx, mut rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(0);
+    // 6 x 2000 bytes with a 4096 on-memory threshold: the spill starts at the third frame.
+    let frames: Vec<Result<Frame<Bytes>, TestBodyError>> =
+      (0..6).map(|_| Ok(Frame::data(Bytes::from(vec![2u8; 2000])))).collect();
+    let body = StreamBody::new(stream::iter(frames));
+    let dir_clone = dir.clone();
+    let spool = tokio::spawn(async move { spool_and_store(body, tx, 1_000_000, 4096, &dir_clone, &uri).await });
+
+    // Consume enough frames for the spill to have happened (the third frame was processed once
+    // the fourth has been forwarded), then hang up.
+    for _ in 0..4 {
+      assert!(rx.next().await.is_some());
+    }
+    drop(rx);
+
+    assert!(spool.await.unwrap().is_none(), "an aborted store must not cache");
+    let mut entries = fs::read_dir(&dir).await.unwrap();
+    assert!(
+      entries.next_entry().await.unwrap().is_none(),
+      "the temp file must be cleaned up when the receiver goes away mid-spill"
+    );
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// Dropping the receiver mid-read must not evict the file. The file has more chunks than the
+  /// channel can hold, so the producer cannot have reached EOF when the drop lands; the stored
+  /// hash is intentionally wrong, so the file surviving proves the aborted read exits without
+  /// acting on the (incomplete) integrity check - a run to EOF would have evicted it.
+  #[tokio::test]
+  async fn file_read_dropped_receiver_does_not_evict() {
+    let path = temp_cache_path("drop-read");
+    let content = vec![6u8; FILE_CACHE_READ_CHUNK * (CACHE_STREAM_CHANNEL_CAPACITY + 4)];
+    fs::write(&path, &content).await.unwrap();
+    let wrong_hash = Bytes::from_static(&[0u8; 32]);
+    let file_store = FileStoreInner {
+      cnt: 1,
+      runtime_handle: tokio::runtime::Handle::current(),
+    };
+    let mut body = file_store.read(path.clone(), &wrong_hash).await.unwrap();
+    assert!(body.frame().await.is_some(), "the first frame must arrive");
+    drop(body);
+
+    // Let the producer observe the disconnect and exit.
+    for _ in 0..50 {
+      tokio::task::yield_now().await;
+    }
+    assert!(
+      fs::metadata(&path).await.is_ok(),
+      "an aborted read must leave the file in place (no integrity verdict without EOF)"
+    );
+    let _ = fs::remove_file(&path).await;
   }
 }

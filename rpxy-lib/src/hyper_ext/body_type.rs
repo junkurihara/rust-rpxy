@@ -1,6 +1,6 @@
 use super::body::IncomingLike;
 use crate::error::RpxyError;
-use futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::mpsc::Receiver;
 use http_body_util::{BodyExt, Empty, Full, StreamBody, combinators};
 use hyper::body::{Body, Bytes, Frame, Incoming};
 use std::pin::Pin;
@@ -44,7 +44,10 @@ impl Body for RequestBody {
 }
 
 /* ------------------------------------ */
-pub type UnboundedStreamBody = StreamBody<UnboundedReceiver<Result<Frame<bytes::Bytes>, hyper::Error>>>;
+/// Body streamed over a bounded mpsc channel. The producer side awaits when the channel is full,
+/// so a slow consumer applies backpressure to the producer instead of letting frames queue in
+/// memory without bound.
+pub type BoundedStreamBody = StreamBody<Receiver<Result<Frame<bytes::Bytes>, hyper::Error>>>;
 
 #[allow(unused)]
 /// Response body use in this project
@@ -54,7 +57,7 @@ pub type UnboundedStreamBody = StreamBody<UnboundedReceiver<Result<Frame<bytes::
 pub enum ResponseBody {
   Incoming(Incoming),
   Boxed(BoxBody),
-  Streamed(UnboundedStreamBody),
+  Streamed(BoundedStreamBody),
 }
 
 impl Body for ResponseBody {

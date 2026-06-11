@@ -12,5 +12,5 @@ pub(crate) mod rt {
 #[allow(unused)]
 pub(crate) mod body {
   pub(crate) use super::body_incoming_like::IncomingLike;
-  pub(crate) use super::body_type::{BoxBody, RequestBody, ResponseBody, UnboundedStreamBody, empty, full};
+  pub(crate) use super::body_type::{BoundedStreamBody, BoxBody, RequestBody, ResponseBody, empty, full};
 }
