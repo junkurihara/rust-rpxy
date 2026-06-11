@@ -61,7 +61,7 @@ impl OneOrMany {
 /// - `listen_address_v4`: Optional IPv4 address(es) to bind (default: 0.0.0.0). Accepts a single string or an array.
 /// - `listen_address_v6`: Optional IPv6 address(es) to bind (default: ::). Accepts a single string or an array.
 /// - `listen_ipv6`: Enable IPv6 listening. If listen_address_v6 is not specified, binds to '::' when true, and disables IPv6 when false (default: false).
-/// - `https_redirection_port`: Optional port for HTTP to HTTPS redirection.
+/// - `public_https_port`: Optional client-visible HTTPS/H3 port used for redirects and Alt-Svc.
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
 /// - `max_clients`: Optional max client connections.
@@ -77,6 +77,9 @@ pub struct ConfigToml {
   pub listen_address_v4: Option<OneOrMany>,
   pub listen_address_v6: Option<OneOrMany>,
   pub listen_ipv6: Option<bool>,
+  pub public_https_port: Option<u16>,
+  /// Removed in 0.13. Keep this tombstone so old configs fail with a clear error
+  /// instead of being accepted as an ignored unknown field.
   pub https_redirection_port: Option<u16>,
   pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
@@ -121,12 +124,12 @@ impl ConfigTomlExt for ConfigToml {
     if proxy_config.http_port.is_none() {
       ensure!(all_apps_have_tls, "Some apps serve only plaintext HTTP");
     }
-    if proxy_config.https_redirection_port.is_some() {
-      // When https_redirection_port is specified, at least TLS is enabled globally.
+    if proxy_config.public_https_port.is_some() {
+      // When public_https_port is specified or derived, at least TLS is enabled globally.
       // This includes a case that plaintext HTTP listener is not enabled.
       ensure!(
         proxy_config.https_port.is_some(),
-        "https_redirection_port must be some only when https_port is specified"
+        "`public_https_port` can only be set when the TLS listener `listen_port_tls` is configured"
       );
     }
     if !(proxy_config.https_port.is_some() && proxy_config.http_port.is_some()) {
@@ -314,15 +317,16 @@ impl TryInto<ProxyConfig> for &ConfigToml {
   type Error = anyhow::Error;
 
   fn try_into(self) -> std::result::Result<ProxyConfig, Self::Error> {
+    ensure!(
+      self.https_redirection_port.is_none(),
+      "`https_redirection_port` was renamed to `public_https_port` in 0.13; update your config"
+    );
+
     let mut proxy_config = ProxyConfig {
       // listen port and socket
       http_port: self.listen_port,
       https_port: self.listen_port_tls,
-      https_redirection_port: if self.https_redirection_port.is_some() {
-        self.https_redirection_port
-      } else {
-        self.listen_port_tls
-      },
+      public_https_port: self.public_https_port.or(self.listen_port_tls),
       ..Default::default()
     };
     ensure!(
@@ -335,10 +339,10 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         anyhow!("http_port and https_port must be different")
       );
     }
-    if self.https_redirection_port.is_some() {
+    if self.public_https_port.is_some() {
       ensure!(
-        proxy_config.https_port.is_some() && proxy_config.http_port.is_some(),
-        "https_redirection_port can be explicitly specified only when both http_port and https_port are specified"
+        proxy_config.https_port.is_some(),
+        "`public_https_port` can only be set when the TLS listener `listen_port_tls` is configured"
       );
     }
 
@@ -1036,6 +1040,53 @@ mod tests {
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
     let proxy_config: ProxyConfig = (&config).try_into().unwrap();
     assert_eq!(proxy_config.max_clients_per_ip, 16);
+  }
+
+  #[test]
+  fn public_https_port_defaults_to_listen_port_tls() {
+    let toml_str = r#"
+      listen_port_tls = 2443
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.public_https_port, Some(2443));
+  }
+
+  #[test]
+  fn public_https_port_accepts_https_only_without_listen_port() {
+    let toml_str = r#"
+      listen_port_tls = 2443
+      public_https_port = 443
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.http_port, None);
+    assert_eq!(proxy_config.https_port, Some(2443));
+    assert_eq!(proxy_config.public_https_port, Some(443));
+  }
+
+  #[test]
+  fn public_https_port_requires_https_port() {
+    let toml_str = r#"
+      listen_port = 8080
+      public_https_port = 443
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let result: Result<ProxyConfig, _> = (&config).try_into();
+    assert!(result.is_err());
+    assert!(result.err().unwrap().to_string().contains("public_https_port"));
+  }
+
+  #[test]
+  fn old_https_redirection_port_is_rejected() {
+    let toml_str = r#"
+      listen_port_tls = 2443
+      https_redirection_port = 443
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let result: Result<ProxyConfig, _> = (&config).try_into();
+    assert!(result.is_err());
+    assert!(result.err().unwrap().to_string().contains("public_https_port"));
   }
 
   #[test]

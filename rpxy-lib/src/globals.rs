@@ -55,10 +55,11 @@ pub struct ProxyConfig {
   pub http_port: Option<u16>,
   /// https port listening for TLS by default
   pub https_port: Option<u16>,
-  /// https redirection port that notifies the client the port to connect to.
-  /// Tis is used when the reverse proxy is behind a middlebox mapping the https port A to the reverse proxy's https port B.
-  /// Typically, it is the container environment. (e.g. the host exposes 443 and the container exposes 8443 for https, then the redirection port is 443)
-  pub https_redirection_port: Option<u16>,
+  /// Client-visible HTTPS/H3 port advertised to downstream clients.
+  /// This is used when the reverse proxy is behind a middlebox mapping the client-visible HTTPS port A
+  /// to the reverse proxy's local HTTPS port B. Typically, it is the container environment.
+  /// (e.g. the host exposes 443 and the container exposes 8443 for HTTPS, then this port is 443)
+  pub public_https_port: Option<u16>,
   /// tcp listen backlog
   pub tcp_listen_backlog: u32,
 
@@ -126,7 +127,7 @@ impl Default for ProxyConfig {
       listen_sockets: Vec::new(),
       http_port: None,
       https_port: None,
-      https_redirection_port: None,
+      public_https_port: None,
       tcp_listen_backlog: TCP_LISTEN_BACKLOG,
 
       // TODO: Reconsider each timeout values

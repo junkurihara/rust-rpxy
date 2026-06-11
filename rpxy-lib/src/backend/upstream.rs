@@ -1,9 +1,11 @@
-#[cfg(feature = "sticky-cookie")]
-use super::load_balance::LoadBalanceStickyBuilder;
 use super::load_balance::{
   LoadBalance, LoadBalanceContext, LoadBalanceRandomBuilder, LoadBalanceRoundRobinBuilder, load_balance_options as lb_opts,
 };
+#[cfg(feature = "sticky-cookie")]
+use super::load_balance::{LoadBalanceStickyBuilder, StickyCookieConfig};
 use super::upstream_opts::UpstreamOption;
+#[cfg(feature = "sticky-cookie")]
+use crate::constants::STICKY_COOKIE_NAME;
 #[cfg(feature = "health-check")]
 use crate::globals::HealthCheckConfig;
 use crate::{
@@ -35,7 +37,10 @@ impl TryFrom<&AppConfig> for PathManager {
   fn try_from(app_config: &AppConfig) -> Result<Self, Self::Error> {
     let mut inner: HashMap<PathName, UpstreamCandidates> = HashMap::default();
 
-    app_config.reverse_proxy.iter().for_each(|rpc| {
+    // A plain `for` loop (not `for_each`) so configuration errors - e.g. an invalid sticky-cookie
+    // component caught while building the load balancer - propagate to the config loader instead
+    // of panicking.
+    for rpc in app_config.reverse_proxy.iter() {
       #[cfg(not(feature = "health-check"))]
       let upstream_vec: Vec<Upstream> = rpc.upstream.iter().map(Upstream::from).collect();
       #[cfg(feature = "health-check")]
@@ -56,16 +61,19 @@ impl TryFrom<&AppConfig> for PathManager {
       builder
         .upstream(&upstream_vec)
         .path(&rpc.path)
-        .replace_path(&rpc.replace_path)
-        .load_balance(&rpc.load_balance, &upstream_vec, &app_config.server_name, &rpc.path)
-        .options(&rpc.upstream_options);
+        .replace_path(&rpc.replace_path);
+      builder.load_balance(&rpc.load_balance, &upstream_vec, &app_config.server_name, &rpc.path)?;
+      builder.options(&rpc.upstream_options);
 
       #[cfg(feature = "health-check")]
       builder.health_check_config(&rpc.health_check);
 
-      let elem = builder.build().unwrap();
+      let elem = builder.build().map_err(|e| {
+        error!("Failed to build upstream candidates: {e}");
+        RpxyError::InvalidReverseProxyConfig
+      })?;
       inner.insert(elem.path.clone(), elem);
-    });
+    }
 
     if app_config.reverse_proxy.iter().filter(|rpc| rpc.path.is_none()).count() >= 2 {
       error!("Multiple default reverse proxy setting");
@@ -93,21 +101,26 @@ impl PathManager {
   /// trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
   /// コスト的にこの程度で十分では。
   pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamCandidates> {
-    let path_name = &path_str.to_path_name();
+    // Match directly on the request path bytes. `to_path_name()`/`PathName::from(&str)` does not
+    // lowercase (paths are case-sensitive), so `path_str.as_bytes()` is exactly the bytes that
+    // matching used before, just without allocating a `PathName` per request.
+    let path_str = path_str.into();
+    let path_bytes = path_str.as_bytes();
 
     let matched_upstream = self
       .inner
       .iter()
-      .filter(|(route_bytes, _)| {
-        path_name.starts_with(route_bytes) && {
+      .filter(|(route, _)| {
+        let route_bytes: &[u8] = route.as_ref();
+        path_bytes.starts_with(route_bytes) && {
           route_bytes.len() == 1 // route = '/', i.e., default
-            || path_name.get(route_bytes.len()).map_or(
+            || path_bytes.get(route_bytes.len()).map_or(
               true, // exact case
               |p| p == &b'/'
             ) // sub-path case
         }
       })
-      .max_by_key(|(route_bytes, _)| route_bytes.len());
+      .max_by_key(|(route, _)| route.len());
     matched_upstream.map(|(path, u)| {
       trace!(
         "Found upstream: {:?}",
@@ -218,7 +231,9 @@ impl UpstreamCandidatesBuilder {
     self.replace_path = Some(v.to_owned().as_ref().map_or_else(|| None, |v| Some(v.to_path_name())));
     self
   }
-  /// Set the load balancing option
+  /// Set the load balancing option. Fallible: building the sticky-cookie config validates its
+  /// AAD components (and precomputes the AAD), so an invalid configuration is rejected here -
+  /// at backend build time - instead of panicking or failing per request.
   pub fn load_balance(
     &mut self,
     v: &Option<String>,
@@ -229,20 +244,24 @@ impl UpstreamCandidatesBuilder {
     #[cfg(not(feature = "sticky-cookie"))] _server_name: &str,
     #[cfg(feature = "sticky-cookie")] path_opt: &Option<String>,
     #[cfg(not(feature = "sticky-cookie"))] _path_opt: &Option<String>,
-  ) -> &mut Self {
+  ) -> Result<&mut Self, RpxyError> {
     let lb = if let Some(x) = v {
       match x.as_str() {
         lb_opts::FIX_TO_FIRST => LoadBalance::FixToFirst,
         lb_opts::RANDOM => LoadBalance::Random(LoadBalanceRandomBuilder::default().build().unwrap()),
         lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(LoadBalanceRoundRobinBuilder::default().build().unwrap()),
         #[cfg(feature = "sticky-cookie")]
-        lb_opts::STICKY_ROUND_ROBIN => LoadBalance::StickyRoundRobin(
-          LoadBalanceStickyBuilder::default()
-            .sticky_config(server_name, path_opt)
-            .upstream_maps(upstream_vec) // TODO:
-            .build()
-            .unwrap(),
-        ),
+        lb_opts::STICKY_ROUND_ROBIN => {
+          // TODO: make the cookie name and duration configurable
+          let sticky_config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, server_name, path_opt, 300)?;
+          LoadBalance::StickyRoundRobin(
+            LoadBalanceStickyBuilder::default()
+              .sticky_config(sticky_config)
+              .upstream_maps(upstream_vec) // TODO:
+              .build()
+              .unwrap(),
+          )
+        }
         #[cfg(feature = "health-check")]
         lb_opts::PRIMARY_BACKUP => LoadBalance::PrimaryBackup(super::load_balance::LoadBalancePrimaryBackup),
         _ => {
@@ -254,7 +273,7 @@ impl UpstreamCandidatesBuilder {
       LoadBalance::default()
     };
     self.load_balance = Some(lb);
-    self
+    Ok(self)
   }
 
   #[cfg(feature = "health-check")]
@@ -295,6 +314,43 @@ impl UpstreamCandidates {
 mod test {
   #[allow(unused)]
   use super::*;
+
+  #[test]
+  fn path_manager_get_matches_longest_prefix_and_path_boundary() {
+    use crate::globals::{AppConfig, ReverseProxyConfig, UpstreamUri};
+
+    fn rp(path: Option<&str>) -> ReverseProxyConfig {
+      ReverseProxyConfig {
+        path: path.map(str::to_string),
+        replace_path: None,
+        upstream: vec![UpstreamUri {
+          inner: "http://127.0.0.1:8080".parse().unwrap(),
+        }],
+        upstream_options: None,
+        load_balance: None,
+        #[cfg(feature = "health-check")]
+        health_check: None,
+      }
+    }
+
+    let cfg = AppConfig {
+      app_name: "test".to_string(),
+      server_name: "example.com".to_string(),
+      reverse_proxy: vec![rp(None), rp(Some("/foo"))], // None => default "/"
+      tls: None,
+    };
+    let pm = PathManager::try_from(&cfg).unwrap();
+
+    // exact match on /foo
+    assert_eq!(pm.get("/foo").unwrap().path, "/foo".to_path_name());
+    // sub-path under /foo matches /foo (the boundary after the prefix is '/')
+    assert_eq!(pm.get("/foo/bar").unwrap().path, "/foo".to_path_name());
+    // /foobar must NOT be matched by /foo (boundary is not '/'); falls back to default "/"
+    assert_eq!(pm.get("/foobar").unwrap().path, "/".to_path_name());
+    // default route
+    assert_eq!(pm.get("/").unwrap().path, "/".to_path_name());
+    assert_eq!(pm.get("/other").unwrap().path, "/".to_path_name());
+  }
 
   #[cfg(feature = "sticky-cookie")]
   #[test]

@@ -97,10 +97,11 @@ where
     tls_enabled: bool,
     tls_server_name: Option<ServerName>,
   ) -> HttpResult<Response<ResponseBody>> {
-    // Here we start to inspect and parse with server_name
+    // Here we start to inspect and parse with server_name. The parsed host is moved into the
+    // owning `From<Vec<u8>>` conversion (in-place lowercase) rather than re-copied via a slice.
     let server_name = req
       .inspect_parse_host()
-      .map(|v| ServerName::from(v.as_slice()))
+      .map(ServerName::from)
       .map_err(|_e| HttpError::InvalidHostInRequestHeader)?;
 
     // check consistency of between TLS SNI and HOST/Request URI Line.
@@ -135,11 +136,7 @@ where
         "Redirect to secure connection: {}",
         <&ServerName as TryInto<String>>::try_into(&backend_app.server_name).unwrap_or_default()
       );
-      return secure_redirection_response(
-        &backend_app.server_name,
-        self.globals.proxy_config.https_redirection_port,
-        &req,
-      );
+      return secure_redirection_response(&backend_app.server_name, self.globals.proxy_config.public_https_port, &req);
     }
 
     // Find reverse proxy for given path and choose one of upstream host
@@ -223,7 +220,7 @@ where
     if res_backend.status() != StatusCode::SWITCHING_PROTOCOLS {
       // Generate response to client
       self
-        .generate_response_forwarded(&mut res_backend, backend_app)
+        .generate_response_forwarded(&mut res_backend, backend_app, tls_enabled)
         .map_err(|e| HttpError::FailedToGenerateDownstreamResponse(e.to_string()))?;
       return Ok(res_backend);
     }

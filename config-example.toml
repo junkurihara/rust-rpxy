@@ -32,10 +32,10 @@ listen_port_tls = 8443
 # [default: false]
 listen_ipv6 = false
 
-# Optional. If you listen on a custom port like 8443 but redirect with firewall to 443
-# When you specify this, the server uses this port in an "Alt-SVC" header for e.g. indicating support for HTTP/3 and also sends a redirection response 301 with specified port to the client for plaintext http request
-# Otherwise, the server sends Alt-SVC and 301 with the same port as `listen_port_tls`.
-# https_redirection_port = 443
+# Optional. Client-visible HTTPS/H3 port when it differs from `listen_port_tls`
+# (for example, when running behind a load balancer, firewall, or container port mapping).
+# Used for HTTP->HTTPS redirects and HTTP/3 Alt-Svc. Usually unnecessary if clients use `listen_port_tls`.
+# public_https_port = 443
 
 # Optional for h2 and http1.1
 tcp_listen_backlog = 1024
@@ -210,7 +210,7 @@ max_idle_timeout = 10              # secs. 0 represents an infinite timeout.
 cache_dir = './cache'                # optional. default is "./cache" relative to the current working directory
 max_cache_entry = 1000               # optional. default is 1k
 max_cache_each_size = 65535          # optional. default is 64k
-max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is always file cache.
+max_cache_each_size_on_memory = 65535 # optional. default is 64k, same as max_cache_each_size (cacheable objects are served from memory by default; the file tier engages when max_cache_each_size is raised beyond this). if 0, it is always file cache. Worst-case memory use is max_cache_entry x this value.
 
 # ACME settings. Unless specified, ACME is disabled.
 [experimental.acme]

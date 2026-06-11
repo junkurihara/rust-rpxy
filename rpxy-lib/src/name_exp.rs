@@ -19,6 +19,15 @@ impl From<&[u8]> for ServerName {
     }
   }
 }
+impl From<Vec<u8>> for ServerName {
+  /// Owning conversion: lowercases in place instead of allocating a lowercased copy of bytes the
+  /// caller already owns (the per-request host parsing path). Result bytes are identical to the
+  /// borrowing `From<&[u8]>` conversion for every input.
+  fn from(mut b: Vec<u8>) -> Self {
+    b.make_ascii_lowercase();
+    Self { inner: b }
+  }
+}
 impl TryInto<String> for &ServerName {
   type Error = anyhow::Error;
   fn try_into(self) -> Result<String, Self::Error> {
@@ -123,6 +132,22 @@ mod tests {
     assert_eq!(s, m);
     assert_eq!(s.as_ref(), "ok_string".as_bytes());
     assert_eq!(m.as_ref(), "ok_string".as_bytes());
+  }
+
+  /// The owning conversion must produce bytes identical to the borrowing one for every input
+  /// shape the host-parsing path can hand over: mixed-case hostname, already-lowercase hostname,
+  /// and v6-address-shaped bytes (which the parser does not pre-lowercase).
+  #[test]
+  fn from_owned_vec_matches_borrowed_slice() {
+    for input in ["MiXeD.ExAmPle.COM", "already.lower.example.com", "2001:DB8::1", "127.0.0.1"] {
+      let owned = ServerName::from(input.as_bytes().to_vec());
+      let borrowed = ServerName::from(input.as_bytes());
+      assert_eq!(owned, borrowed, "owned and borrowed conversions must agree for {input}");
+    }
+    assert_eq!(
+      ServerName::from("MiXeD.ExAmPle.COM".as_bytes().to_vec()).as_ref(),
+      "mixed.example.com".as_bytes()
+    );
   }
 
   #[test]

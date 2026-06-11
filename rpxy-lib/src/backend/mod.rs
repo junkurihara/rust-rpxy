@@ -8,8 +8,7 @@ pub(crate) mod health_check;
 
 #[cfg(feature = "sticky-cookie")]
 pub(crate) use self::load_balance::{
-  StickyCookie, StickyCookieConfig, StickyCookieValue, build_sticky_cookie_aad, build_sticky_cookie_cipher, open_server_id,
-  seal_server_id,
+  StickyCookie, StickyCookieConfig, StickyCookieValue, build_sticky_cookie_cipher, open_server_id, seal_server_id,
 };
 #[cfg(feature = "sticky-cookie")]
 pub use self::load_balance::{StickyCookieSecret, validate_sticky_cookie_aad_component};
