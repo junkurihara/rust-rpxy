@@ -210,7 +210,7 @@ max_idle_timeout = 10              # secs. 0 represents an infinite timeout.
 cache_dir = './cache'                # optional. default is "./cache" relative to the current working directory
 max_cache_entry = 1000               # optional. default is 1k
 max_cache_each_size = 65535          # optional. default is 64k
-max_cache_each_size_on_memory = 4096 # optional. default is 4k if 0, it is always file cache.
+max_cache_each_size_on_memory = 65535 # optional. default is 64k, same as max_cache_each_size (cacheable objects are served from memory by default; the file tier engages when max_cache_each_size is raised beyond this). if 0, it is always file cache. Worst-case memory use is max_cache_entry x this value.
 
 # ACME settings. Unless specified, ACME is disabled.
 [experimental.acme]
