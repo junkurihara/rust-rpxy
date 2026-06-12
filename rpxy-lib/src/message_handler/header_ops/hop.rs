@@ -14,7 +14,7 @@ pub(in crate::message_handler) fn remove_connection_header(headers: &mut HeaderM
   }
 }
 
-/// Hop header values which are removed at proxy.
+/// Hop-by-hop header names which are removed at proxy.
 /// Pre-built as `HeaderName`s so that `HeaderMap::remove` does not have to
 /// parse and hash a string key on every request.
 static HOP_HEADERS: [HeaderName; 9] = [
