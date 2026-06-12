@@ -10,14 +10,18 @@ use crate::log::*;
 
 use super::{
   super::canonical_address::ToCanonical,
-  common::{add_header_entry_overwrite_if_exist, host_from_uri_or_host_header, make_cookie_single_line},
+  common::{add_header_entry_overwrite_if_exist, make_cookie_single_line},
   header_defs::*,
 };
 
-fn overwrite_x_forwarded_host_from_original(headers: &mut HeaderMap, original_uri: &Uri) -> Result<()> {
-  match host_from_uri_or_host_header(original_uri, headers.get(header::HOST)) {
-    Ok(original_host) => add_header_entry_overwrite_if_exist(headers, X_FORWARDED_HOST, original_host)?,
-    Err(_) => {
+fn overwrite_x_forwarded_host_from_original(headers: &mut HeaderMap, authoritative_host: Option<&str>) -> Result<()> {
+  match authoritative_host {
+    // insert() replaces all existing values, identical to add_header_entry_overwrite_if_exist,
+    // and builds the HeaderValue straight from the borrowed str (no intermediate String).
+    Some(host) => {
+      headers.insert(X_FORWARDED_HOST, HeaderValue::from_str(host)?);
+    }
+    None => {
       headers.remove(X_FORWARDED_HOST);
     }
   }
@@ -85,11 +89,12 @@ pub(in crate::message_handler) fn add_forwarding_header(
   listen_addr: &SocketAddr,
   tls: bool,
   original_uri: &Uri,
+  authoritative_host: Option<&str>,
   trusted_forwarded_proxies: &[IpNet],
 ) -> Result<()> {
   let peer_ip = canonicalize_ip(client_addr.to_canonical().ip());
   let has_forwarded = headers.contains_key(header::FORWARDED);
-  let normalized_chain = normalize_forwarding_chain(headers, &peer_ip, tls, original_uri, trusted_forwarded_proxies);
+  let normalized_chain = normalize_forwarding_chain(headers, &peer_ip, tls, authoritative_host, trusted_forwarded_proxies);
 
   let (normalized_chain, normalized_for_ip_chain) = match forwarded_chain_to_xff(&normalized_chain) {
     Some(ip_chain) => (normalized_chain, ip_chain),
@@ -97,7 +102,7 @@ pub(in crate::message_handler) fn add_forwarding_header(
       warn!("Normalized forwarding chain contains non-IP hops; falling back to peer-only forwarding view");
       // Only this rare fallback needs a freshly built peer entry, so build it here instead
       // of eagerly on every request.
-      let peer_entry = build_peer_forwarded_entry(headers, peer_ip, tls, original_uri);
+      let peer_entry = build_peer_forwarded_entry(peer_ip, tls, authoritative_host);
       (vec![peer_entry], vec![peer_ip.to_string()])
     }
   };
@@ -147,7 +152,7 @@ pub(in crate::message_handler) fn add_forwarding_header(
   // x-original-uri
   add_header_entry_overwrite_if_exist(headers, X_ORIGINAL_URI, original_uri.to_string())?;
   // x-forwarded-host
-  overwrite_x_forwarded_host_from_original(headers, original_uri)?;
+  overwrite_x_forwarded_host_from_original(headers, authoritative_host)?;
   // proxy
   headers.insert(PROXY, HeaderValue::from_static(""));
 
@@ -163,10 +168,10 @@ fn normalize_forwarding_chain(
   headers: &HeaderMap,
   peer_ip: &IpAddr,
   tls: bool,
-  original_uri: &Uri,
+  authoritative_host: Option<&str>,
   trusted_forwarded_proxies: &[IpNet],
 ) -> Vec<ForwardedEntry> {
-  let peer_entry = build_peer_forwarded_entry(headers, *peer_ip, tls, original_uri);
+  let peer_entry = build_peer_forwarded_entry(*peer_ip, tls, authoritative_host);
   if !is_trusted_proxy(peer_ip, trusted_forwarded_proxies) {
     return vec![peer_entry];
   }
@@ -196,7 +201,7 @@ fn normalize_forwarding_chain(
 /// If both are present, prefer Forwarded only when it is consistent with the auxiliary X-Forwarded-* view.
 pub(super) fn extract_forwarding_chain_from_headers(
   headers: &HeaderMap,
-  authoritative_host: Option<String>,
+  authoritative_host: Option<&str>,
 ) -> Result<Option<Vec<ForwardedEntry>>> {
   let xff_chain = if headers.contains_key(X_FORWARDED_FOR) {
     Some(parse_x_forwarded_for_header(headers, authoritative_host)?)
@@ -257,7 +262,7 @@ pub(super) fn reduce_trusted_proxy_chain(
 /* --------------------------------------------------------------------------------------------------------- */
 
 /// Extract IP addresses from X-Forwarded-For header
-fn parse_x_forwarded_for_header(headers: &HeaderMap, authoritative_host: Option<String>) -> Result<Vec<ForwardedEntry>> {
+fn parse_x_forwarded_for_header(headers: &HeaderMap, authoritative_host: Option<&str>) -> Result<Vec<ForwardedEntry>> {
   let xff = join_header_values(headers, X_FORWARDED_FOR)?.ok_or_else(|| anyhow!("x-forwarded-for header missing"))?;
   let xf_proto = first_header_value(headers, X_FORWARDED_PROTO)?.map(|s| s.trim().to_string());
   let ips: Vec<&str> = xff.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
@@ -272,7 +277,7 @@ fn parse_x_forwarded_for_header(headers: &HeaderMap, authoritative_host: Option<
         raw: ForwardedNodeRaw::Ip,
       },
       proto: if idx == last_idx { xf_proto.clone() } else { None },
-      host: if idx == last_idx { authoritative_host.clone() } else { None },
+      host: if idx == last_idx { authoritative_host.map(str::to_owned) } else { None },
       by: None,
     });
   }
@@ -557,7 +562,7 @@ fn canonicalize_ip(ip: IpAddr) -> IpAddr {
 }
 
 /// Build a ForwardedEntry for the immediate peer, which represents this proxy's authoritative view of the client connection. This is used as the basis for forwarding chain normalization and generation.
-fn build_peer_forwarded_entry(headers: &HeaderMap, peer_ip: IpAddr, tls: bool, original_uri: &Uri) -> ForwardedEntry {
+fn build_peer_forwarded_entry(peer_ip: IpAddr, tls: bool, authoritative_host: Option<&str>) -> ForwardedEntry {
   ForwardedEntry {
     for_node: ForwardedNode {
       ip: Some(peer_ip),
@@ -565,7 +570,7 @@ fn build_peer_forwarded_entry(headers: &HeaderMap, peer_ip: IpAddr, tls: bool, o
       raw: ForwardedNodeRaw::Ip,
     },
     proto: if tls { Some("https".into()) } else { Some("http".into()) },
-    host: host_from_uri_or_host_header(original_uri, headers.get(header::HOST)).ok(),
+    host: authoritative_host.map(str::to_owned),
     by: None,
   }
 }
@@ -786,10 +791,36 @@ fn forwarded_first_proto(headers: &HeaderMap) -> Result<Option<String>, ()> {
 
 #[cfg(test)]
 mod tests {
-  use super::*;
+  use super::{super::common::host_from_uri_or_host_header, *};
+  use std::borrow::Cow;
 
   fn trusted(cidrs: &[&str]) -> Vec<IpNet> {
     cidrs.iter().map(|c| c.parse::<IpNet>().unwrap()).collect()
+  }
+
+  /// Test shim mirroring the production call path: the authoritative host is computed once
+  /// from the original URI + Host header (exactly as `generate_request_forwarded` does,
+  /// before any header mutation) and handed to `add_forwarding_header`.
+  fn add_forwarding_header_from_original(
+    headers: &mut HeaderMap,
+    client_addr: &SocketAddr,
+    listen_addr: &SocketAddr,
+    tls: bool,
+    original_uri: &Uri,
+    trusted_forwarded_proxies: &[IpNet],
+  ) -> Result<()> {
+    let authoritative_host = host_from_uri_or_host_header(original_uri, headers.get(header::HOST))
+      .ok()
+      .map(Cow::into_owned);
+    add_forwarding_header(
+      headers,
+      client_addr,
+      listen_addr,
+      tls,
+      original_uri,
+      authoritative_host.as_deref(),
+      trusted_forwarded_proxies,
+    )
   }
 
   #[test]
@@ -805,7 +836,7 @@ mod tests {
       HeaderValue::from_static("for=1.2.3.4;proto=https;host=app.example"),
     );
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"203.0.113.10:4321".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -826,12 +857,43 @@ mod tests {
     );
   }
 
+  /// Pin X-Forwarded-Host for every authoritative-host source: URI with port, URI without
+  /// port, Host-header fallback, and removal when no host exists anywhere.
+  #[test]
+  fn x_forwarded_host_reflects_authoritative_host() {
+    let client = "203.0.113.10:4321".parse().unwrap();
+    let listen = "192.0.2.1:8080".parse().unwrap();
+
+    // URI host with explicit port wins, port preserved
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("ignored.example"));
+    add_forwarding_header_from_original(&mut headers, &client, &listen, false, &Uri::from_static("https://app.example:8443/p"), &[]).unwrap();
+    assert_eq!(headers.get(X_FORWARDED_HOST).unwrap(), "app.example:8443");
+
+    // URI host without port
+    let mut headers = HeaderMap::new();
+    add_forwarding_header_from_original(&mut headers, &client, &listen, false, &Uri::from_static("https://app.example/p"), &[]).unwrap();
+    assert_eq!(headers.get(X_FORWARDED_HOST).unwrap(), "app.example");
+
+    // relative URI falls back to the Host header, ports preserved
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("fallback.example:8080"));
+    add_forwarding_header_from_original(&mut headers, &client, &listen, false, &Uri::from_static("/p"), &[]).unwrap();
+    assert_eq!(headers.get(X_FORWARDED_HOST).unwrap(), "fallback.example:8080");
+
+    // no host anywhere: a pre-set (spoofed) X-Forwarded-Host is removed
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_HOST, HeaderValue::from_static("spoofed.example"));
+    add_forwarding_header_from_original(&mut headers, &client, &listen, false, &Uri::from_static("/p"), &[]).unwrap();
+    assert!(headers.get(X_FORWARDED_HOST).is_none());
+  }
+
   #[test]
   fn trusted_proxy_keeps_verified_trusted_suffix() {
     let mut headers = HeaderMap::new();
     headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10, 10.9.0.4"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8443".parse().unwrap(),
@@ -851,7 +913,7 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10, 203.0.113.20"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -871,7 +933,7 @@ mod tests {
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
     headers.insert(header::FORWARDED, HeaderValue::from_static("for=198.51.100.10, for=10.9.0.4"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -899,7 +961,7 @@ mod tests {
       HeaderValue::from_static("for=203.0.113.20;proto=https;host=app.example"),
     );
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -923,7 +985,7 @@ mod tests {
     headers.append(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10"));
     headers.append(X_FORWARDED_FOR, HeaderValue::from_static("10.9.0.4"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -944,7 +1006,7 @@ mod tests {
     headers.append(header::FORWARDED, HeaderValue::from_static("for=198.51.100.10"));
     headers.append(header::FORWARDED, HeaderValue::from_static("for=10.9.0.4"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -967,7 +1029,7 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"[2001:db8::1]:4321".parse().unwrap(),
       &"[::1]:8080".parse().unwrap(),
@@ -989,7 +1051,7 @@ mod tests {
     headers.insert(header::HOST, HeaderValue::from_static("host-header.example"));
     headers.insert(X_FORWARDED_HOST, HeaderValue::from_static("spoofed.example"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"203.0.113.10:4321".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1007,7 +1069,7 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(X_FORWARDED_HOST, HeaderValue::from_static("spoofed.example"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"203.0.113.10:4321".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1025,7 +1087,7 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"[2001:db8::1]:4321".parse().unwrap(),
       &"[::1]:8080".parse().unwrap(),
@@ -1055,7 +1117,7 @@ mod tests {
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
     // ::ffff:10.1.2.3 should be canonicalized to 10.1.2.3
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"[::ffff:10.1.2.3]:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1075,7 +1137,7 @@ mod tests {
     headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10"));
 
     // Peer is ::ffff:10.1.2.3, trusted CIDR is 10.0.0.0/8 (IPv4)
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"[::ffff:10.1.2.3]:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1098,7 +1160,7 @@ mod tests {
       HeaderValue::from_static("for=\"[2001:db8::1]\";proto=https;host=app.example"),
     );
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1118,7 +1180,7 @@ mod tests {
     headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10, , 203.0.113.20"));
     headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1141,7 +1203,7 @@ mod tests {
       HeaderValue::from_static("for=\"192.0.2.43:4711\", for=10.9.0.4"),
     );
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1164,7 +1226,7 @@ mod tests {
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
     headers.insert(header::FORWARDED, HeaderValue::from_static("for=unknown, for=10.9.0.4"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"10.1.2.3:1234".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1264,7 +1326,7 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"203.0.113.10:4321".parse().unwrap(),
       &"192.0.2.1:8080".parse().unwrap(),
@@ -1285,7 +1347,7 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
-    add_forwarding_header(
+    add_forwarding_header_from_original(
       &mut headers,
       &"203.0.113.10:4321".parse().unwrap(),
       &"192.0.2.1:8443".parse().unwrap(),

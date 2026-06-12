@@ -113,7 +113,10 @@ impl HttpMessageLog {
   /// redaction enabled, query values are masked here so no raw query bytes are retained.
   pub fn new<T>(req: &http::Request<T>, redact_query: bool) -> Self {
     let uri = if redact_query {
-      let host = header_ops::host_from_uri_or_host_header(req.uri(), req.headers().get(header::HOST)).unwrap_or_default();
+      // into_owned: redaction-on must never retain borrows of the request buffers.
+      let host = header_ops::host_from_uri_or_host_header(req.uri(), req.headers().get(header::HOST))
+        .map(Cow::into_owned)
+        .unwrap_or_default();
       let p_and_q_raw = req.uri().path_and_query().map_or("", |v| v.as_str());
       let p_and_q = redact_query_values(p_and_q_raw).into_owned();
       let scheme = req.uri().scheme_str().unwrap_or("");
@@ -149,6 +152,7 @@ impl HttpMessageLog {
   fn render_request_uri(&self) -> (Cow<'_, str>, Cow<'_, str>, Cow<'_, str>) {
     match &self.uri {
       LoggedUri::Verbatim(uri) => {
+        // The host Cow borrows from the captured Uri/HeaderValue in the common no-port case.
         let host = header_ops::host_from_uri_or_host_header(uri, self.host_header.as_ref()).unwrap_or_default();
         let p_and_q = uri.path_and_query().map_or("", |v| v.as_str());
         let scheme = uri.scheme_str().unwrap_or("");
@@ -158,7 +162,7 @@ impl HttpMessageLog {
         } else {
           path.to_string()
         };
-        (Cow::Owned(host), Cow::Borrowed(p_and_q), Cow::Owned(target))
+        (host, Cow::Borrowed(p_and_q), Cow::Owned(target))
       }
       LoggedUri::Redacted { host, p_and_q, target } => (Cow::Borrowed(host), Cow::Borrowed(p_and_q), Cow::Borrowed(target)),
     }

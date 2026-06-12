@@ -90,6 +90,11 @@ where
 
     let original_uri = req.uri().clone();
     let original_host_header = req.headers().get(header::HOST).cloned();
+    // The authoritative host of the *original* request (URI host preferred, port included,
+    // Host-header fallback), computed once here and shared by every downstream consumer
+    // (peer Forwarded entry, X-Forwarded-Host, Forwarded generation). It must be derived
+    // from the captured originals: every Host rewrite happens after add_forwarding_header().
+    let authoritative_host = host_from_uri_or_host_header(&original_uri, original_host_header.as_ref()).ok();
     let headers = req.headers_mut();
     // delete headers specified in header.connection
     remove_connection_header(headers);
@@ -112,6 +117,7 @@ where
       listen_addr,
       tls_enabled,
       &original_uri,
+      authoritative_host.as_deref(),
       &self.globals.proxy_config.trusted_forwarded_proxies,
     )?;
 
@@ -166,8 +172,7 @@ where
     // apply upstream options to header, after X-Forwarded-For is added
     apply_upstream_options_to_header(
       headers,
-      &original_uri,
-      original_host_header.as_ref(),
+      authoritative_host.as_deref(),
       &upstream_chosen.uri,
       upstream_candidates,
       &self.globals.proxy_config.trusted_forwarded_proxies,
