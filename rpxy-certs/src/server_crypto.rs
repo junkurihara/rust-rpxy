@@ -28,8 +28,9 @@ fn shared_ticketer() -> Result<Arc<dyn ProducesTickets>, RpxyCertError> {
   if let Some(ticketer) = SHARED_TICKETER.get() {
     return Ok(ticketer.clone());
   }
-  // `OnceLock::get_or_try_init` is unstable, so build first and let `get_or_init` pick a single
-  // winner; a racing builder only creates a transient extra ticketer that is dropped unused.
+  // `OnceLock::get_or_try_init` is still unstable (`once_cell_try`, E0658 as of Rust 1.96), so
+  // build first and let `get_or_init` pick a single winner; a racing builder only creates a
+  // transient extra ticketer that is dropped unused.
   let ticketer = rustls::crypto::aws_lc_rs::Ticketer::new()?;
   Ok(SHARED_TICKETER.get_or_init(|| ticketer).clone())
 }
