@@ -2,6 +2,10 @@
 
 ## 0.13.1 or 0.14.0 (Unreleased)
 
+### Improvement
+
+- **Enable stateless TLS session resumption (session tickets) for non-mTLS apps and HTTP/3, and drop server-side TLS session caching for the app-serving TLS configurations.** rpxy previously relied on rustls's built-in fallback session cache (256 entries per server config, mutex-guarded, discarded on every certificate hot-reload), so returning clients effectively never resumed and every TLS handshake paid the full certificate/key-exchange cost. Non-mTLS server configurations — including the HTTP/3 (`http3-quinn`) one — now share a single process-wide RFC 5077 session-ticket issuer (AES-256/HMAC-SHA256, keys rotated every 6 hours, tickets valid up to 12 hours): resumption works regardless of traffic volume, keeps working across certificate hot-reloads, and the in-memory session cache (and its per-handshake lock) is gone — TLS 1.2 clients resume via tickets as well, while legacy TLS 1.2 clients without session-ticket support lose only the previously ineffective cache. mTLS apps now never resume a TLS session: they issue no tickets and no longer use the fallback session cache either. Previously a returning mTLS client could occasionally resume from that cache, silently skipping client-certificate re-verification — and thereby escaping the handshake-failure audit, which can only log verification attempts; now client-certificate verification runs on every mTLS connection, matching the industry practice of disabling resumption for mutual TLS. Restarting rpxy invalidates outstanding tickets; clients then silently perform one full handshake. The `http3-s2n` backend is unaffected: it builds its TLS configuration through s2n-quic's own rustls provider and reuses only the certificate resolver and ALPN list from rpxy's configuration. The ACME TLS-ALPN challenge listener is likewise a separate configuration and is unchanged.
+
 ## 0.13.0
 
 ### Important Changes
