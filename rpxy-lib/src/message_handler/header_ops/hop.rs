@@ -1,4 +1,4 @@
-use http::{HeaderMap, header};
+use http::{HeaderMap, header, header::HeaderName};
 
 use crate::log::*;
 
@@ -14,23 +14,25 @@ pub(in crate::message_handler) fn remove_connection_header(headers: &mut HeaderM
   }
 }
 
-/// Hop header values which are removed at proxy
-const HOP_HEADERS: &[&str] = &[
-  "connection",
-  "te",
-  "trailer",
-  "keep-alive",
-  "proxy-connection",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "transfer-encoding",
-  "upgrade",
+/// Hop-by-hop header names which are removed at proxy.
+/// Pre-built as `HeaderName`s so that `HeaderMap::remove` does not have to
+/// parse and hash a string key on every request.
+static HOP_HEADERS: [HeaderName; 9] = [
+  header::CONNECTION,
+  header::TE,
+  header::TRAILER,
+  HeaderName::from_static("keep-alive"),
+  HeaderName::from_static("proxy-connection"),
+  header::PROXY_AUTHENTICATE,
+  header::PROXY_AUTHORIZATION,
+  header::TRANSFER_ENCODING,
+  header::UPGRADE,
 ];
 
 /// Remove hop headers
 pub(in crate::message_handler) fn remove_hop_header(headers: &mut HeaderMap) {
   HOP_HEADERS.iter().for_each(|key| {
-    headers.remove(*key);
+    headers.remove(key);
   });
 }
 
@@ -50,4 +52,57 @@ pub(in crate::message_handler) fn extract_upgrade(headers: &HeaderMap) -> Option
     }
   }
   None
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use http::HeaderValue;
+
+  #[test]
+  fn removes_all_hop_headers_case_insensitively() {
+    let mut h = HeaderMap::new();
+    // mixed-case names: the http crate normalizes header names to lowercase at
+    // parse time, so removal via `HeaderName` keys must match these as well
+    h.insert("Connection", HeaderValue::from_static("keep-alive"));
+    h.insert("TE", HeaderValue::from_static("trailers"));
+    h.insert("Trailer", HeaderValue::from_static("expires"));
+    h.insert("KEEP-ALIVE", HeaderValue::from_static("timeout=5"));
+    h.insert("Proxy-Connection", HeaderValue::from_static("keep-alive"));
+    h.insert("Proxy-Authenticate", HeaderValue::from_static("Basic"));
+    h.insert("PROXY-AUTHORIZATION", HeaderValue::from_static("Basic dXNlcjpwdw=="));
+    h.insert("Transfer-Encoding", HeaderValue::from_static("chunked"));
+    h.insert("Upgrade", HeaderValue::from_static("websocket"));
+
+    remove_hop_header(&mut h);
+
+    assert!(h.is_empty(), "all hop headers should be removed: {h:?}");
+  }
+
+  #[test]
+  fn removes_from_static_built_names() {
+    // regression guard for the two names without standard constants in http::header
+    let mut h = HeaderMap::new();
+    h.insert("keep-alive", HeaderValue::from_static("timeout=5"));
+    h.insert("proxy-connection", HeaderValue::from_static("keep-alive"));
+
+    remove_hop_header(&mut h);
+
+    assert!(h.is_empty(), "from_static-built hop headers should be removed: {h:?}");
+  }
+
+  #[test]
+  fn keeps_unrelated_headers() {
+    let mut h = HeaderMap::new();
+    h.insert(header::HOST, HeaderValue::from_static("example.com"));
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"));
+    h.insert(header::CONNECTION, HeaderValue::from_static("close"));
+
+    remove_hop_header(&mut h);
+
+    assert_eq!(h.len(), 2, "unrelated headers should survive: {h:?}");
+    assert!(h.contains_key(header::HOST));
+    assert!(h.contains_key(header::CONTENT_TYPE));
+    assert!(!h.contains_key(header::CONNECTION));
+  }
 }
