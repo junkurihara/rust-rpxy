@@ -38,6 +38,9 @@ pub struct Globals {
   /// Operator opt-out (env `RPXY_UNSAFE_DEBUG_HEADERS`) that disables
   /// credential-header redaction in DEBUG request logs. Default false.
   pub(crate) unsafe_debug_headers: bool,
+  /// Whether the embedding binary's logger emits access-log lines; when false,
+  /// the per-request `HttpMessageLog` is not constructed at all.
+  pub(crate) access_log_enabled: bool,
   #[cfg(feature = "sticky-cookie")]
   pub(crate) sticky_cookie_cipher: Option<std::sync::Arc<Aes256Gcm>>,
 
