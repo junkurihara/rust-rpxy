@@ -24,16 +24,27 @@ pub(in crate::message_handler) fn add_header_entry_overwrite_if_exist(
 /// Sometimes violates [RFC6265](https://www.rfc-editor.org/rfc/rfc6265#section-5.4) (for http/1.1).
 /// This is allowed in RFC7540 (for http/2) as mentioned [here](https://stackoverflow.com/questions/4843556/in-http-specification-what-is-the-string-that-separates-cookies).
 pub(super) fn make_cookie_single_line(headers: &mut HeaderMap) -> Result<()> {
-  let cookies = headers
-    .iter()
-    .filter(|(k, _)| **k == header::COOKIE)
-    .map(|(_, v)| v.to_str().unwrap_or(""))
-    .collect::<Vec<_>>()
-    .join("; ");
-  if !cookies.is_empty() {
-    headers.remove(header::COOKIE);
-    headers.insert(header::COOKIE, HeaderValue::from_bytes(cookies.as_bytes())?);
+  // Zero or one Cookie line needs no merging (a single line is already single-line), which is the
+  // overwhelmingly common case; handle it without scanning the whole header map or allocating.
+  // Only when there are >= 2 lines do we build the joined buffer (sized exactly up front).
+  let mut count = 0usize;
+  let mut total = 0usize;
+  for v in headers.get_all(header::COOKIE) {
+    count += 1;
+    total += v.len();
   }
+  if count < 2 {
+    return Ok(());
+  }
+  let mut joined = String::with_capacity(total + 2 * (count - 1));
+  for (i, v) in headers.get_all(header::COOKIE).iter().enumerate() {
+    if i > 0 {
+      joined.push_str("; ");
+    }
+    joined.push_str(v.to_str().unwrap_or(""));
+  }
+  headers.remove(header::COOKIE);
+  headers.insert(header::COOKIE, HeaderValue::from_bytes(joined.as_bytes())?);
   Ok(())
 }
 
@@ -64,6 +75,35 @@ pub(in crate::message_handler) fn host_from_uri_or_host_header<'a>(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn cookie_zero_lines_is_noop() {
+    let mut headers = HeaderMap::new();
+    make_cookie_single_line(&mut headers).unwrap();
+    assert_eq!(headers.get_all(header::COOKIE).iter().count(), 0);
+  }
+
+  #[test]
+  fn cookie_single_line_left_untouched() {
+    let mut headers = HeaderMap::new();
+    headers.append(header::COOKIE, HeaderValue::from_static("a=1; b=2"));
+    make_cookie_single_line(&mut headers).unwrap();
+    let values: Vec<_> = headers.get_all(header::COOKIE).iter().collect();
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0], "a=1; b=2");
+  }
+
+  #[test]
+  fn cookie_multiple_lines_merged_in_order() {
+    let mut headers = HeaderMap::new();
+    headers.append(header::COOKIE, HeaderValue::from_static("a=1"));
+    headers.append(header::COOKIE, HeaderValue::from_static("b=2"));
+    headers.append(header::COOKIE, HeaderValue::from_static("c=3"));
+    make_cookie_single_line(&mut headers).unwrap();
+    let values: Vec<_> = headers.get_all(header::COOKIE).iter().collect();
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0], "a=1; b=2; c=3");
+  }
 
   #[test]
   fn host_from_uri_without_port_borrows() {
