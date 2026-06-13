@@ -1,7 +1,8 @@
 use anyhow::{Result, anyhow};
-use http::{HeaderMap, HeaderName, HeaderValue, Uri, header, header::AsHeaderName};
+use http::{HeaderMap, HeaderValue, Uri, header, header::AsHeaderName};
 use ipnet::IpNet;
 use std::{
+  fmt::Write as _,
   net::{IpAddr, SocketAddr},
   str::FromStr,
 };
@@ -96,28 +97,29 @@ pub(in crate::message_handler) fn add_forwarding_header(
   let has_forwarded = headers.contains_key(header::FORWARDED);
   let normalized_chain = normalize_forwarding_chain(headers, &peer_ip, tls, authoritative_host, trusted_forwarded_proxies);
 
-  let (normalized_chain, normalized_for_ip_chain) = match forwarded_chain_to_xff(&normalized_chain) {
-    Some(ip_chain) => (normalized_chain, ip_chain),
+  let (normalized_chain, xff_csv, xff_first_len) = match xff_csv_from_chain(&normalized_chain) {
+    Some((csv, first_len)) => (normalized_chain, csv, first_len),
     None => {
       warn!("Normalized forwarding chain contains non-IP hops; falling back to peer-only forwarding view");
       // Only this rare fallback needs a freshly built peer entry, so build it here instead
       // of eagerly on every request.
       let peer_entry = build_peer_forwarded_entry(peer_ip, tls, authoritative_host);
-      (vec![peer_entry], vec![peer_ip.to_string()])
+      let csv = peer_ip.to_string();
+      let first_len = csv.len();
+      (vec![peer_entry], csv, first_len)
     }
   };
 
-  // Update X-Forwarded-For with normalized chain
-  overwrite_header_with_csv(headers, X_FORWARDED_FOR, &normalized_for_ip_chain)?;
+  // For X-Real-IP: slice the first element out of the already-rendered CSV (one copy),
+  // before X-Forwarded-For takes ownership of the whole buffer without copying. The value
+  // equals formatting normalized_chain.first()'s IP directly, as before. Inserted further
+  // below to keep the header insertion order unchanged.
+  let x_real_ip_value = HeaderValue::from_str(&xff_csv[..xff_first_len])?;
 
-  // For X-Real-IP: reuse the IP string already formatted as the first element of the XFF
-  // chain (moved out by value, no clone or re-format). The chain is non-empty in both
-  // branches above, so the fallback to peer_ip only guards an impossible empty case and
-  // keeps the result byte-identical to formatting normalized_chain.first()'s IP directly.
-  let authoritative_client_ip = normalized_for_ip_chain
-    .into_iter()
-    .next()
-    .unwrap_or_else(|| peer_ip.to_string());
+  // Update X-Forwarded-For with normalized chain. insert() replaces all previous values,
+  // identical to the remove+insert it replaces; try_from(String) takes ownership of the
+  // CSV buffer without re-copying its bytes.
+  headers.insert(X_FORWARDED_FOR, HeaderValue::try_from(xff_csv)?);
 
   // Preserve/update Forwarded only if it was present on input. If callers want to force
   // Forwarded generation, apply_upstream_options_to_header() will regenerate it later.
@@ -145,8 +147,8 @@ pub(in crate::message_handler) fn add_forwarding_header(
   headers.insert(X_FORWARDED_PORT, HeaderValue::from(listen_addr.port()));
 
   /////////// As Nginx-Proxy
-  // x-real-ip: hand the owned String to HeaderValue without re-copying its bytes.
-  headers.insert(X_REAL_IP, HeaderValue::try_from(authoritative_client_ip)?);
+  // x-real-ip: pre-built above from the first element of the XFF CSV.
+  headers.insert(X_REAL_IP, x_real_ip_value);
   // x-forwarded-ssl
   headers.insert(X_FORWARDED_SSL, HeaderValue::from_static(if tls { "on" } else { "off" }));
   // x-original-uri
@@ -188,10 +190,13 @@ fn normalize_forwarding_chain(
   };
 
   // Append the immediate peer as the last hop in the chain, which is the authoritative view of this proxy.
-  forwarding_chain.push(peer_entry.clone());
+  forwarding_chain.push(peer_entry);
   let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
   if normalized_chain.is_empty() {
-    return vec![peer_entry];
+    // Defensive only: reduce_trusted_proxy_chain keeps at least the peer hop appended above.
+    // Rebuilding here (instead of cloning the peer entry eagerly on every request) keeps
+    // the guard at zero steady-state cost.
+    return vec![build_peer_forwarded_entry(*peer_ip, tls, authoritative_host)];
   }
   normalized_chain
 }
@@ -590,49 +595,64 @@ fn entry_is_trusted_proxy(entry: &ForwardedEntry, trusted_forwarded_proxies: &[I
     .unwrap_or(false)
 }
 
-/// Convert a forwarding chain of ForwardedEntry into a list of IP strings for X-Forwarded-For header. This returns None if any entry in the chain is not an IP address, which indicates that we cannot represent this chain in X-Forwarded-For and should fall back to a peer-only view.
-fn forwarded_chain_to_xff(chain: &[ForwardedEntry]) -> Option<Vec<String>> {
-  chain
-    .iter()
-    .map(|entry| entry.for_node.ip_addr().map(|ip| ip.to_string()))
-    .collect::<Option<Vec<_>>>()
-}
-
-/// Overwrite a header with a single value that is a comma-separated concatenation of the given values. This is used to update X-Forwarded-For with the normalized chain.
-fn overwrite_header_with_csv(headers: &mut HeaderMap, key: HeaderName, values: &[String]) -> Result<()> {
-  headers.remove(&key);
-  headers.insert(key, HeaderValue::from_str(&values.join(", "))?);
-  Ok(())
+/// Render the X-Forwarded-For value for a forwarding chain into a single comma-separated
+/// buffer (no per-hop String), returning it together with the byte length of the first
+/// element so the caller can slice out the X-Real-IP value without re-formatting.
+/// Returns None if any entry in the chain is not an IP address, which indicates that we
+/// cannot represent this chain in X-Forwarded-For and should fall back to a peer-only view.
+/// An empty chain (impossible: normalization always yields at least the peer hop) is
+/// reported as non-representable so the same fallback applies.
+fn xff_csv_from_chain(chain: &[ForwardedEntry]) -> Option<(String, usize)> {
+  if chain.is_empty() {
+    return None;
+  }
+  let mut out = String::with_capacity(chain.len() * 16);
+  let mut first_len = 0usize;
+  for (idx, entry) in chain.iter().enumerate() {
+    let ip = entry.for_node.ip_addr()?;
+    if idx > 0 {
+      out.push_str(", ");
+    }
+    write!(out, "{ip}").expect("fmt write to String cannot fail");
+    if idx == 0 {
+      first_len = out.len();
+    }
+  }
+  Some((out, first_len))
 }
 
 /// Generate an RFC 7239 `Forwarded` header from the normalized forwarding chain.
 /// This function assumes that the forwarding chain is present and well-formed.
 /// Each hop is emitted with a `for=` parameter, and may additionally include
 /// `proto=`, `host=`, and `by=` parameters when those fields are present.
+/// All hops are written into one shared buffer (no per-hop Vec<String> + join).
 pub(super) fn generate_forwarded_header(normalized_forwarding_chain: &[ForwardedEntry]) -> Result<String> {
   if normalized_forwarding_chain.is_empty() {
     return Err(anyhow!("No forwarding chain found for Forwarded generation"));
   }
 
   // for= is always present. proto=, host=, and by= might not be present.
-  let elements = normalized_forwarding_chain
-    .iter()
-    .map(|entry| {
-      let mut parts = vec![format!("for={}", format_forwarded_node(&entry.for_node)?)];
-      if let Some(proto) = &entry.proto {
-        parts.push(format!("proto={}", format_forwarded_param_value(proto)));
-      }
-      if let Some(host) = &entry.host {
-        parts.push(format!("host={}", format_forwarded_param_value(host)));
-      }
-      if let Some(by) = &entry.by {
-        parts.push(format!("by={}", format_forwarded_param_value(by)));
-      }
-      Ok(parts.join(";"))
-    })
-    .collect::<Result<Vec<_>>>()?;
-
-  Ok(elements.join(", "))
+  let mut out = String::with_capacity(normalized_forwarding_chain.len() * 24);
+  for (idx, entry) in normalized_forwarding_chain.iter().enumerate() {
+    if idx > 0 {
+      out.push_str(", ");
+    }
+    out.push_str("for=");
+    write_forwarded_node(&mut out, &entry.for_node)?;
+    if let Some(proto) = &entry.proto {
+      out.push_str(";proto=");
+      write_forwarded_param_value(&mut out, proto);
+    }
+    if let Some(host) = &entry.host {
+      out.push_str(";host=");
+      write_forwarded_param_value(&mut out, host);
+    }
+    if let Some(by) = &entry.by {
+      out.push_str(";by=");
+      write_forwarded_param_value(&mut out, by);
+    }
+  }
+  Ok(out)
 }
 
 /// Return true if `c` is an RFC 7230 tchar, i.e. may appear unquoted in a token.
@@ -643,14 +663,15 @@ fn is_tchar(c: char) -> bool {
   ) || c.is_ascii_alphanumeric()
 }
 
-/// Format a Forwarded parameter value (proto/host/by). If the value contains any
+/// Write a Forwarded parameter value (proto/host/by) into `out`. If the value contains any
 /// non-tchar byte (e.g. `:` for ports, `[`/`]` for IPv6 literals), wrap it in a
 /// quoted-string and escape `\` and `"` as RFC 7230 quoted-pair. Otherwise emit as-is.
-fn format_forwarded_param_value(value: &str) -> String {
+fn write_forwarded_param_value(out: &mut String, value: &str) {
   if !value.is_empty() && value.chars().all(is_tchar) {
-    return value.to_string();
+    out.push_str(value);
+    return;
   }
-  let mut out = String::with_capacity(value.len() + 2);
+  out.reserve(value.len() + 2);
   out.push('"');
   for ch in value.chars() {
     if ch == '\\' || ch == '"' {
@@ -659,22 +680,24 @@ fn format_forwarded_param_value(value: &str) -> String {
     out.push(ch);
   }
   out.push('"');
-  out
 }
 
-/// Format the for= value in Forwarded header according to RFC 7239, which may require quoting and bracketing for IPv6 addresses.
-fn format_forwarded_node(node: &ForwardedNode) -> Result<String> {
+/// Write the for= value in Forwarded header into `out` according to RFC 7239, which may
+/// require quoting and bracketing for IPv6 addresses.
+fn write_forwarded_node(out: &mut String, node: &ForwardedNode) -> Result<()> {
   match (&node.raw, node.ip, node.port.as_deref()) {
-    (ForwardedNodeRaw::Ip, Some(IpAddr::V4(v4)), None) => Ok(v4.to_string()),
-    (ForwardedNodeRaw::Ip, Some(IpAddr::V4(v4)), Some(port)) => Ok(format!("\"{}:{}\"", v4, port)),
-    (ForwardedNodeRaw::Ip, Some(IpAddr::V6(v6)), None) => Ok(format!("\"[{}]\"", v6)),
-    (ForwardedNodeRaw::Ip, Some(IpAddr::V6(v6)), Some(port)) => Ok(format!("\"[{}]:{}\"", v6, port)),
-    (ForwardedNodeRaw::Unknown, None, None) => Ok("unknown".to_string()),
-    (ForwardedNodeRaw::Unknown, None, Some(port)) => Ok(format!("\"unknown:{}\"", port)),
-    (ForwardedNodeRaw::Obfuscated(node), None, None) => Ok(node.clone()),
-    (ForwardedNodeRaw::Obfuscated(node), None, Some(port)) => Ok(format!("\"{}:{}\"", node, port)),
-    _ => Err(anyhow!("invalid forwarded node state")),
+    (ForwardedNodeRaw::Ip, Some(IpAddr::V4(v4)), None) => write!(out, "{}", v4),
+    (ForwardedNodeRaw::Ip, Some(IpAddr::V4(v4)), Some(port)) => write!(out, "\"{}:{}\"", v4, port),
+    (ForwardedNodeRaw::Ip, Some(IpAddr::V6(v6)), None) => write!(out, "\"[{}]\"", v6),
+    (ForwardedNodeRaw::Ip, Some(IpAddr::V6(v6)), Some(port)) => write!(out, "\"[{}]:{}\"", v6, port),
+    (ForwardedNodeRaw::Unknown, None, None) => out.write_str("unknown"),
+    (ForwardedNodeRaw::Unknown, None, Some(port)) => write!(out, "\"unknown:{}\"", port),
+    (ForwardedNodeRaw::Obfuscated(node), None, None) => out.write_str(node),
+    (ForwardedNodeRaw::Obfuscated(node), None, Some(port)) => write!(out, "\"{}:{}\"", node, port),
+    _ => return Err(anyhow!("invalid forwarded node state")),
   }
+  .expect("fmt write to String cannot fail");
+  Ok(())
 }
 
 /* -------------------------------------------------------------------------------------------------- */
@@ -1279,26 +1302,107 @@ mod tests {
     assert_eq!(node.port.as_deref(), Some("443"));
   }
 
+  /// Test shim: render a single Forwarded parameter value through the writer helper,
+  /// so each assertion below stays a single expression. Expected bytes are unchanged
+  /// from the pre-writer `format_forwarded_param_value` implementation.
+  fn fmt_param(value: &str) -> String {
+    let mut out = String::new();
+    write_forwarded_param_value(&mut out, value);
+    out
+  }
+
   #[test]
   fn format_forwarded_param_value_leaves_token_unquoted() {
-    assert_eq!(format_forwarded_param_value("https"), "https");
-    assert_eq!(format_forwarded_param_value("example.com"), "example.com");
+    assert_eq!(fmt_param("https"), "https");
+    assert_eq!(fmt_param("example.com"), "example.com");
   }
 
   #[test]
   fn format_forwarded_param_value_quotes_host_with_port() {
     // `:` is not a tchar, so `host=example.com:8443` must be emitted as quoted-string.
-    assert_eq!(format_forwarded_param_value("example.com:8443"), "\"example.com:8443\"");
+    assert_eq!(fmt_param("example.com:8443"), "\"example.com:8443\"");
   }
 
   #[test]
   fn format_forwarded_param_value_quotes_ipv6_literal() {
-    assert_eq!(format_forwarded_param_value("[2001:db8::1]"), "\"[2001:db8::1]\"");
+    assert_eq!(fmt_param("[2001:db8::1]"), "\"[2001:db8::1]\"");
   }
 
   #[test]
   fn format_forwarded_param_value_escapes_quote_and_backslash() {
-    assert_eq!(format_forwarded_param_value("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    assert_eq!(fmt_param("a\"b\\c"), "\"a\\\"b\\\\c\"");
+  }
+
+  /// Pin the writer rewrite of generate_forwarded_header against the rare for= node arms
+  /// (unknown / obfuscated, with and without port) and a quoted-pair host in one chain.
+  #[test]
+  fn generate_forwarded_header_rare_node_arms() {
+    let ip_node = |ip: &str, port: Option<&str>| ForwardedNode {
+      ip: Some(ip.parse().unwrap()),
+      port: port.map(str::to_owned),
+      raw: ForwardedNodeRaw::Ip,
+    };
+    let raw_node = |raw: ForwardedNodeRaw, port: Option<&str>| ForwardedNode {
+      ip: None,
+      port: port.map(str::to_owned),
+      raw,
+    };
+    let entry = |for_node: ForwardedNode, host: Option<&str>| ForwardedEntry {
+      for_node,
+      proto: None,
+      host: host.map(str::to_owned),
+      by: None,
+    };
+
+    let chain = vec![
+      entry(raw_node(ForwardedNodeRaw::Unknown, None), None),
+      entry(raw_node(ForwardedNodeRaw::Unknown, Some("8080")), None),
+      entry(raw_node(ForwardedNodeRaw::Obfuscated("_hidden".to_owned()), None), None),
+      entry(raw_node(ForwardedNodeRaw::Obfuscated("_hidden".to_owned()), Some("8081")), None),
+      entry(ip_node("203.0.113.5", Some("7070")), None),
+      entry(ip_node("203.0.113.6", None), Some("a\"b\\c")),
+    ];
+
+    assert_eq!(
+      generate_forwarded_header(&chain).unwrap(),
+      "for=unknown, for=\"unknown:8080\", for=_hidden, for=\"_hidden:8081\", for=\"203.0.113.5:7070\", for=203.0.113.6;host=\"a\\\"b\\\\c\""
+    );
+  }
+
+  /// Pin xff_csv_from_chain: CSV bytes, first-element length, and the non-representable cases.
+  #[test]
+  fn xff_csv_from_chain_renders_csv_and_first_element() {
+    let ip_entry = |ip: &str| ForwardedEntry {
+      for_node: ForwardedNode {
+        ip: Some(ip.parse().unwrap()),
+        port: None,
+        raw: ForwardedNodeRaw::Ip,
+      },
+      proto: None,
+      host: None,
+      by: None,
+    };
+
+    let (csv, first_len) = xff_csv_from_chain(&[ip_entry("198.51.100.10"), ip_entry("2001:db8::1"), ip_entry("10.0.0.4")]).unwrap();
+    assert_eq!(csv, "198.51.100.10, 2001:db8::1, 10.0.0.4");
+    assert_eq!(&csv[..first_len], "198.51.100.10");
+
+    let (csv, first_len) = xff_csv_from_chain(&[ip_entry("198.51.100.10")]).unwrap();
+    assert_eq!(&csv[..first_len], csv.as_str());
+
+    // a non-IP hop or an empty chain cannot be represented in X-Forwarded-For
+    let unknown = ForwardedEntry {
+      for_node: ForwardedNode {
+        ip: None,
+        port: None,
+        raw: ForwardedNodeRaw::Unknown,
+      },
+      proto: None,
+      host: None,
+      by: None,
+    };
+    assert!(xff_csv_from_chain(&[ip_entry("198.51.100.10"), unknown]).is_none());
+    assert!(xff_csv_from_chain(&[]).is_none());
   }
 
   #[test]
