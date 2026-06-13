@@ -2453,6 +2453,7 @@ dependencies = [
  "hyper-tls",
  "hyper-util",
  "ipnet",
+ "itoa",
  "lru",
  "pin-project-lite",
  "ppp",

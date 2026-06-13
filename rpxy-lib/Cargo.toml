@@ -41,6 +41,7 @@ post-quantum = [
 rand = "0.10.1"
 ahash = "0.8.12"
 bytes = "1.11.1"
+itoa = "1.0.18"
 derive_builder = "0.20.2"
 futures = { version = "0.3.32", features = ["alloc", "async-await"] }
 tokio = { version = "1.52.3", default-features = false, features = [

@@ -3,7 +3,7 @@ use http::{HeaderMap, HeaderValue, Uri, header, header::AsHeaderName};
 use ipnet::IpNet;
 use std::{
   fmt::Write as _,
-  net::{IpAddr, SocketAddr},
+  net::{IpAddr, Ipv4Addr, SocketAddr},
   str::FromStr,
 };
 
@@ -104,7 +104,8 @@ pub(in crate::message_handler) fn add_forwarding_header(
       // Only this rare fallback needs a freshly built peer entry, so build it here instead
       // of eagerly on every request.
       let peer_entry = build_peer_forwarded_entry(peer_ip, tls, authoritative_host);
-      let csv = peer_ip.to_string();
+      let mut csv = String::new();
+      push_ip_addr(&mut csv, &peer_ip);
       let first_len = csv.len();
       (vec![peer_entry], csv, first_len)
     }
@@ -595,6 +596,31 @@ fn entry_is_trusted_proxy(entry: &ForwardedEntry, trusted_forwarded_proxies: &[I
     .unwrap_or(false)
 }
 
+/// Append `v4` to `out` as dotted-decimal, formatting each octet with `itoa` to bypass the
+/// generic `core::fmt` integer path (`pad_integral`) that `Display` would otherwise route through.
+fn push_ipv4(out: &mut String, v4: Ipv4Addr) {
+  let mut buf = itoa::Buffer::new();
+  let [a, b, c, d] = v4.octets();
+  out.push_str(buf.format(a));
+  out.push('.');
+  out.push_str(buf.format(b));
+  out.push('.');
+  out.push_str(buf.format(c));
+  out.push('.');
+  out.push_str(buf.format(d));
+}
+
+/// Append an IP address to `out`. IPv4 takes the fast `itoa` path; IPv6 keeps the std formatter,
+/// which already emits the RFC 5952 canonical (`::`-compressed) form.
+fn push_ip_addr(out: &mut String, ip: &IpAddr) {
+  match ip {
+    IpAddr::V4(v4) => push_ipv4(out, *v4),
+    IpAddr::V6(v6) => {
+      let _ = write!(out, "{v6}");
+    }
+  }
+}
+
 /// Render the X-Forwarded-For value for a forwarding chain into a single comma-separated
 /// buffer (no per-hop String), returning it together with the byte length of the first
 /// element so the caller can slice out the X-Real-IP value without re-formatting.
@@ -613,7 +639,7 @@ fn xff_csv_from_chain(chain: &[ForwardedEntry]) -> Option<(String, usize)> {
     if idx > 0 {
       out.push_str(", ");
     }
-    write!(out, "{ip}").expect("fmt write to String cannot fail");
+    push_ip_addr(&mut out, &ip);
     if idx == 0 {
       first_len = out.len();
     }
@@ -685,18 +711,32 @@ fn write_forwarded_param_value(out: &mut String, value: &str) {
 /// Write the for= value in Forwarded header into `out` according to RFC 7239, which may
 /// require quoting and bracketing for IPv6 addresses.
 fn write_forwarded_node(out: &mut String, node: &ForwardedNode) -> Result<()> {
+  // Writing into a String is infallible; IPv4 uses the fast itoa path, the rest keep std fmt.
   match (&node.raw, node.ip, node.port.as_deref()) {
-    (ForwardedNodeRaw::Ip, Some(IpAddr::V4(v4)), None) => write!(out, "{}", v4),
-    (ForwardedNodeRaw::Ip, Some(IpAddr::V4(v4)), Some(port)) => write!(out, "\"{}:{}\"", v4, port),
-    (ForwardedNodeRaw::Ip, Some(IpAddr::V6(v6)), None) => write!(out, "\"[{}]\"", v6),
-    (ForwardedNodeRaw::Ip, Some(IpAddr::V6(v6)), Some(port)) => write!(out, "\"[{}]:{}\"", v6, port),
-    (ForwardedNodeRaw::Unknown, None, None) => out.write_str("unknown"),
-    (ForwardedNodeRaw::Unknown, None, Some(port)) => write!(out, "\"unknown:{}\"", port),
-    (ForwardedNodeRaw::Obfuscated(node), None, None) => out.write_str(node),
-    (ForwardedNodeRaw::Obfuscated(node), None, Some(port)) => write!(out, "\"{}:{}\"", node, port),
+    (ForwardedNodeRaw::Ip, Some(IpAddr::V4(v4)), None) => push_ipv4(out, v4),
+    (ForwardedNodeRaw::Ip, Some(IpAddr::V4(v4)), Some(port)) => {
+      out.push('"');
+      push_ipv4(out, v4);
+      out.push(':');
+      out.push_str(port);
+      out.push('"');
+    }
+    (ForwardedNodeRaw::Ip, Some(IpAddr::V6(v6)), None) => {
+      let _ = write!(out, "\"[{v6}]\"");
+    }
+    (ForwardedNodeRaw::Ip, Some(IpAddr::V6(v6)), Some(port)) => {
+      let _ = write!(out, "\"[{v6}]:{port}\"");
+    }
+    (ForwardedNodeRaw::Unknown, None, None) => out.push_str("unknown"),
+    (ForwardedNodeRaw::Unknown, None, Some(port)) => {
+      let _ = write!(out, "\"unknown:{port}\"");
+    }
+    (ForwardedNodeRaw::Obfuscated(node), None, None) => out.push_str(node),
+    (ForwardedNodeRaw::Obfuscated(node), None, Some(port)) => {
+      let _ = write!(out, "\"{node}:{port}\"");
+    }
     _ => return Err(anyhow!("invalid forwarded node state")),
   }
-  .expect("fmt write to String cannot fail");
   Ok(())
 }
 
@@ -819,6 +859,31 @@ mod tests {
 
   fn trusted(cidrs: &[&str]) -> Vec<IpNet> {
     cidrs.iter().map(|c| c.parse::<IpNet>().unwrap()).collect()
+  }
+
+  #[test]
+  fn push_ip_addr_matches_std_display() {
+    // The itoa-based writer must be byte-identical to std Display across IPv4 octet boundaries,
+    // and must defer to std (RFC 5952 canonical) formatting for IPv6.
+    for s in [
+      "0.0.0.0",
+      "1.2.3.4",
+      "9.10.99.100",
+      "127.0.0.1",
+      "192.168.0.255",
+      "255.255.255.255",
+    ] {
+      let ip: IpAddr = s.parse().unwrap();
+      let mut out = String::new();
+      push_ip_addr(&mut out, &ip);
+      assert_eq!(out, ip.to_string(), "v4 {s}");
+    }
+    for s in ["::", "::1", "2001:db8::1", "2001:db8:0:0:1:0:0:1", "::ffff:1.2.3.4"] {
+      let ip: IpAddr = s.parse().unwrap();
+      let mut out = String::new();
+      push_ip_addr(&mut out, &ip);
+      assert_eq!(out, ip.to_string(), "v6 {s}");
+    }
   }
 
   /// Test shim mirroring the production call path: the authoritative host is computed once
