@@ -41,7 +41,7 @@ The supported features are summarized as follows:
 
 [^sanitization]: By default, `rpxy` provides *TLS connection sanitization* by correctly binding a certificate used to establish a secure channel with the backend application. Specifically, it always maintains consistency between the given SNI (server name indication) in `ClientHello` of the underlying TLS and the domain name given by the overlaid HTTP HOST header (or URL in Request line). We should note that NGINX doesn't guarantee such consistency by default. To achieve this, you have to add an `if` statement in the NGINX configuration file.
 
-This project is still *work-in-progress*. However, it is already working in some production environments and serves a number of domain names. Furthermore, it *significantly outperforms* NGINX and Caddy, e.g., *30% ~ 60% or more faster than NGINX*, in very simple HTTP reverse-proxy scenarios (See [`bench`](./bench/) directory).
+This project is still *work-in-progress*. However, it is already working in some production environments and serves a number of domain names. The [`bench`](./bench/) directory provides a reverse-proxy benchmarking harness you can run on your own target; note that reverse-proxy performance is highly dependent on hardware, configuration, and environment, so we make no performance-ranking claim here (see the caveat in [`bench/README.md`](./bench/README.md)).
 
 ## Installing/Building an Executable Binary of `rpxy`
 
