@@ -18,6 +18,7 @@ use ahash::{HashMap, HashSet};
 #[cfg(feature = "sticky-cookie")]
 use base64::{Engine as _, engine::general_purpose};
 use derive_builder::Builder;
+use http::HeaderValue;
 #[cfg(feature = "sticky-cookie")]
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
@@ -136,6 +137,10 @@ impl PathManager {
 pub struct Upstream {
   /// Base uri without specific path
   pub uri: hyper::Uri,
+  /// Pre-rendered `Host` header value (host, or host:port) for the `set_upstream_host` option,
+  /// computed once from `uri` at config-build time so the per-request override clone-inserts it
+  /// instead of re-formatting and re-validating this constant. None when `uri` has no host.
+  host_header: Option<HeaderValue>,
   /// Health state shared with the health checker task.
   /// None if health check is not configured or explicitly disabled for upstream group this upstream belongs to.
   #[cfg(feature = "health-check")]
@@ -143,14 +148,31 @@ pub struct Upstream {
 }
 impl From<&UpstreamUri> for Upstream {
   fn from(value: &UpstreamUri) -> Self {
+    // Render the `Host` value once. None when there is no host, or (practically unreachable for a
+    // host taken from a valid `Uri` plus a numeric port) when the value fails HeaderValue
+    // validation; the per-request override then yields the existing "No hostname is given" error.
+    let host_header = value.inner.host().and_then(|host| {
+      match value.inner.port_u16() {
+        Some(port) => HeaderValue::from_str(&format!("{host}:{port}")),
+        None => HeaderValue::from_str(host),
+      }
+      .ok()
+    });
     Self {
       uri: value.inner.clone(),
+      host_header,
       #[cfg(feature = "health-check")]
       health: None,
     }
   }
 }
 impl Upstream {
+  /// The pre-rendered `Host` header value (host or host:port) used by the `set_upstream_host`
+  /// option, or None when this upstream's uri has no host.
+  pub(crate) fn host_header(&self) -> Option<&HeaderValue> {
+    self.host_header.as_ref()
+  }
+
   #[allow(unused)]
   /// Returns whether this upstream is considered healthy.
   /// Always returns true if health check is not configured.
@@ -358,6 +380,7 @@ mod test {
     let uri = "https://www.rust-lang.org".parse::<hyper::Uri>().unwrap();
     let upstream = Upstream {
       uri,
+      host_header: None,
       #[cfg(feature = "health-check")]
       health: None,
     };

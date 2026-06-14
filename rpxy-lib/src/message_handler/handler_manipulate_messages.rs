@@ -173,7 +173,7 @@ where
     apply_upstream_options_to_header(
       headers,
       authoritative_host.as_deref(),
-      &upstream_chosen.uri,
+      upstream_chosen,
       upstream_candidates,
       &self.globals.proxy_config.trusted_forwarded_proxies,
     )?;

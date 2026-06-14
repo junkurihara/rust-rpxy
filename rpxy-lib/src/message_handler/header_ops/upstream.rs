@@ -1,9 +1,9 @@
 use anyhow::{Result, anyhow};
-use http::{HeaderMap, HeaderValue, Uri, header};
+use http::{HeaderMap, HeaderValue, header};
 use ipnet::IpNet;
 
 use crate::{
-  backend::{UpstreamCandidates, UpstreamOption},
+  backend::{Upstream, UpstreamCandidates, UpstreamOption},
   log::*,
   name_exp::ServerName,
 };
@@ -14,18 +14,15 @@ use super::{
 };
 
 /// overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
-fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &Uri) -> Result<()> {
-  let mut upstream_host = upstream_base_uri
-    .host()
-    .ok_or_else(|| anyhow!("No hostname is given"))?
-    .to_string();
-  // add port if it is not default
-  if let Some(port) = upstream_base_uri.port_u16() {
-    upstream_host = format!("{}:{}", upstream_host, port);
-  }
-
+///
+/// The value (`host` or `host:port`) is pre-rendered once per upstream at config-build time
+/// (`Upstream::host_header`); here we only clone-insert it - a `Bytes` refcount bump, with no
+/// per-request formatting or validation. `None` (an upstream uri without a host) preserves the
+/// original "No hostname is given" error.
+fn override_host_header(headers: &mut HeaderMap, host_header: Option<&HeaderValue>) -> Result<()> {
+  let value = host_header.ok_or_else(|| anyhow!("No hostname is given"))?;
   // overwrite host header, this removes all the HOST header values
-  headers.insert(header::HOST, HeaderValue::from_str(&upstream_host)?);
+  headers.insert(header::HOST, value.clone());
   Ok(())
 }
 
@@ -51,17 +48,17 @@ pub(in crate::message_handler) fn apply_default_app_host_rewrite(
 pub(in crate::message_handler) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
   authoritative_host: Option<&str>,
-  upstream_base_uri: &Uri,
-  upstream: &UpstreamCandidates,
+  upstream_chosen: &Upstream,
+  upstream_candidates: &UpstreamCandidates,
   trusted_forwarded_proxies: &[IpNet],
 ) -> Result<()> {
-  for opt in upstream.options.iter() {
+  for opt in upstream_candidates.options.iter() {
     match opt {
       UpstreamOption::SetUpstreamHost => {
         // prioritize KeepOriginalHost
-        if !upstream.options.contains(&UpstreamOption::KeepOriginalHost) {
-          // overwrite host header, this removes all the HOST header values
-          override_host_header(headers, upstream_base_uri)?;
+        if !upstream_candidates.options.contains(&UpstreamOption::KeepOriginalHost) {
+          // overwrite host header with the chosen upstream's pre-rendered Host value
+          override_host_header(headers, upstream_chosen.host_header())?;
         }
       }
       UpstreamOption::UpgradeInsecureRequests => {
@@ -100,7 +97,10 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::backend::{LoadBalance, Upstream};
+  use crate::{
+    backend::{LoadBalance, Upstream},
+    globals::UpstreamUri,
+  };
   use ahash::HashSet;
 
   #[test]
@@ -116,11 +116,9 @@ mod tests {
       HeaderValue::from_static("https"),
     );
 
-    let upstream = Upstream {
-      uri: "http://backend.internal".parse().unwrap(),
-      #[cfg(feature = "health-check")]
-      health: None,
-    };
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "http://backend.internal".parse().unwrap(),
+    });
     let upstream_candidates = UpstreamCandidates {
       inner: vec![upstream],
       path: "/".into(),
@@ -134,7 +132,7 @@ mod tests {
     apply_upstream_options_to_header(
       &mut headers,
       Some("app.example:8443"),
-      &"http://backend.internal".parse::<Uri>().unwrap(),
+      &upstream_candidates.inner[0],
       &upstream_candidates,
       &[],
     )
@@ -179,11 +177,9 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
-    let upstream = Upstream {
-      uri: "http://backend.internal:8080".parse().unwrap(),
-      #[cfg(feature = "health-check")]
-      health: None,
-    };
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "http://backend.internal:8080".parse().unwrap(),
+    });
     let upstream_candidates = UpstreamCandidates {
       inner: vec![upstream],
       path: "/".into(),
@@ -197,7 +193,7 @@ mod tests {
     apply_upstream_options_to_header(
       &mut headers,
       Some("app.example"),
-      &"http://backend.internal:8080".parse::<Uri>().unwrap(),
+      &upstream_candidates.inner[0],
       &upstream_candidates,
       &[],
     )
@@ -211,11 +207,9 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
-    let upstream = Upstream {
-      uri: "http://backend.internal:8080".parse().unwrap(),
-      #[cfg(feature = "health-check")]
-      health: None,
-    };
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "http://backend.internal:8080".parse().unwrap(),
+    });
     let upstream_candidates = UpstreamCandidates {
       inner: vec![upstream],
       path: "/".into(),
@@ -229,12 +223,46 @@ mod tests {
     apply_upstream_options_to_header(
       &mut headers,
       Some("app.example"),
-      &"http://backend.internal:8080".parse::<Uri>().unwrap(),
+      &upstream_candidates.inner[0],
       &upstream_candidates,
       &[],
     )
     .unwrap();
 
+    assert_eq!(headers.get(header::HOST).unwrap(), "app.example");
+  }
+
+  #[test]
+  fn set_upstream_host_without_host_returns_error_and_leaves_host_unchanged() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    // An upstream uri without a host yields host_header == None; the override must surface the
+    // original "No hostname is given" error and leave the HOST header untouched.
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "/no-host".parse().unwrap(),
+    });
+    assert!(upstream.host_header().is_none());
+    let upstream_candidates = UpstreamCandidates {
+      inner: vec![upstream],
+      path: "/".into(),
+      replace_path: None,
+      load_balance: LoadBalance::default(),
+      options: HashSet::from_iter([UpstreamOption::SetUpstreamHost]),
+      #[cfg(feature = "health-check")]
+      health_check_config: None,
+    };
+
+    let err = apply_upstream_options_to_header(
+      &mut headers,
+      Some("app.example"),
+      &upstream_candidates.inner[0],
+      &upstream_candidates,
+      &[],
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("No hostname is given"));
     assert_eq!(headers.get(header::HOST).unwrap(), "app.example");
   }
 }
