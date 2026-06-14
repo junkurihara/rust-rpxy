@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 use http::{HeaderMap, HeaderValue, Uri, header, header::AsHeaderName};
 use ipnet::IpNet;
 use std::{
+  borrow::Cow,
   fmt::Write as _,
   net::{IpAddr, Ipv4Addr, SocketAddr},
   str::FromStr,
@@ -389,30 +390,41 @@ fn forwarded_is_consistent(forwarded: &[ForwardedEntry], xff_chain: &[ForwardedE
 /* Generic parsing helpers                                                                                 */
 /* --------------------------------------------------------------------------------------------------------- */
 
-/// Get the first header value as string if exist
-fn first_header_value(headers: &HeaderMap, key: impl AsHeaderName) -> Result<Option<String>> {
+/// Get the first header value as a borrowed `&str` if it exists.
+fn first_header_value(headers: &HeaderMap, key: impl AsHeaderName) -> Result<Option<&str>> {
   let Some(first) = headers.get(key) else {
     return Ok(None);
   };
   first
     .to_str()
-    .map(|value| Some(value.to_string()))
+    .map(Some)
     .map_err(|e| anyhow!("invalid header value: {e}"))
 }
 
-/// Join multiple header values into a single comma-separated string, if exist
-fn join_header_values(headers: &HeaderMap, key: impl AsHeaderName) -> Result<Option<String>> {
-  let values = headers
-    .get_all(key)
-    .iter()
-    .map(|value| value.to_str().map(|s| s.to_string()))
-    .collect::<std::result::Result<Vec<_>, _>>()
-    .map_err(|e| anyhow!("invalid header value: {e}"))?;
-  if values.is_empty() {
-    Ok(None)
-  } else {
-    Ok(Some(values.join(", ")))
+/// Read the logical (comma-joined) value of a possibly multi-valued header.
+///
+/// The common single-field-line case borrows the header value (`Cow::Borrowed`, no allocation);
+/// the rare multi-field-line case joins the lines with ", " exactly as before. Every value is
+/// validated with `to_str`, so an unreadable line - including one after the first - still errors,
+/// preserving the fail-closed behavior the proto readers rely on.
+fn join_header_values<'a>(headers: &'a HeaderMap, key: impl AsHeaderName) -> Result<Option<Cow<'a, str>>> {
+  let all = headers.get_all(key);
+  let mut values = all.iter();
+  let Some(first) = values.next() else {
+    return Ok(None);
+  };
+  let first = first.to_str().map_err(|e| anyhow!("invalid header value: {e}"))?;
+  let Some(second) = values.next() else {
+    // Exactly one field-line: borrow it, no allocation.
+    return Ok(Some(Cow::Borrowed(first)));
+  };
+  // Two or more field-lines: validate and join all of them (a later unreadable line still errors).
+  let mut joined = String::from(first);
+  for value in std::iter::once(second).chain(values) {
+    joined.push_str(", ");
+    joined.push_str(value.to_str().map_err(|e| anyhow!("invalid header value: {e}"))?);
   }
+  Ok(Some(Cow::Owned(joined)))
 }
 
 /// Split a header value by a delimiter while respecting quoted substrings.
@@ -859,6 +871,35 @@ mod tests {
 
   fn trusted(cidrs: &[&str]) -> Vec<IpNet> {
     cidrs.iter().map(|c| c.parse::<IpNet>().unwrap()).collect()
+  }
+
+  #[test]
+  fn join_header_values_single_field_line_borrows() {
+    let mut headers = HeaderMap::new();
+    headers.append(X_FORWARDED_FOR, HeaderValue::from_static("1.2.3.4, 5.6.7.8"));
+    let value = join_header_values(&headers, X_FORWARDED_FOR).unwrap().unwrap();
+    assert!(matches!(value, Cow::Borrowed(_)), "a single field-line must be borrowed");
+    assert_eq!(value, "1.2.3.4, 5.6.7.8");
+  }
+
+  #[test]
+  fn join_header_values_multiple_field_lines_join() {
+    let mut headers = HeaderMap::new();
+    headers.append(X_FORWARDED_FOR, HeaderValue::from_static("1.2.3.4"));
+    headers.append(X_FORWARDED_FOR, HeaderValue::from_static("5.6.7.8"));
+    let value = join_header_values(&headers, X_FORWARDED_FOR).unwrap().unwrap();
+    assert!(matches!(value, Cow::Owned(_)), "multiple field-lines must be joined");
+    assert_eq!(value, "1.2.3.4, 5.6.7.8");
+  }
+
+  #[test]
+  fn join_header_values_errors_when_a_non_first_line_is_unreadable() {
+    // Fail-closed: an unreadable value after the first field-line must still error, so a malformed
+    // later line cannot be silently dropped. Feature-independent guard for the proto readers.
+    let mut headers = HeaderMap::new();
+    headers.append(X_FORWARDED_FOR, HeaderValue::from_static("1.2.3.4"));
+    headers.append(X_FORWARDED_FOR, HeaderValue::from_bytes(b"\xff").unwrap());
+    assert!(join_header_values(&headers, X_FORWARDED_FOR).is_err());
   }
 
   #[test]
