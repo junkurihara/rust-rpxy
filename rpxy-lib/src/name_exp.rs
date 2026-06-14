@@ -197,7 +197,7 @@ mod tests {
     assert_eq!(s.as_ref(), "OK_str".as_bytes());
   }
 
-  /// `Display` renders the lowercased ASCII hostname form the request flow normally produces.
+  /// `Display` renders the lowercased ASCII hostname that the request flow normally produces.
   #[test]
   fn display_renders_ascii_hostname() {
     let s = ServerName::from("Example.COM");
