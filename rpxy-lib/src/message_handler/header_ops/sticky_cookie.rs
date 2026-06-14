@@ -20,21 +20,21 @@ pub(crate) fn takeout_sticky_cookie_lb_context(
     return Ok(None);
   }
 
-  let sticky_cookie_prefix = format!("{expected_cookie_name}=");
-  // Read the Cookie header(s) without cloning the whole HeaderMap. Own only the few short
-  // cookie tokens we need so the immutable borrow of `headers` is released before we mutate it.
-  let (sticky_cookies, cookies_passed_to_upstream): (Vec<String>, String) = {
+  // Read the Cookie header(s) without cloning the whole HeaderMap. Only one sticky token is ever
+  // used (we reject `len != 1` below), so own just the first one - not every match - and release
+  // the immutable borrow of `headers` before mutating it.
+  let (first_sticky_cookie, multiple_sticky, cookies_passed_to_upstream): (String, bool, String) = {
     let (sticky, without_sticky): (Vec<&str>, Vec<&str>) = headers
       .get_all(header::COOKIE)
       .iter()
       .flat_map(|v| v.to_str().unwrap_or("").split(';').map(|v| v.trim()))
-      .partition(|v| v.starts_with(&sticky_cookie_prefix));
+      .partition(|v| v.starts_with(sticky_config.name_prefix()));
     // Return early before joining: requests that carry cookies but no sticky cookie (the common
     // case) must not pay the join allocation.
     if sticky.is_empty() {
       return Ok(None);
     }
-    (sticky.iter().map(|s| s.to_string()).collect(), without_sticky.join("; "))
+    (sticky[0].to_string(), sticky.len() > 1, without_sticky.join("; "))
   };
 
   // Strip the sticky cookie from what is forwarded upstream. This still runs for the
@@ -44,13 +44,12 @@ pub(crate) fn takeout_sticky_cookie_lb_context(
     headers.insert(header::COOKIE, cookies_passed_to_upstream.parse()?);
   }
 
-  if sticky_cookies.len() != 1 {
+  if multiple_sticky {
     debug!("Ignoring malformed sticky cookie: multiple sticky cookie values");
     return Ok(None);
   }
 
-  let cookie_passed_to_lb = sticky_cookies.first().unwrap();
-  let raw_sticky_cookie = match StickyCookieValue::try_from(cookie_passed_to_lb.as_str(), expected_cookie_name) {
+  let raw_sticky_cookie = match StickyCookieValue::try_from(first_sticky_cookie.as_str(), expected_cookie_name) {
     Ok(value) => value,
     Err(e) => {
       debug!("Ignoring malformed sticky cookie: {e}");
@@ -99,8 +98,6 @@ pub(crate) fn set_sticky_cookie_lb_context(
     .sticky_cookie
     .to_set_cookie_value_with_value(secure, &sealed_value)?;
   let new_header_val: HeaderValue = sticky_cookie_string.parse()?;
-  let expected_cookie_name = sticky_config.name();
-  let expected_cookie_prefix = format!("{expected_cookie_name}=");
   match headers.entry(header::SET_COOKIE) {
     header::Entry::Vacant(entry) => {
       entry.insert(new_header_val);
@@ -108,7 +105,7 @@ pub(crate) fn set_sticky_cookie_lb_context(
     header::Entry::Occupied(mut entry) => {
       let mut flag = false;
       for e in entry.iter_mut() {
-        if e.to_str().unwrap_or("").starts_with(&expected_cookie_prefix) {
+        if e.to_str().unwrap_or("").starts_with(sticky_config.name_prefix()) {
           *e = new_header_val.clone();
           flag = true;
         }
