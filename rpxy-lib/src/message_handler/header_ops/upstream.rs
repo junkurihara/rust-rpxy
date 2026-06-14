@@ -17,8 +17,9 @@ use super::{
 ///
 /// The value (`host` or `host:port`) is pre-rendered once per upstream at config-build time
 /// (`Upstream::host_header`); here we only clone-insert it - a `Bytes` refcount bump, with no
-/// per-request formatting or validation. `None` (an upstream uri without a host) preserves the
-/// original "No hostname is given" error.
+/// per-request formatting or validation. `None` - an upstream uri without a host, or (practically
+/// unreachable) a rendered value that failed `HeaderValue` validation - preserves the original
+/// "No hostname is given" error.
 fn override_host_header(headers: &mut HeaderMap, host_header: Option<&HeaderValue>) -> Result<()> {
   let value = host_header.ok_or_else(|| anyhow!("No hostname is given"))?;
   // overwrite host header, this removes all the HOST header values

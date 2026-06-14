@@ -139,7 +139,9 @@ pub struct Upstream {
   pub uri: hyper::Uri,
   /// Pre-rendered `Host` header value (host, or host:port) for the `set_upstream_host` option,
   /// computed once from `uri` at config-build time so the per-request override clone-inserts it
-  /// instead of re-formatting and re-validating this constant. None when `uri` has no host.
+  /// instead of re-formatting and re-validating this constant. `None` when `uri` has no host, or
+  /// (practically unreachable for a host from a valid `Uri` plus a numeric port) when the rendered
+  /// value fails `HeaderValue` validation.
   host_header: Option<HeaderValue>,
   /// Health state shared with the health checker task.
   /// None if health check is not configured or explicitly disabled for upstream group this upstream belongs to.
@@ -168,7 +170,8 @@ impl From<&UpstreamUri> for Upstream {
 }
 impl Upstream {
   /// The pre-rendered `Host` header value (host or host:port) used by the `set_upstream_host`
-  /// option, or None when this upstream's uri has no host.
+  /// option. `None` when this upstream's uri has no host, or (practically unreachable) when the
+  /// rendered value failed `HeaderValue` validation at build time.
   pub(crate) fn host_header(&self) -> Option<&HeaderValue> {
     self.host_header.as_ref()
   }
