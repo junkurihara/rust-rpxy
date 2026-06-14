@@ -152,6 +152,8 @@ pub struct StickyCookieConfig {
   /// components are read-only afterwards (getters below), so a config can never carry - or be
   /// mutated into carrying - an AAD inconsistent with its name/domain/path.
   name: String,
+  /// Precomputed `"{name}="` cookie prefix used to locate/strip the sticky cookie per request.
+  name_prefix: String,
   domain: String,
   path: String,
   duration: i64,
@@ -167,11 +169,13 @@ impl StickyCookieConfig {
   /// rejected when the backend is built (startup/config reload), not on each request.
   pub fn try_new(name: &str, server_name: &str, path_opt: &Option<String>, duration: i64) -> RpxyResult<Self> {
     let name = name.to_string();
+    let name_prefix = format!("{name}=");
     let domain = server_name.to_ascii_lowercase();
     let path = path_opt.as_deref().unwrap_or("/").to_string();
     let aad: Arc<[u8]> = build_sticky_cookie_aad(&name, &domain, &path)?.into();
     Ok(Self {
       name,
+      name_prefix,
       domain,
       path,
       duration,
@@ -187,6 +191,11 @@ impl StickyCookieConfig {
   /// Sticky cookie name.
   pub fn name(&self) -> &str {
     &self.name
+  }
+
+  /// Precomputed `"{name}="` prefix for locating the sticky cookie token.
+  pub fn name_prefix(&self) -> &str {
+    &self.name_prefix
   }
 
   /// Cookie domain (lowercased server name).
@@ -302,6 +311,14 @@ mod tests {
     let config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "Example.COM", &Some("/App".to_string()), 300).unwrap();
     let fresh = build_sticky_cookie_aad(&config.name, &config.domain, &config.path).unwrap();
     assert_eq!(config.aad(), fresh.as_slice());
+  }
+
+  /// The precomputed name prefix must equal a fresh `"{name}="`, so per-request cookie matching is
+  /// byte-identical to the previous inline `format!`.
+  #[test]
+  fn try_new_precomputes_identical_name_prefix() {
+    let config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "Example.COM", &Some("/App".to_string()), 300).unwrap();
+    assert_eq!(config.name_prefix(), format!("{}=", config.name()).as_str());
   }
 
   /// Validation moved to construction time, not lost: a NUL byte in any component is rejected by
