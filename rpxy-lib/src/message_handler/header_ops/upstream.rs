@@ -53,42 +53,41 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
   upstream_candidates: &UpstreamCandidates,
   trusted_forwarded_proxies: &[IpNet],
 ) -> Result<()> {
-  for opt in upstream_candidates.options.iter() {
-    match opt {
-      UpstreamOption::SetUpstreamHost => {
-        // prioritize KeepOriginalHost
-        if !upstream_candidates.options.contains(&UpstreamOption::KeepOriginalHost) {
-          // overwrite host header with the chosen upstream's pre-rendered Host value
-          override_host_header(headers, upstream_chosen.host_header())?;
-        }
+  // `options` is a set, so dispatch by direct membership instead of iterating it. The three
+  // actions below are independent (each writes a different header and reads none the others
+  // write), so this ordered form is equivalent to the previous arbitrary-order loop on the
+  // success path; see the design note on the (externally unobservable) error-ordering caveat.
+  let options = &upstream_candidates.options;
+
+  // SetUpstreamHost overwrites Host with the chosen upstream's pre-rendered value, unless
+  // KeepOriginalHost is also set (KeepOriginalHost wins).
+  if options.contains(&UpstreamOption::SetUpstreamHost) && !options.contains(&UpstreamOption::KeepOriginalHost) {
+    override_host_header(headers, upstream_chosen.host_header())?;
+  }
+
+  if options.contains(&UpstreamOption::UpgradeInsecureRequests) {
+    // add upgrade-insecure-requests in request header if not exist
+    headers
+      .entry(header::UPGRADE_INSECURE_REQUESTS)
+      .or_insert(HeaderValue::from_bytes(b"1").unwrap());
+  }
+
+  // This is called after X-Forwarded-For is added to generate RFC 7239 Forwarded header from it.
+  // If Forwarded already exists, it has already been normalized by add_forwarding_header().
+  if options.contains(&UpstreamOption::ForwardedHeader) && !headers.contains_key(header::FORWARDED) {
+    let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers, authoritative_host)? else {
+      warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
+      return Ok(());
+    };
+    let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
+    match generate_forwarded_header(&normalized_chain) {
+      Ok(forwarded_value) => {
+        add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
       }
-      UpstreamOption::UpgradeInsecureRequests => {
-        // add upgrade-insecure-requests in request header if not exist
-        headers
-          .entry(header::UPGRADE_INSECURE_REQUESTS)
-          .or_insert(HeaderValue::from_bytes(b"1").unwrap());
+      Err(e) => {
+        // Log warning but don't fail the request if Forwarded generation fails
+        warn!("Failed to generate Forwarded header: {}", e);
       }
-      UpstreamOption::ForwardedHeader => {
-        // This is called after X-Forwarded-For is added to generate RFC 7239 Forwarded header from it.
-        // If Forwarded already exists, it has already been normalized by add_forwarding_header().
-        if !headers.contains_key(header::FORWARDED) {
-          let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers, authoritative_host)? else {
-            warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
-            continue;
-          };
-          let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
-          match generate_forwarded_header(&normalized_chain) {
-            Ok(forwarded_value) => {
-              add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
-            }
-            Err(e) => {
-              // Log warning but don't fail the request if Forwarded generation fails
-              warn!("Failed to generate Forwarded header: {}", e);
-            }
-          }
-        }
-      }
-      _ => (),
     }
   }
 
@@ -103,6 +102,50 @@ mod tests {
     globals::UpstreamUri,
   };
   use ahash::HashSet;
+
+  fn candidates_with_options(uri: &str, options: HashSet<UpstreamOption>) -> UpstreamCandidates {
+    UpstreamCandidates {
+      inner: vec![Upstream::from(&UpstreamUri { inner: uri.parse().unwrap() })],
+      path: "/".into(),
+      replace_path: None,
+      load_balance: LoadBalance::default(),
+      options,
+      #[cfg(feature = "health-check")]
+      health_check_config: None,
+    }
+  }
+
+  #[test]
+  fn upgrade_insecure_requests_inserted_when_option_set() {
+    let mut headers = HeaderMap::new();
+    let candidates = candidates_with_options(
+      "http://backend.internal",
+      HashSet::from_iter([UpstreamOption::UpgradeInsecureRequests]),
+    );
+    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    assert_eq!(headers.get(header::UPGRADE_INSECURE_REQUESTS).unwrap(), "1");
+  }
+
+  #[test]
+  fn upgrade_insecure_requests_absent_when_option_unset() {
+    let mut headers = HeaderMap::new();
+    let candidates = candidates_with_options("http://backend.internal", HashSet::default());
+    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    assert!(headers.get(header::UPGRADE_INSECURE_REQUESTS).is_none());
+  }
+
+  #[test]
+  fn upgrade_insecure_requests_preserves_existing_value() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::UPGRADE_INSECURE_REQUESTS, HeaderValue::from_static("0"));
+    let candidates = candidates_with_options(
+      "http://backend.internal",
+      HashSet::from_iter([UpstreamOption::UpgradeInsecureRequests]),
+    );
+    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    // or_insert leaves a pre-existing value untouched
+    assert_eq!(headers.get(header::UPGRADE_INSECURE_REQUESTS).unwrap(), "0");
+  }
 
   #[test]
   fn forwarded_header_generation_keeps_authoritative_host_on_last_hop() {
