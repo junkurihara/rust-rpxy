@@ -118,9 +118,7 @@ async fn serve_tls_handshake(
     } else {
       let Some(server_crypto) = server_crypto_map.as_ref().get(server_name.as_ref().unwrap()) else {
         info!(peer = %client_addr, sni = sni.unwrap_or("-"), failure = "unknown_sni", "TLS handshake failed");
-        return Err(RpxyError::NoTlsServingApp(
-          server_name.as_ref().unwrap().try_into().unwrap_or_default(),
-        ));
+        return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().to_string()));
       };
       (server_crypto.server_config.clone(), server_crypto.is_mutual_tls)
     }
@@ -130,9 +128,7 @@ async fn serve_tls_handshake(
   let (server_crypto, is_mutual_tls) = {
     let Some(server_crypto) = server_crypto_map.get(server_name.as_ref().unwrap()) else {
       info!(peer = %client_addr, sni = sni.unwrap_or("-"), failure = "unknown_sni", "TLS handshake failed");
-      return Err(RpxyError::NoTlsServingApp(
-        server_name.as_ref().unwrap().try_into().unwrap_or_default(),
-      ));
+      return Err(RpxyError::NoTlsServingApp(server_name.as_ref().unwrap().to_string()));
     };
     (server_crypto.server_config.clone(), server_crypto.is_mutual_tls)
   };
@@ -147,7 +143,10 @@ async fn serve_tls_handshake(
         Some(rustls::Error::InvalidCertificate(_)) | Some(rustls::Error::NoCertificatesPresented) => "client_cert",
         _ => "handshake",
       };
-      let sni = server_name.as_ref().and_then(|n| std::str::from_utf8(n.as_ref()).ok()).unwrap_or("-");
+      let sni = server_name
+        .as_ref()
+        .and_then(|n| std::str::from_utf8(n.as_ref()).ok())
+        .unwrap_or("-");
       warn!(peer = %client_addr, sni, failure, mtls = is_mutual_tls, reason = %e, "TLS handshake failed");
       return Err(RpxyError::TlsHandshakeFailed(e.to_string()));
     }
