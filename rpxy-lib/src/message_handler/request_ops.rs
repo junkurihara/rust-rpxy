@@ -12,31 +12,29 @@ pub trait InspectParseHost {
   fn inspect_parse_host(&self) -> Result<Vec<u8>, Self::Error>;
 }
 
-/// Strip the `:port` suffix from a Host-header / URI host value.
+/// Strip the `:port` suffix from a Host-header / URI host value, normalising for downstream
+/// `ServerName` lookup. Total: every byte slice maps to some host bytes (the previous
+/// `.split(..).next().ok_or_else(..)` error arms were unreachable, since `.split()` on a
+/// slice always yields at least one element).
 ///
-/// Promoted from a closure inside `inspect_parse_host` to a free function so its behavior can
-/// be pinned by unit tests. Body is intentionally unchanged in this commit; the dead error
-/// arms and the colon-count-by-subtraction trick are rewritten in a follow-up commit, guarded
-/// by these tests.
-fn drop_port(v: &[u8]) -> Result<Vec<u8>> {
-  if v.starts_with(b"[") {
-    // v6 address with bracket case. if port is specified, always it is in this case.
-    let mut iter = v.split(|ptr| ptr == &b'[' || ptr == &b']');
-    iter.next().ok_or_else(|| anyhow!("Invalid Host header"))?; // first item is always blank
-    iter
-      .next()
-      .ok_or_else(|| anyhow!("Invalid Host header"))
-      .map(|b| b.to_owned())
-  } else if v.len() - v.split(|v| v == &b':').fold(0, |acc, s| acc + s.len()) >= 2 {
-    // v6 address case, if 2 or more ':' is contained
-    Ok(v.to_owned())
-  } else {
-    // v4 address or hostname
-    v.split(|colon| colon == &b':')
-      .next()
-      .ok_or_else(|| anyhow!("Invalid Host header"))
-      .map(|v| v.to_ascii_lowercase())
+/// Three cases, in order:
+/// - `[addr]:port` (bracketed IPv6): take bytes up to the first `]`. A missing `]` falls
+///   back to "take the whole remainder after `[`", preserving the previous lenient behavior.
+/// - bare IPv6 (>=2 `:` in the value): keep verbatim; no port can be told apart from the
+///   address itself without brackets.
+/// - IPv4 or hostname: cut at the first `:`, ASCII-lowercase. (The downstream
+///   `ServerName::from(Vec<u8>)` also lowercases; this stays here to preserve the byte
+///   output of `inspect_parse_host` as a standalone unit.)
+fn drop_port(v: &[u8]) -> Vec<u8> {
+  if let Some(rest) = v.strip_prefix(b"[") {
+    let end = rest.iter().position(|&b| b == b']').unwrap_or(rest.len());
+    return rest[..end].to_vec();
   }
+  if v.iter().filter(|&&b| b == b':').count() >= 2 {
+    return v.to_vec();
+  }
+  let host_end = v.iter().position(|&b| b == b':').unwrap_or(v.len());
+  v[..host_end].to_ascii_lowercase()
 }
 
 impl<B> InspectParseHost for Request<B> {
@@ -45,17 +43,16 @@ impl<B> InspectParseHost for Request<B> {
   fn inspect_parse_host(&self) -> Result<Vec<u8>> {
     let headers_host = self.headers().get(header::HOST).map(|v| drop_port(v.as_bytes()));
     let uri_host = self.uri().host().map(|v| drop_port(v.as_bytes()));
-    // let uri_port = self.uri().port_u16();
 
     // prioritize server_name in uri
     match (headers_host, uri_host) {
-      (Some(Ok(hh)), Some(Ok(hu))) => {
+      (Some(hh), Some(hu)) => {
         ensure!(hh == hu, "Host header and uri host mismatch");
         Ok(hh)
       }
-      (Some(Ok(hh)), None) => Ok(hh),
-      (None, Some(Ok(hu))) => Ok(hu),
-      _ => Err(anyhow!("Neither Host header nor uri host is valid")),
+      (Some(hh), None) => Ok(hh),
+      (None, Some(hu)) => Ok(hu),
+      (None, None) => Err(anyhow!("Neither Host header nor uri host is valid")),
     }
   }
 }
@@ -131,7 +128,7 @@ mod tests {
       (b"", b""),
     ];
     for (input, expected) in cases {
-      let got = drop_port(input).unwrap();
+      let got = drop_port(input);
       assert_eq!(
         got.as_slice(),
         *expected,
