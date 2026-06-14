@@ -30,7 +30,7 @@ fn drop_port(v: &[u8]) -> Vec<u8> {
     let end = rest.iter().position(|&b| b == b']').unwrap_or(rest.len());
     return rest[..end].to_vec();
   }
-  if v.iter().filter(|&&b| b == b':').count() >= 2 {
+  if v.iter().filter(|&&b| b == b':').take(2).count() == 2 {
     return v.to_vec();
   }
   let host_end = v.iter().position(|&b| b == b':').unwrap_or(v.len());
