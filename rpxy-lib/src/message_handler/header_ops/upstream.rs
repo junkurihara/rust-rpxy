@@ -55,8 +55,10 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
 ) -> Result<()> {
   // `options` is a set, so dispatch by direct membership instead of iterating it. The three
   // actions below are independent (each writes a different header and reads none the others
-  // write), so this ordered form is equivalent to the previous arbitrary-order loop on the
-  // success path; see the design note on the (externally unobservable) error-ordering caveat.
+  // write), so the emitted headers are identical to the previous arbitrary-order loop. The
+  // dispatch order is now fixed where it used to follow arbitrary `HashSet` iteration order; if
+  // more than one enabled option can fail, this only changes which error is returned first - the
+  // request fails either way and no upstream request or response is emitted.
   let options = &upstream_candidates.options;
 
   // SetUpstreamHost overwrites Host with the chosen upstream's pre-rendered value, unless
@@ -69,7 +71,7 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
     // add upgrade-insecure-requests in request header if not exist
     headers
       .entry(header::UPGRADE_INSECURE_REQUESTS)
-      .or_insert(HeaderValue::from_bytes(b"1").unwrap());
+      .or_insert(HeaderValue::from_static("1"));
   }
 
   // This is called after X-Forwarded-For is added to generate RFC 7239 Forwarded header from it.
