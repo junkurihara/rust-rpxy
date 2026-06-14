@@ -21,7 +21,7 @@ pub(super) fn secure_redirection_response<B>(
   tls_port: Option<u16>,
   req: &Request<B>,
 ) -> HttpResult<Response<ResponseBody>> {
-  let server_name: String = server_name.try_into().unwrap_or_default();
+  let server_name: String = server_name.to_string();
   let pq = match req.uri().path_and_query() {
     Some(x) => x.as_str(),
     _ => "",
