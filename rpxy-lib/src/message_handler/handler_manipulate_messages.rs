@@ -75,7 +75,7 @@ where
   ) -> Result<HandlerContext> {
     trace!("Generate request to be forwarded");
 
-    // Add te: trailer if contained in original request
+    // Re-insert `TE: trailers` upstream if the original request signalled it.
     let contains_te_trailers = req.headers().get(header::TE).is_some_and(te_contains_trailers);
 
     let original_uri = req.uri().clone();
@@ -111,7 +111,7 @@ where
       &self.globals.proxy_config.trusted_forwarded_proxies,
     )?;
 
-    // Add te: trailer if te_trailer
+    // Re-emit a normalised `TE: trailers` (lowercased) when the original request carried one.
     if contains_te_trailers {
       headers.insert(header::TE, HeaderValue::from_bytes("trailers".as_bytes()).unwrap());
     }
@@ -214,10 +214,12 @@ where
 ///
 /// Per RFC 9110 §5.6.6 / §10.1.4, transfer-coding tokens in `TE` are case-insensitive, so
 /// `Trailers`, `TRAILERS`, etc. must match `trailers`; the local convention in
-/// `extract_upgrade` (`hop.rs`) follows the same rule via `eq_ignore_ascii_case`.
+/// `extract_upgrade` (`hop.rs`) follows the same rule via `eq_ignore_ascii_case`. The list
+/// is comma-separated with OWS around the comma; RFC 9110 §5.6.3 defines OWS as `*(SP /
+/// HTAB)`, so the splitter must accept the horizontal tab in addition to the space.
 fn te_contains_trailers(te: &HeaderValue) -> bool {
   te.as_bytes()
-    .split(|v| v == &b',' || v == &b' ')
+    .split(|v| matches!(v, b',' | b' ' | b'\t'))
     .any(|x| x.eq_ignore_ascii_case(b"trailers"))
 }
 
@@ -332,11 +334,14 @@ mod tests {
     assert!(te_contains_trailers(&te));
   }
 
-  /// Non-lowercase token must match when it appears mid-list.
+  /// Non-lowercase token must match when it appears mid-list, regardless of the OWS variant
+  /// (RFC 9110 §5.6.3: OWS = `*(SP / HTAB)`) used after the comma.
   #[test]
   fn te_contains_trailers_accepts_within_list() {
-    let te = HeaderValue::from_static("gzip, Trailers");
-    assert!(te_contains_trailers(&te));
+    let space = HeaderValue::from_static("gzip, Trailers");
+    let tab = HeaderValue::from_static("gzip,\tTrailers");
+    assert!(te_contains_trailers(&space));
+    assert!(te_contains_trailers(&tab));
   }
 
   /// ...and at the start of a list.
