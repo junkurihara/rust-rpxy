@@ -76,17 +76,7 @@ where
     trace!("Generate request to be forwarded");
 
     // Add te: trailer if contained in original request
-    let contains_te_trailers = {
-      req
-        .headers()
-        .get(header::TE)
-        .map(|te| {
-          te.as_bytes()
-            .split(|v| v == &b',' || v == &b' ')
-            .any(|x| x == "trailers".as_bytes())
-        })
-        .unwrap_or(false)
-    };
+    let contains_te_trailers = req.headers().get(header::TE).is_some_and(te_contains_trailers);
 
     let original_uri = req.uri().clone();
     let original_host_header = req.headers().get(header::HOST).cloned();
@@ -220,6 +210,17 @@ where
   }
 }
 
+/// Detect a `trailers` token inside a `TE` header value.
+///
+/// Per RFC 9110 §5.6.6 / §10.1.4, transfer-coding tokens in `TE` are case-insensitive, so
+/// `Trailers`, `TRAILERS`, etc. must match `trailers`; the local convention in
+/// `extract_upgrade` (`hop.rs`) follows the same rule via `eq_ignore_ascii_case`.
+fn te_contains_trailers(te: &HeaderValue) -> bool {
+  te.as_bytes()
+    .split(|v| v == &b',' || v == &b' ')
+    .any(|x| x.eq_ignore_ascii_case(b"trailers"))
+}
+
 #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
 fn h3_alt_svc_port(
   proxy_config: &crate::globals::ProxyConfig,
@@ -308,6 +309,63 @@ mod tests {
 
     let no_public_port = proxy_config_for_h3_alt_svc(true, None);
     assert_eq!(h3_alt_svc_port(&no_public_port, Some(false), true), None);
+  }
+
+  /// Lowercase `trailers` is the unchanged baseline.
+  #[test]
+  fn te_contains_trailers_accepts_lowercase() {
+    let te = HeaderValue::from_static("trailers");
+    assert!(te_contains_trailers(&te));
+  }
+
+  /// Titlecase must match: this is the RFC 9110 case-insensitivity fix.
+  #[test]
+  fn te_contains_trailers_accepts_titlecase() {
+    let te = HeaderValue::from_static("Trailers");
+    assert!(te_contains_trailers(&te));
+  }
+
+  /// Uppercase must match for the same reason.
+  #[test]
+  fn te_contains_trailers_accepts_uppercase() {
+    let te = HeaderValue::from_static("TRAILERS");
+    assert!(te_contains_trailers(&te));
+  }
+
+  /// Non-lowercase token must match when it appears mid-list.
+  #[test]
+  fn te_contains_trailers_accepts_within_list() {
+    let te = HeaderValue::from_static("gzip, Trailers");
+    assert!(te_contains_trailers(&te));
+  }
+
+  /// ...and at the start of a list.
+  #[test]
+  fn te_contains_trailers_accepts_at_start_of_list() {
+    let te = HeaderValue::from_static("Trailers, gzip");
+    assert!(te_contains_trailers(&te));
+  }
+
+  /// Unrelated transfer-coding tokens must not match.
+  #[test]
+  fn te_contains_trailers_rejects_unrelated_tokens() {
+    let te = HeaderValue::from_static("gzip");
+    assert!(!te_contains_trailers(&te));
+  }
+
+  /// Empty `TE` value must not match (split yields a single empty slice).
+  #[test]
+  fn te_contains_trailers_rejects_empty_header() {
+    let te = HeaderValue::from_static("");
+    assert!(!te_contains_trailers(&te));
+  }
+
+  /// `eq_ignore_ascii_case` is a full compare, not a contains; substrings of `trailers`
+  /// must not match. Guards against accidental sloppy rewrites later.
+  #[test]
+  fn te_contains_trailers_rejects_substring_match() {
+    let te = HeaderValue::from_static("trailers-extra");
+    assert!(!te_contains_trailers(&te));
   }
 
   #[test]
