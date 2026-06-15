@@ -35,6 +35,19 @@ impl TryInto<String> for &ServerName {
     Ok(s.to_string())
   }
 }
+impl std::fmt::Display for ServerName {
+  /// On the normal request path, `ServerName` carries ASCII-lowercase hostname/IP bytes (the
+  /// `&str` constructor lowercases ASCII; the parser-fed `&[u8]` / `Vec<u8>` constructors
+  /// receive host bytes that are ASCII in practice). The byte constructors are public and only
+  /// lowercase, however, so they can hold arbitrary bytes; `from_utf8_lossy` keeps the
+  /// formatter total - it borrows the underlying bytes when they are valid UTF-8 (the normal
+  /// case, zero allocation) and substitutes U+FFFD for invalid sequences instead of dropping
+  /// the host entirely, which is strictly more useful than an `unwrap_or_default` that would
+  /// log an empty string.
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(&String::from_utf8_lossy(&self.inner))
+  }
+}
 impl AsRef<[u8]> for ServerName {
   fn as_ref(&self) -> &[u8] {
     self.inner.as_ref()
@@ -182,5 +195,29 @@ mod tests {
   fn as_ref_works() {
     let s = "OK_str".to_path_name();
     assert_eq!(s.as_ref(), "OK_str".as_bytes());
+  }
+
+  /// `Display` renders the lowercased ASCII hostname that the request flow normally produces.
+  #[test]
+  fn display_renders_ascii_hostname() {
+    let s = ServerName::from("Example.COM");
+    assert_eq!(format!("{s}"), "example.com");
+  }
+
+  /// `Display` renders IPv6-shaped byte input through the same lossy UTF-8 path; the bytes are
+  /// valid UTF-8, so this exercises the zero-allocation borrow branch.
+  #[test]
+  fn display_renders_v6_address_bytes() {
+    let s = ServerName::from("2001:DB8::1".as_bytes().to_vec());
+    assert_eq!(format!("{s}"), "2001:db8::1");
+  }
+
+  /// The byte constructors are public and only lowercase, so they can carry non-UTF-8 bytes.
+  /// `Display` substitutes U+FFFD for invalid sequences instead of dropping the host entirely
+  /// (which is what the previous `TryInto<String>` + `unwrap_or_default()` did).
+  #[test]
+  fn display_substitutes_replacement_for_non_utf8_bytes() {
+    let s = ServerName::from(vec![b'a', 0xFF, 0x80, b'z']);
+    assert_eq!(format!("{s}"), format!("a{0}{0}z", char::REPLACEMENT_CHARACTER));
   }
 }

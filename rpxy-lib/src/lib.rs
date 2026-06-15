@@ -69,6 +69,11 @@ pub struct RpxyOptions {
   /// credential-header redaction in DEBUG request logs. Default false.
   #[builder(default)]
   pub unsafe_debug_headers: bool,
+  /// Whether the embedding binary's logger emits access-log lines. When false,
+  /// the per-request access-log record is not even constructed. Defaults to
+  /// true so library consumers that never set it keep full access logging.
+  #[builder(default = "true")]
+  pub access_log_enabled: bool,
   #[cfg(feature = "sticky-cookie")]
   #[builder(default)]
   pub sticky_cookie_secret: Option<Arc<StickyCookieSecret>>,
@@ -86,6 +91,7 @@ pub async fn entrypoint(
     cert_rx, // TODO:
     runtime_handle,
     unsafe_debug_headers,
+    access_log_enabled,
     #[cfg(feature = "sticky-cookie")]
     sticky_cookie_secret,
     #[cfg(feature = "acme")]
@@ -181,6 +187,7 @@ pub async fn entrypoint(
     runtime_handle: runtime_handle.clone(),
     cert_reloader_rx: cert_rx.clone(),
     unsafe_debug_headers: *unsafe_debug_headers,
+    access_log_enabled: *access_log_enabled,
     #[cfg(feature = "sticky-cookie")]
     sticky_cookie_cipher,
 

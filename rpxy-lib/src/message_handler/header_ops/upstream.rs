@@ -1,31 +1,29 @@
 use anyhow::{Result, anyhow};
-use http::{HeaderMap, HeaderValue, Uri, header};
+use http::{HeaderMap, HeaderValue, header};
 use ipnet::IpNet;
 
 use crate::{
-  backend::{UpstreamCandidates, UpstreamOption},
+  backend::{Upstream, UpstreamCandidates, UpstreamOption},
   log::*,
   name_exp::ServerName,
 };
 
 use super::{
-  common::{add_header_entry_overwrite_if_exist, host_from_uri_or_host_header},
+  common::add_header_entry_overwrite_if_exist,
   forwarding::{extract_forwarding_chain_from_headers, generate_forwarded_header, reduce_trusted_proxy_chain},
 };
 
 /// overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
-fn override_host_header(headers: &mut HeaderMap, upstream_base_uri: &Uri) -> Result<()> {
-  let mut upstream_host = upstream_base_uri
-    .host()
-    .ok_or_else(|| anyhow!("No hostname is given"))?
-    .to_string();
-  // add port if it is not default
-  if let Some(port) = upstream_base_uri.port_u16() {
-    upstream_host = format!("{}:{}", upstream_host, port);
-  }
-
+///
+/// The value (`host` or `host:port`) is pre-rendered once per upstream at config-build time
+/// (`Upstream::host_header`); here we only clone-insert it - a `Bytes` refcount bump, with no
+/// per-request formatting or validation. `None` - an upstream uri without a host, or (practically
+/// unreachable) a rendered value that failed `HeaderValue` validation - preserves the original
+/// "No hostname is given" error.
+fn override_host_header(headers: &mut HeaderMap, host_header: Option<&HeaderValue>) -> Result<()> {
+  let value = host_header.ok_or_else(|| anyhow!("No hostname is given"))?;
   // overwrite host header, this removes all the HOST header values
-  headers.insert(header::HOST, HeaderValue::from_str(&upstream_host)?);
+  headers.insert(header::HOST, value.clone());
   Ok(())
 }
 
@@ -46,51 +44,52 @@ pub(in crate::message_handler) fn apply_default_app_host_rewrite(
 
 /// Apply options to request header, which are specified in the configuration
 /// This function is called after almost all other headers has been set and updated.
+/// `authoritative_host` is the host of the original request (URI host preferred, port
+/// included, Host-header fallback), computed once by the caller before any Host rewrite.
 pub(in crate::message_handler) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
-  original_uri: &Uri,
-  original_host_header: Option<&HeaderValue>,
-  upstream_base_uri: &Uri,
-  upstream: &UpstreamCandidates,
+  authoritative_host: Option<&str>,
+  upstream_chosen: &Upstream,
+  upstream_candidates: &UpstreamCandidates,
   trusted_forwarded_proxies: &[IpNet],
 ) -> Result<()> {
-  for opt in upstream.options.iter() {
-    match opt {
-      UpstreamOption::SetUpstreamHost => {
-        // prioritize KeepOriginalHost
-        if !upstream.options.contains(&UpstreamOption::KeepOriginalHost) {
-          // overwrite host header, this removes all the HOST header values
-          override_host_header(headers, upstream_base_uri)?;
-        }
+  // `options` is a set, so dispatch by direct membership instead of iterating it. The three
+  // actions below are independent (each writes a different header and reads none the others
+  // write), so the emitted headers are identical to the previous arbitrary-order loop. The
+  // dispatch order is now fixed where it used to follow arbitrary `HashSet` iteration order; if
+  // more than one enabled option can fail, this only changes which error is returned first - the
+  // request fails either way and no upstream request or response is emitted.
+  let options = &upstream_candidates.options;
+
+  // SetUpstreamHost overwrites Host with the chosen upstream's pre-rendered value, unless
+  // KeepOriginalHost is also set (KeepOriginalHost wins).
+  if options.contains(&UpstreamOption::SetUpstreamHost) && !options.contains(&UpstreamOption::KeepOriginalHost) {
+    override_host_header(headers, upstream_chosen.host_header())?;
+  }
+
+  if options.contains(&UpstreamOption::UpgradeInsecureRequests) {
+    // add upgrade-insecure-requests in request header if not exist
+    headers
+      .entry(header::UPGRADE_INSECURE_REQUESTS)
+      .or_insert(HeaderValue::from_static("1"));
+  }
+
+  // This is called after X-Forwarded-For is added to generate RFC 7239 Forwarded header from it.
+  // If Forwarded already exists, it has already been normalized by add_forwarding_header().
+  if options.contains(&UpstreamOption::ForwardedHeader) && !headers.contains_key(header::FORWARDED) {
+    let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers, authoritative_host)? else {
+      warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
+      return Ok(());
+    };
+    let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
+    match generate_forwarded_header(&normalized_chain) {
+      Ok(forwarded_value) => {
+        add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
       }
-      UpstreamOption::UpgradeInsecureRequests => {
-        // add upgrade-insecure-requests in request header if not exist
-        headers
-          .entry(header::UPGRADE_INSECURE_REQUESTS)
-          .or_insert(HeaderValue::from_bytes(b"1").unwrap());
+      Err(e) => {
+        // Log warning but don't fail the request if Forwarded generation fails
+        warn!("Failed to generate Forwarded header: {}", e);
       }
-      UpstreamOption::ForwardedHeader => {
-        // This is called after X-Forwarded-For is added to generate RFC 7239 Forwarded header from it.
-        // If Forwarded already exists, it has already been normalized by add_forwarding_header().
-        if !headers.contains_key(header::FORWARDED) {
-          let authoritative_host = host_from_uri_or_host_header(original_uri, original_host_header).ok();
-          let Some(forwarding_chain) = extract_forwarding_chain_from_headers(headers, authoritative_host)? else {
-            warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
-            continue;
-          };
-          let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
-          match generate_forwarded_header(&normalized_chain) {
-            Ok(forwarded_value) => {
-              add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
-            }
-            Err(e) => {
-              // Log warning but don't fail the request if Forwarded generation fails
-              warn!("Failed to generate Forwarded header: {}", e);
-            }
-          }
-        }
-      }
-      _ => (),
     }
   }
 
@@ -100,8 +99,55 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::backend::{LoadBalance, Upstream};
+  use crate::{
+    backend::{LoadBalance, Upstream},
+    globals::UpstreamUri,
+  };
   use ahash::HashSet;
+
+  fn candidates_with_options(uri: &str, options: HashSet<UpstreamOption>) -> UpstreamCandidates {
+    UpstreamCandidates {
+      inner: vec![Upstream::from(&UpstreamUri { inner: uri.parse().unwrap() })],
+      path: "/".into(),
+      replace_path: None,
+      load_balance: LoadBalance::default(),
+      options,
+      #[cfg(feature = "health-check")]
+      health_check_config: None,
+    }
+  }
+
+  #[test]
+  fn upgrade_insecure_requests_inserted_when_option_set() {
+    let mut headers = HeaderMap::new();
+    let candidates = candidates_with_options(
+      "http://backend.internal",
+      HashSet::from_iter([UpstreamOption::UpgradeInsecureRequests]),
+    );
+    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    assert_eq!(headers.get(header::UPGRADE_INSECURE_REQUESTS).unwrap(), "1");
+  }
+
+  #[test]
+  fn upgrade_insecure_requests_absent_when_option_unset() {
+    let mut headers = HeaderMap::new();
+    let candidates = candidates_with_options("http://backend.internal", HashSet::default());
+    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    assert!(headers.get(header::UPGRADE_INSECURE_REQUESTS).is_none());
+  }
+
+  #[test]
+  fn upgrade_insecure_requests_preserves_existing_value() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::UPGRADE_INSECURE_REQUESTS, HeaderValue::from_static("0"));
+    let candidates = candidates_with_options(
+      "http://backend.internal",
+      HashSet::from_iter([UpstreamOption::UpgradeInsecureRequests]),
+    );
+    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    // or_insert leaves a pre-existing value untouched
+    assert_eq!(headers.get(header::UPGRADE_INSECURE_REQUESTS).unwrap(), "0");
+  }
 
   #[test]
   fn forwarded_header_generation_keeps_authoritative_host_on_last_hop() {
@@ -116,11 +162,9 @@ mod tests {
       HeaderValue::from_static("https"),
     );
 
-    let upstream = Upstream {
-      uri: "http://backend.internal".parse().unwrap(),
-      #[cfg(feature = "health-check")]
-      health: None,
-    };
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "http://backend.internal".parse().unwrap(),
+    });
     let upstream_candidates = UpstreamCandidates {
       inner: vec![upstream],
       path: "/".into(),
@@ -131,12 +175,10 @@ mod tests {
       health_check_config: None,
     };
 
-    let original_host = HeaderValue::from_static("app.example:8443");
     apply_upstream_options_to_header(
       &mut headers,
-      &"/hello".parse::<Uri>().unwrap(),
-      Some(&original_host),
-      &"http://backend.internal".parse::<Uri>().unwrap(),
+      Some("app.example:8443"),
+      &upstream_candidates.inner[0],
       &upstream_candidates,
       &[],
     )
@@ -181,11 +223,9 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
-    let upstream = Upstream {
-      uri: "http://backend.internal:8080".parse().unwrap(),
-      #[cfg(feature = "health-check")]
-      health: None,
-    };
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "http://backend.internal:8080".parse().unwrap(),
+    });
     let upstream_candidates = UpstreamCandidates {
       inner: vec![upstream],
       path: "/".into(),
@@ -196,12 +236,10 @@ mod tests {
       health_check_config: None,
     };
 
-    let original_host = HeaderValue::from_static("app.example");
     apply_upstream_options_to_header(
       &mut headers,
-      &"/hello".parse::<Uri>().unwrap(),
-      Some(&original_host),
-      &"http://backend.internal:8080".parse::<Uri>().unwrap(),
+      Some("app.example"),
+      &upstream_candidates.inner[0],
       &upstream_candidates,
       &[],
     )
@@ -215,11 +253,9 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
 
-    let upstream = Upstream {
-      uri: "http://backend.internal:8080".parse().unwrap(),
-      #[cfg(feature = "health-check")]
-      health: None,
-    };
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "http://backend.internal:8080".parse().unwrap(),
+    });
     let upstream_candidates = UpstreamCandidates {
       inner: vec![upstream],
       path: "/".into(),
@@ -230,17 +266,49 @@ mod tests {
       health_check_config: None,
     };
 
-    let original_host = HeaderValue::from_static("app.example");
     apply_upstream_options_to_header(
       &mut headers,
-      &"/hello".parse::<Uri>().unwrap(),
-      Some(&original_host),
-      &"http://backend.internal:8080".parse::<Uri>().unwrap(),
+      Some("app.example"),
+      &upstream_candidates.inner[0],
       &upstream_candidates,
       &[],
     )
     .unwrap();
 
+    assert_eq!(headers.get(header::HOST).unwrap(), "app.example");
+  }
+
+  #[test]
+  fn set_upstream_host_without_host_returns_error_and_leaves_host_unchanged() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+
+    // An upstream uri without a host yields host_header == None; the override must surface the
+    // original "No hostname is given" error and leave the HOST header untouched.
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "/no-host".parse().unwrap(),
+    });
+    assert!(upstream.host_header().is_none());
+    let upstream_candidates = UpstreamCandidates {
+      inner: vec![upstream],
+      path: "/".into(),
+      replace_path: None,
+      load_balance: LoadBalance::default(),
+      options: HashSet::from_iter([UpstreamOption::SetUpstreamHost]),
+      #[cfg(feature = "health-check")]
+      health_check_config: None,
+    };
+
+    let err = apply_upstream_options_to_header(
+      &mut headers,
+      Some("app.example"),
+      &upstream_candidates.inner[0],
+      &upstream_candidates,
+      &[],
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("No hostname is given"));
     assert_eq!(headers.get(header::HOST).unwrap(), "app.example");
   }
 }

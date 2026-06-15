@@ -26,19 +26,23 @@ impl<'a> StickyCookieValueBuilder {
 }
 impl StickyCookieValue {
   pub fn try_from(value: &str, expected_name: &str) -> LoadBalanceResult<Self> {
-    let kv = value.split('=').map(|v| v.trim()).collect::<Vec<&str>>();
-    if kv.len() != 2 {
+    // Split on the first '=' only: a cookie `name=value` pair is defined by the first '=' and
+    // the value may contain further '=' bytes. The wire value is a base64 NO_PAD AEAD blob and
+    // never contains '=' today; a malformed multi-'=' token is still ignored downstream
+    // (length / NO_PAD decode / AEAD verification in `open_server_id`).
+    let Some((name, val)) = value.split_once('=') else {
       return Err(LoadBalanceError::InvalidStickyCookieStructure);
     };
-    if kv[0] != expected_name {
+    let (name, val) = (name.trim(), val.trim());
+    if name != expected_name {
       return Err(LoadBalanceError::FailedToConversionStickyCookie);
-    };
-    if kv[1].is_empty() {
+    }
+    if val.is_empty() {
       return Err(LoadBalanceError::NoStickyCookieValue);
     }
     Ok(StickyCookieValue {
       name: expected_name.to_string(),
-      value: kv[1].to_string(),
+      value: val.to_string(),
     })
   }
 }
@@ -152,6 +156,8 @@ pub struct StickyCookieConfig {
   /// components are read-only afterwards (getters below), so a config can never carry - or be
   /// mutated into carrying - an AAD inconsistent with its name/domain/path.
   name: String,
+  /// Precomputed `"{name}="` cookie prefix used to locate/strip the sticky cookie per request.
+  name_prefix: String,
   domain: String,
   path: String,
   duration: i64,
@@ -167,11 +173,13 @@ impl StickyCookieConfig {
   /// rejected when the backend is built (startup/config reload), not on each request.
   pub fn try_new(name: &str, server_name: &str, path_opt: &Option<String>, duration: i64) -> RpxyResult<Self> {
     let name = name.to_string();
+    let name_prefix = format!("{name}=");
     let domain = server_name.to_ascii_lowercase();
     let path = path_opt.as_deref().unwrap_or("/").to_string();
     let aad: Arc<[u8]> = build_sticky_cookie_aad(&name, &domain, &path)?.into();
     Ok(Self {
       name,
+      name_prefix,
       domain,
       path,
       duration,
@@ -187,6 +195,11 @@ impl StickyCookieConfig {
   /// Sticky cookie name.
   pub fn name(&self) -> &str {
     &self.name
+  }
+
+  /// Precomputed `"{name}="` prefix for locating the sticky cookie token.
+  pub fn name_prefix(&self) -> &str {
+    &self.name_prefix
   }
 
   /// Cookie domain (lowercased server name).
@@ -295,6 +308,31 @@ mod tests {
     assert!(StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}_shadow=value"), STICKY_COOKIE_NAME).is_err());
   }
 
+  /// Empty-value tokens (`name=`) must still be rejected with `NoStickyCookieValue`. Pins the
+  /// branch that is easy to lose when switching from `split('=')` + `len!=2` to `split_once`.
+  #[test]
+  fn try_from_rejects_empty_value() {
+    let result = StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}="), STICKY_COOKIE_NAME);
+    assert!(matches!(result, Err(LoadBalanceError::NoStickyCookieValue)));
+  }
+
+  /// A token without `=` is structurally malformed and must be rejected with
+  /// `InvalidStickyCookieStructure`.
+  #[test]
+  fn try_from_rejects_missing_eq() {
+    let result = StickyCookieValue::try_from(STICKY_COOKIE_NAME, STICKY_COOKIE_NAME);
+    assert!(matches!(result, Err(LoadBalanceError::InvalidStickyCookieStructure)));
+  }
+
+  /// `split_once('=')` keeps the value intact even when it itself contains `=`. The wire value is
+  /// a base64 NO_PAD blob that never carries `=` today, so this only documents the accepted
+  /// semantics; the downstream length/NO_PAD/AEAD checks still reject such tokens end-to-end.
+  #[test]
+  fn try_from_preserves_eq_in_value() {
+    let result = StickyCookieValue::try_from(&format!("{STICKY_COOKIE_NAME}=AA=BB"), STICKY_COOKIE_NAME).unwrap();
+    assert_eq!(result.value, "AA=BB");
+  }
+
   /// The precomputed AAD must be byte-identical to a fresh build from the same components, so
   /// cookies sealed before this change still open after it.
   #[test]
@@ -302,6 +340,14 @@ mod tests {
     let config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "Example.COM", &Some("/App".to_string()), 300).unwrap();
     let fresh = build_sticky_cookie_aad(&config.name, &config.domain, &config.path).unwrap();
     assert_eq!(config.aad(), fresh.as_slice());
+  }
+
+  /// The precomputed name prefix must equal a fresh `"{name}="`, so per-request cookie matching is
+  /// byte-identical to the previous inline `format!`.
+  #[test]
+  fn try_new_precomputes_identical_name_prefix() {
+    let config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "Example.COM", &Some("/App".to_string()), 300).unwrap();
+    assert_eq!(config.name_prefix(), format!("{}=", config.name()).as_str());
   }
 
   /// Validation moved to construction time, not lost: a NUL byte in any component is rejected by

@@ -39,11 +39,7 @@ where
     };
 
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
-    debug!(
-      "QUIC/HTTP3 connection established from {:?} {}",
-      client_addr,
-      <&ServerName as TryInto<String>>::try_into(&tls_server_name).unwrap_or_default()
-    );
+    debug!("QUIC/HTTP3 connection established from {:?} {}", client_addr, tls_server_name);
 
     // TODO: Is here enough to fetch server_name from NewConnection?
     // to avoid deep nested call from listener_service_h3

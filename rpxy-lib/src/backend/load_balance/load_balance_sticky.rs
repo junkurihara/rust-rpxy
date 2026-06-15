@@ -146,24 +146,23 @@ mod tests {
   use crate::{
     backend::load_balance::sticky_cookie::{StickyCookie, StickyCookieValue},
     constants::STICKY_COOKIE_NAME,
+    globals::UpstreamUri,
   };
 
   fn make_upstream(uri_str: &str) -> Upstream {
-    Upstream {
-      uri: uri_str.parse::<hyper::Uri>().unwrap(),
-      #[cfg(feature = "health-check")]
-      health: None,
-    }
+    // Build through the real `From` path so the precomputed host_header is exercised.
+    Upstream::from(&UpstreamUri {
+      inner: uri_str.parse::<http::Uri>().unwrap(),
+    })
   }
 
   #[cfg(feature = "health-check")]
   fn make_upstream_with_health(uri_str: &str, healthy: bool) -> Upstream {
     let health = Arc::new(crate::backend::health_check::UpstreamHealth::new());
     health.set(healthy);
-    Upstream {
-      uri: uri_str.parse::<hyper::Uri>().unwrap(),
-      health: Some(health),
-    }
+    let mut upstream = make_upstream(uri_str);
+    upstream.health = Some(health);
+    upstream
   }
 
   fn build_sticky_lb(upstreams: &[Upstream]) -> LoadBalanceSticky {
