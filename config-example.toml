@@ -75,6 +75,15 @@ max_clients = 512
 # query strings.
 # redact_query_in_access_log = true
 
+# Optional. Maximum inbound request body size in bytes. Applies uniformly to HTTP/1.1, HTTP/2,
+# and HTTP/3. Default: 268435456 (256 MiB). Requests whose Content-Length exceeds this limit
+# are rejected up front with `413 Payload Too Large` before any upstream contact; chunked /
+# streamed bodies are detected mid-flight and the stream/connection is reset. Set lower when
+# large uploads are not required. For effectively-unlimited deployments, set a deliberately
+# large value within TOML's signed-64-bit integer range (e.g. 9000000000000 for ~9 TB);
+# there is no special "0 = unlimited" sentinel (0 means "reject any non-empty body").
+# request_max_body_size = 65536 # bytes
+
 # Optional. Required when any reverse_proxy entry uses load_balance = "sticky".
 # Value must be a 32-byte secret encoded as unpadded base64url.
 # Generate with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'
@@ -196,9 +205,10 @@ connection_handling_timeout = 0 # sec
 # If this specified, h3 is enabled
 [experimental.h3]
 alt_svc_max_age = 3600             # sec
-# Limits the total HTTP/3 request body size per request stream.
-# Default: 268435456 bytes (256 MiB). Set lower when large uploads are not required.
-request_max_body_size = 65536      # bytes
+# DEPRECATED in 0.13.2; will be removed in 0.14.0. Use the top-level `request_max_body_size`
+# instead (which now applies to h1/h2/h3 alike). When this key is set it overrides the
+# top-level value for the HTTP/3 path only, and rpxy emits a startup warning.
+# request_max_body_size = 65536    # bytes
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100

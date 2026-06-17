@@ -3,7 +3,7 @@ use super::{
   http_log::HttpMessageLog,
   http_result::{HttpError, HttpResult},
   request_ops::InspectParseHost,
-  synthetic_response::{secure_redirection_response, synthetic_error_response},
+  synthetic_response::{secure_redirection_response, synthetic_error_response, synthetic_error_response_with_close},
 };
 #[cfg(feature = "sticky-cookie")]
 use crate::backend::StickyCookieConfig;
@@ -73,6 +73,11 @@ where
       l.client_addr(&client_addr);
     }
 
+    // Capture before `req` is moved into the inner handler; needed by
+    // `synthetic_error_response_with_close` on the PayloadTooLarge path (h1.x must close
+    // the connection so the unread body bytes don't get fed into a recycled connection).
+    let request_version = req.version();
+
     let http_result = self
       .handle_request_inner(&mut log_data, req, client_addr, listen_addr, tls_enabled, tls_server_name)
       .await;
@@ -92,11 +97,16 @@ where
           Some(l) => error!("{e}: {l}"),
           None => error!("{e}: client={client_addr}"),
         }
+        let close_connection = matches!(e, HttpError::PayloadTooLarge);
         let code = StatusCode::from(e);
         if let Some(l) = log_data.as_mut() {
           l.status_code(&code).output();
         }
-        synthetic_error_response(code)
+        if close_connection {
+          synthetic_error_response_with_close(code, request_version)
+        } else {
+          synthetic_error_response(code)
+        }
       }
     }
   }
@@ -126,6 +136,15 @@ where
         return Err(HttpError::SniHostInconsistency);
       }
     }
+
+    // Pre-flight Content-Length check: reject oversize requests with 413 before any
+    // upstream contact. Placed AFTER host inspection and SNI consistency so that
+    // malformed-host (400) / SNI-mismatch (421) requests get their specific status codes
+    // even when they also carry an oversize Content-Length. The streaming-overrun case
+    // is enforced separately at the body adapter (HTTP/1.x and HTTP/2 via the
+    // `LimitedIncoming` wrapper, HTTP/3 via its dedicated body-forwarding task) and
+    // surfaces as a body error rather than a clean 413.
+    check_content_length_limit(&req, self.globals.proxy_config.request_max_body_size)?;
     // Find backend application for given server_name, and drop if incoming request is invalid as request.
     // `default_app` fallback is plaintext-HTTP only (see README and backend_main.rs). TLS requests
     // with an unknown host are rejected regardless of `sni_consistency`.
@@ -280,5 +299,96 @@ where
     });
 
     Ok(res_backend)
+  }
+}
+
+/// Pre-flight `Content-Length` check.
+///
+/// Returns `Err(HttpError::PayloadTooLarge)` only when the inbound request advertises a
+/// `Content-Length` that exceeds the configured `limit` (i.e. an oversize upload we can
+/// detect *before* contacting the upstream). Returns `Ok(())` when the limit is `None`
+/// (unlimited), when the header is absent or malformed (chunked / streamed bodies are
+/// caught later by the body adapter), or when the announced length is within the limit.
+fn check_content_length_limit<B>(req: &Request<B>, limit: Option<usize>) -> HttpResult<()> {
+  let Some(limit) = limit else {
+    return Ok(());
+  };
+  let Some(value) = req.headers().get(http::header::CONTENT_LENGTH) else {
+    return Ok(());
+  };
+  // Malformed Content-Length: let the downstream parser (hyper) handle it; we are only
+  // responsible for the size-bound check here.
+  let Ok(s) = value.to_str() else { return Ok(()) };
+  let Ok(n) = s.parse::<usize>() else { return Ok(()) };
+  if n > limit {
+    return Err(HttpError::PayloadTooLarge);
+  }
+  Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn req_with_cl(value: &str) -> Request<()> {
+    let mut req = Request::new(());
+    req.headers_mut().insert(http::header::CONTENT_LENGTH, value.parse().unwrap());
+    req
+  }
+
+  /// CL strictly above the limit -> 413.
+  #[test]
+  fn check_content_length_limit_rejects_oversize() {
+    let req = req_with_cl("100");
+    let err = check_content_length_limit(&req, Some(50)).unwrap_err();
+    assert!(matches!(err, HttpError::PayloadTooLarge));
+  }
+
+  /// CL equal to the limit -> allow (boundary).
+  #[test]
+  fn check_content_length_limit_allows_equal_to_limit() {
+    let req = req_with_cl("50");
+    assert!(check_content_length_limit(&req, Some(50)).is_ok());
+  }
+
+  /// CL below the limit -> allow.
+  #[test]
+  fn check_content_length_limit_allows_under_limit() {
+    let req = req_with_cl("10");
+    assert!(check_content_length_limit(&req, Some(50)).is_ok());
+  }
+
+  /// Header absent (chunked / streamed) -> defer to the streaming body adapter; ok here.
+  #[test]
+  fn check_content_length_limit_passes_when_header_absent() {
+    let req: Request<()> = Request::new(());
+    assert!(check_content_length_limit(&req, Some(50)).is_ok());
+  }
+
+  /// Malformed CL value -> ok (let hyper handle the bad-request rejection downstream).
+  #[test]
+  fn check_content_length_limit_passes_on_malformed_header() {
+    let req = req_with_cl("not-a-number");
+    assert!(check_content_length_limit(&req, Some(50)).is_ok());
+  }
+
+  /// `None` limit -> unlimited; no rejection regardless of CL value.
+  #[test]
+  fn check_content_length_limit_unlimited_when_none() {
+    let req = req_with_cl("999999999");
+    assert!(check_content_length_limit(&req, None).is_ok());
+  }
+
+  /// `Some(0)` semantics: only the zero-length body passes (current h3 behaviour
+  /// preserved for the unified limit).
+  #[test]
+  fn check_content_length_limit_zero_rejects_non_empty() {
+    let req = req_with_cl("1");
+    assert!(matches!(
+      check_content_length_limit(&req, Some(0)).unwrap_err(),
+      HttpError::PayloadTooLarge
+    ));
+    let req = req_with_cl("0");
+    assert!(check_content_length_limit(&req, Some(0)).is_ok());
   }
 }

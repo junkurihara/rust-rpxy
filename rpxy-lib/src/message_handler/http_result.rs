@@ -36,6 +36,8 @@ pub enum HttpError {
   // NoUpgradeExtensionInRequest,
   // #[error("Response does not have an upgrade extension")]
   // NoUpgradeExtensionInResponse,
+  #[error("Request body exceeds configured maximum size")]
+  PayloadTooLarge,
   #[error(transparent)]
   Other(#[from] anyhow::Error),
 }
@@ -54,9 +56,23 @@ impl From<HttpError> for StatusCode {
       HttpError::FailedToGenerateDownstreamResponse(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToUpgrade(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::FailedToGetResponseFromBackend(_) => StatusCode::BAD_GATEWAY,
+      HttpError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
       // HttpError::NoUpgradeExtensionInRequest => StatusCode::BAD_REQUEST,
       // HttpError::NoUpgradeExtensionInResponse => StatusCode::BAD_GATEWAY,
       _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// Pin the bug-fix mapping: PayloadTooLarge surfaces as 413.
+  #[test]
+  fn payload_too_large_maps_to_413() {
+    let code: StatusCode = HttpError::PayloadTooLarge.into();
+    assert_eq!(code, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(code.as_u16(), 413);
   }
 }

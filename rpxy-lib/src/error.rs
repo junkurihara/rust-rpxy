@@ -50,6 +50,8 @@ pub enum RpxyError {
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[error("Exceeds max request body size for HTTP/3")]
   H3TooLargeBody,
+  #[error("Request body exceeded limit: received {received} bytes, maximum allowed {limit}")]
+  RequestBodyTooLarge { received: usize, limit: usize },
 
   #[cfg(feature = "http3-quinn")]
   #[error("Invalid rustls TLS version: {0}")]

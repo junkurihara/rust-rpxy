@@ -5,7 +5,7 @@ use crate::{
   error::*,
   globals::Globals,
   hyper_ext::{
-    body::{RequestBody, ResponseBody},
+    body::{LimitedIncoming, RequestBody, ResponseBody},
     rt::LocalExecutor,
   },
   log::*,
@@ -45,6 +45,12 @@ fn set_tcp_nodelay(stream: &TcpStream, peer: SocketAddr) {
 /* -------------------------------------------------------------------------------------------------------- */
 /// Wrapper function to handle request for HTTP/1.1 and HTTP/2
 /// HTTP/3 is handled in proxy_h3.rs which directly calls the message handler
+///
+/// `request_max_body_size` is passed in explicitly (rather than reached through
+/// `handler.globals`) because `HttpMessageHandler.globals` is `pub(super)` and not
+/// reachable from this module; the caller (the proxy accept loop) already has direct
+/// access to its own `globals` and threads the value down. `None` means unlimited; in
+/// that case `LimitedIncoming` short-circuits its per-frame counter.
 async fn serve_request<T>(
   req: Request<Incoming>,
   handler: Arc<HttpMessageHandler<T>>,
@@ -52,13 +58,14 @@ async fn serve_request<T>(
   listen_addr: SocketAddr,
   tls_enabled: bool,
   tls_server_name: Option<ServerName>,
+  request_max_body_size: Option<usize>,
 ) -> RpxyResult<Response<ResponseBody>>
 where
   T: Send + Sync + Connect + Clone,
 {
   handler
     .handle_request(
-      req.map(RequestBody::Incoming),
+      req.map(|incoming| RequestBody::Incoming(LimitedIncoming::new(incoming, request_max_body_size))),
       client_addr,
       listen_addr,
       tls_enabled,
@@ -296,6 +303,7 @@ where
     let tls_enabled = self.listener_spec.tls_enabled();
     let listening_on = self.listener_spec.listening_on;
     let handling_timeout = self.globals.proxy_config.connection_handling_timeout;
+    let request_max_body_size = self.globals.proxy_config.request_max_body_size;
 
     self.globals.runtime_handle.clone().spawn(async move {
       // Hold the per-IP connection slot for the whole connection lifetime.
@@ -310,6 +318,7 @@ where
             listening_on,
             tls_enabled,
             tls_server_name.clone(),
+            request_max_body_size,
           )
         }),
       );
