@@ -14,7 +14,8 @@ pub mod DEFAULTS {
   /// Conservative bound that closes the unbounded-body DoS hole on h1/h2 while matching the
   /// historical h3-only default so existing h3 deployments see no change. Operators with
   /// larger uploads override via the top-level `request_max_body_size` TOML key; an
-  /// effectively-unlimited deployment uses a deliberately large value (e.g. `usize::MAX`).
+  /// effectively-unlimited deployment uses a deliberately large value within TOML's signed
+  /// 64-bit integer range (e.g. `9000000000000` for ~9 TB).
   pub const REQUEST_MAX_BODY_SIZE: usize = 268_435_456;
 }
 

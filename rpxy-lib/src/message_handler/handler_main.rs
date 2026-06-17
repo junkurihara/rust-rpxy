@@ -317,10 +317,12 @@ fn check_content_length_limit<B>(req: &Request<B>, limit: Option<usize>) -> Http
     return Ok(());
   };
   // Malformed Content-Length: let the downstream parser (hyper) handle it; we are only
-  // responsible for the size-bound check here.
+  // responsible for the size-bound check here. Parse as `u64` so that a syntactically
+  // valid but very large value (e.g. > 4 GiB on a 32-bit target) does not silently fall
+  // out of `usize::parse` and skip the pre-flight 413; the comparison is widened to `u64`.
   let Ok(s) = value.to_str() else { return Ok(()) };
-  let Ok(n) = s.parse::<usize>() else { return Ok(()) };
-  if n > limit {
+  let Ok(n) = s.parse::<u64>() else { return Ok(()) };
+  if n > limit as u64 {
     return Err(HttpError::PayloadTooLarge);
   }
   Ok(())

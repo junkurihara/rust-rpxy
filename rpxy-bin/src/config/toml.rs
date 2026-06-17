@@ -68,7 +68,7 @@ impl OneOrMany {
 /// - `max_clients_per_ip`: Optional max concurrent connections per source IP (0 disables it).
 /// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
 /// - `redact_query_in_access_log`: Optional. Redact query-string values in the access log (default: false).
-/// - `request_max_body_size`: Optional maximum inbound request body size in bytes; applied to h1/h2/h3 alike. Defaults to 256 MiB. Effectively-unlimited deployments use a deliberately large value (e.g. `usize::MAX`).
+/// - `request_max_body_size`: Optional maximum inbound request body size in bytes; applied to h1/h2/h3 alike. Defaults to 256 MiB. Effectively-unlimited deployments use a deliberately large value within TOML's signed 64-bit integer range (e.g. `9000000000000` for ~9 TB).
 /// - `apps`: Optional application definitions.
 /// - `default_app`: Optional default application name.
 /// - `experimental`: Optional experimental features.
@@ -1462,9 +1462,13 @@ mod tests {
     "#;
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
     let proxy_config: ProxyConfig = (&config).try_into().unwrap();
-    // Default is 256 MiB matching DEFAULTS::REQUEST_MAX_BODY_SIZE; verify the order of
-    // magnitude rather than hard-coding 268_435_456 here (the constant lives in rpxy-lib).
-    assert_eq!(proxy_config.request_max_body_size, Some(268_435_456));
+    // Default is 256 MiB matching DEFAULTS::REQUEST_MAX_BODY_SIZE; assert against
+    // ProxyConfig::default() so the test does not have to be updated if the constant
+    // (which lives in rpxy-lib) changes.
+    assert_eq!(
+      proxy_config.request_max_body_size,
+      ProxyConfig::default().request_max_body_size
+    );
   }
 
   /// The deprecated `experimental.h3.request_max_body_size` continues to populate the h3
