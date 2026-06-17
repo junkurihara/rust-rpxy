@@ -43,7 +43,7 @@ pub(in crate::message_handler) fn remove_hop_header(headers: &mut HeaderMap) {
   });
 }
 
-/// Extract upgrade header value if exist
+/// Extract the `Upgrade` header value when `Connection` lists `upgrade`.
 pub(in crate::message_handler) fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
   let c = headers.get(header::CONNECTION)?;
   let has_upgrade_token = c
