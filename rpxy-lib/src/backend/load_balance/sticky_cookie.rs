@@ -211,11 +211,6 @@ impl StickyCookieConfig {
   pub fn path(&self) -> &str {
     &self.path
   }
-
-  /// Cookie lifetime in seconds.
-  pub fn duration(&self) -> i64 {
-    self.duration
-  }
 }
 
 impl<'a> StickyCookieConfig {
