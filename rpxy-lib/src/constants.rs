@@ -53,7 +53,7 @@ pub mod proxy_protocol {
   pub const TIMEOUT_MSEC: u64 = 50;
 }
 
-// TODO: max cache size in total
+// TODO: Add a total cache size ceiling; current cache limits cover entry count and per-entry size only.
 
 #[cfg(feature = "health-check")]
 /// Default health check constants
@@ -70,7 +70,9 @@ pub mod health_check {
   pub const DEFAULT_EXPECTED_STATUS: u16 = 200;
 }
 
-/// Logging event name TODO: Other separated logs?
+/// Logging event names.
+///
+/// TODO: Split access, operational, and error logs into separate targets if logging needs diverge.
 pub mod log_event_names {
   /// access log
   pub const ACCESS_LOG: &str = "rpxy::access";

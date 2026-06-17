@@ -41,8 +41,8 @@ where
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
     debug!("QUIC/HTTP3 connection established from {:?} {}", client_addr, tls_server_name);
 
-    // TODO: Is here enough to fetch server_name from NewConnection?
-    // to avoid deep nested call from listener_service_h3
+    // TODO: Evaluate whether server_name should be carried in connection context instead
+    // of being fetched here to avoid deeper listener_service_h3 call plumbing.
     loop {
       // this routine follows hyperium/h3 examples https://github.com/hyperium/h3/blob/master/examples/server.rs
       match h3_conn.accept().await {

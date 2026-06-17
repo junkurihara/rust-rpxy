@@ -151,8 +151,8 @@ pub(in crate::message_handler) fn add_forwarding_header(
     headers.remove(header::FORWARDED);
   }
 
-  // Single line cookie header
-  // TODO: This should be only for HTTP/1.1. For 2+, this can be multi-lined.
+  // Single line cookie header.
+  // TODO: Preserve multiple Cookie header fields for HTTP/2+ once request-version context reaches this helper.
   make_cookie_single_line(headers)?;
 
   // Always overwrite these headers with rpxy's authoritative downstream view.

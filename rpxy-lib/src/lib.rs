@@ -62,7 +62,7 @@ pub struct RpxyOptions {
   /// List of application configurations
   pub app_config_list: AppConfigList,
   /// Certificate reloader service receiver
-  pub cert_rx: Option<ReloaderReceiver<ServerCryptoBase>>, // TODO:
+  pub cert_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
   /// Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
   /// Operator opt-out (env `RPXY_UNSAFE_DEBUG_HEADERS`) that disables
@@ -88,7 +88,7 @@ pub async fn entrypoint(
   RpxyOptions {
     proxy_config,
     app_config_list,
-    cert_rx, // TODO:
+    cert_rx,
     runtime_handle,
     unsafe_debug_headers,
     access_log_enabled,
