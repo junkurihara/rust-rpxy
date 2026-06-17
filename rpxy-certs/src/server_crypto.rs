@@ -8,7 +8,9 @@ use rustls::{
 use std::sync::{Arc, OnceLock};
 
 /* ------------------------------------------------ */
-/// ServerName in bytes type (TODO: this may be changed to define `common` layer defining types of names. or should be independent?)
+/// ServerName in bytes type.
+///
+/// TODO: Move server-name byte/string types into a shared module if another crate needs the abstraction.
 pub type ServerNameBytes = Vec<u8>;
 /// Convert ServerName in bytes to string
 fn server_name_bytes_to_string(server_name_bytes: &ServerNameBytes) -> Result<String, RpxyCertError> {

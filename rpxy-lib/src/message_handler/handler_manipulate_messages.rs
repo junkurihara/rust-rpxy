@@ -34,7 +34,7 @@ where
     #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
     {
       // Manipulate ALT_SVC allowing h3 in response message only when mutual TLS is not enabled
-      // TODO: This is a workaround for avoiding a client authentication in HTTP/3
+      // TODO: Support per-vhost HTTP/3 client authentication so mTLS domains can advertise Alt-Svc safely.
       if let Some(port) = h3_alt_svc_port(&self.globals.proxy_config, backend_app.mutual_tls, is_secure_transport) {
         add_header_entry_overwrite_if_exist(
           headers,

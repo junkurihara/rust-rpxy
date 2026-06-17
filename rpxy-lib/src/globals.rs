@@ -33,7 +33,7 @@ pub struct Globals {
   pub per_ip_connection_count: PerIpConnectionCount,
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
-  /// Shared context - Certificate reloader service receiver // TODO: newer one
+  /// Shared context - Certificate reloader service receiver
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
   /// Operator opt-out (env `RPXY_UNSAFE_DEBUG_HEADERS`) that disables
   /// credential-header redaction in DEBUG request logs. Default false.
@@ -145,7 +145,7 @@ impl Default for ProxyConfig {
       public_https_port: None,
       tcp_listen_backlog: TCP_LISTEN_BACKLOG,
 
-      // TODO: Reconsider each timeout values
+      // TODO: Revisit default timeout values against downstream connection lifetimes and upstream latency expectations.
       proxy_idle_timeout: Duration::from_secs(PROXY_IDLE_TIMEOUT_SEC),
       upstream_idle_timeout: Duration::from_secs(UPSTREAM_IDLE_TIMEOUT_SEC),
 
