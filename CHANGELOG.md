@@ -11,6 +11,12 @@
 - **Fix: enforce a request body size limit on HTTP/1.1 and HTTP/2.** Previously rpxy enforced `request_max_body_size` only on HTTP/3; a client could stream arbitrarily many request body bytes via HTTP/1.1 or HTTP/2 with no proxy-side bound, allowing a denial-of-service via unbounded request bodies. The same limit (default 256 MiB, matching the previous HTTP/3-only default) now applies to all three protocols, configurable via a new top-level `request_max_body_size` TOML key. Oversize requests with a known `Content-Length` are rejected up front with `413 Payload Too Large` before any upstream contact (HTTP/1.x responses include `Connection: close` so the unread body bytes are not fed into a recycled connection; HTTP/2 and HTTP/3 close the affected stream in-band); oversize chunked / streamed bodies are detected mid-flight by a per-request body adapter which emits one `error!` log line of the form "Request body exceeded limit: received N bytes, maximum allowed M" and surfaces to the client as an upstream-forwarder error (typically 502) or a connection drop, with the log line identifying the cause. HTTP/3's pre-existing streaming-overrun behaviour is preserved; HTTP/3 also newly gets the CL-known 413 pre-flight by routing through the unified handler entry. The internal representation moved from `usize` to `Option<usize>` (`None` = unlimited; `Some(0)` preserves the previous HTTP/3 "reject any non-empty body" semantics).
 - **Fix: validate obfuscated nodenames in `Forwarded for=` values per RFC 7239.** rpxy now rejects invalid `obfnode` values instead of storing and re-emitting them into generated `Forwarded` headers. The same ABNF guard is shared with obfuscated ports, keeping both obfuscated `for=` components valid-by-construction before the writer serializes them.
 
+### Improvement
+
+- **Nits: clean up in-source TODO comments.** Empty or stale markers were removed, Japanese-only notes were translated, and the remaining future-work comments were clarified without changing runtime behavior.
+- **Refactor: clear scoped Clippy carry-over warnings in the forwarding-header and hop-header helpers.** The cleanup reshapes nested control flow, fixes doc-comment placement, and adds direct `Upgrade` extraction tests without changing header parsing or proxy behavior.
+- **Refactor: remove an unused sticky-cookie duration getter.** The stored sticky-cookie duration is still used when generating `Set-Cookie` metadata, and the current cookie lifetime behavior is unchanged.
+
 ## 0.13.1
 
 ### Bugfix
