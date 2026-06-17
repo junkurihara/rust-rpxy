@@ -2,6 +2,14 @@
 
 ## 0.13.2 or 0.14.0 (Unreleased)
 
+### Important Changes
+
+- **HTTP/1.1 and HTTP/2 now have a 256 MiB default request body cap.** Previously HTTP/1.1 and HTTP/2 had no body size limit. Operators handling >256 MiB uploads via HTTP/1.1 or HTTP/2 must explicitly set `request_max_body_size` to a larger value in the top-level config (effectively-unlimited deployments set a deliberately large value within TOML's signed-64-bit integer range, e.g. `9000000000000` for ~9 TB). The HTTP/3 default is unchanged. The previous `experimental.h3.request_max_body_size` key continues to work as a deprecated HTTP/3-specific override and emits a startup warning; it will be removed in 0.14.0.
+
+### Bugfix
+
+- **Fix: enforce a request body size limit on HTTP/1.1 and HTTP/2.** Previously rpxy enforced `request_max_body_size` only on HTTP/3; a client could stream arbitrarily many request body bytes via HTTP/1.1 or HTTP/2 with no proxy-side bound, allowing a denial-of-service via unbounded request bodies. The same limit (default 256 MiB, matching the previous HTTP/3-only default) now applies to all three protocols, configurable via a new top-level `request_max_body_size` TOML key. Oversize requests with a known `Content-Length` are rejected up front with `413 Payload Too Large` before any upstream contact (HTTP/1.x responses include `Connection: close` so the unread body bytes are not fed into a recycled connection; HTTP/2 and HTTP/3 close the affected stream in-band); oversize chunked / streamed bodies are detected mid-flight by a per-request body adapter which emits one `error!` log line of the form "Request body exceeded limit: received N bytes, maximum allowed M" and surfaces to the client as an upstream-forwarder error (typically 502) or a connection drop, with the log line identifying the cause. HTTP/3's pre-existing streaming-overrun behaviour is preserved; HTTP/3 also newly gets the CL-known 413 pre-flight by routing through the unified handler entry. The internal representation moved from `usize` to `Option<usize>` (`None` = unlimited; `Some(0)` preserves the previous HTTP/3 "reject any non-empty body" semantics).
+
 ## 0.13.1
 
 ### Bugfix

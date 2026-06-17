@@ -68,6 +68,7 @@ impl OneOrMany {
 /// - `max_clients_per_ip`: Optional max concurrent connections per source IP (0 disables it).
 /// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
 /// - `redact_query_in_access_log`: Optional. Redact query-string values in the access log (default: false).
+/// - `request_max_body_size`: Optional maximum inbound request body size in bytes; applied to h1/h2/h3 alike. Defaults to 256 MiB. Effectively-unlimited deployments use a deliberately large value within TOML's signed 64-bit integer range (e.g. `9000000000000` for ~9 TB).
 /// - `apps`: Optional application definitions.
 /// - `default_app`: Optional default application name.
 /// - `experimental`: Optional experimental features.
@@ -89,6 +90,11 @@ pub struct ConfigToml {
   pub sticky_cookie_secret: Option<String>,
   pub trusted_forwarded_proxies: Option<OneOrMany>,
   pub redact_query_in_access_log: Option<bool>,
+  /// Maximum inbound request body size in bytes (applies to h1/h2/h3 alike). When unset
+  /// the loader substitutes the default (`DEFAULTS::REQUEST_MAX_BODY_SIZE`, 256 MiB).
+  /// `experimental.h3.request_max_body_size` continues to function as a deprecated
+  /// h3-only override; it will be removed in 0.14.0.
+  pub request_max_body_size: Option<usize>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
   pub experimental: Option<Experimental>,
@@ -378,6 +384,12 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       proxy_config.redact_query_in_access_log = redact;
     }
 
+    // Inbound request body size limit (h1/h2/h3 uniform; unset retains the default
+    // applied in `ProxyConfig::default`).
+    if let Some(n) = self.request_max_body_size {
+      proxy_config.request_max_body_size = Some(n);
+    }
+
     // experimental
     if let Some(exp) = &self.experimental {
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -388,7 +400,12 @@ impl TryInto<ProxyConfig> for &ConfigToml {
             proxy_config.h3_alt_svc_max_age = x;
           }
           if let Some(x) = h3option.request_max_body_size {
-            proxy_config.h3_request_max_body_size = x;
+            warn!(
+              "`experimental.h3.request_max_body_size` is deprecated and will be removed in 0.14.0; \
+               use the top-level `request_max_body_size` instead. \
+               The h3 path will use the deprecated value until then."
+            );
+            proxy_config.h3_request_max_body_size = Some(x);
           }
           if let Some(x) = h3option.max_concurrent_connections {
             proxy_config.h3_max_concurrent_connections = x;
@@ -1393,14 +1410,7 @@ mod tests {
 
   #[test]
   fn validate_server_name_rejects_invalid_label_syntax() {
-    for name in [
-      "",
-      ".example.com",
-      "example.com.",
-      "a..b.com",
-      "-bad.example",
-      "bad-.example",
-    ] {
+    for name in ["", ".example.com", "example.com.", "a..b.com", "-bad.example", "bad-.example"] {
       assert!(validate_server_name(name).is_err(), "expected reject: {name:?}");
     }
     // over-long label (64 chars) and over-long name (>253 chars)
@@ -1413,7 +1423,7 @@ mod tests {
   #[test]
   fn validate_server_name_rejects_wildcard_underscore_ipv6_idn() {
     for name in [
-      "*.example.com",     // wildcard: unsupported
+      "*.example.com",      // wildcard: unsupported
       "_dmarc.example.com", // underscore: not a valid TLS SNI hostname
       "::1",                // IPv6 literal
       "2001:db8::1",        // IPv6 literal
@@ -1429,6 +1439,59 @@ mod tests {
     assert!(
       err.to_string().contains("Invalid server_name"),
       "error must be the validation error: {err}"
+    );
+  }
+
+  /// Top-level `request_max_body_size` flows into `ProxyConfig.request_max_body_size`.
+  #[test]
+  fn request_max_body_size_top_level_populates_proxy_config() {
+    let toml_str = r#"
+      listen_port = 8080
+      request_max_body_size = 100000
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.request_max_body_size, Some(100_000));
+  }
+
+  /// Unset top-level key falls back to the default (256 MiB applied by `ProxyConfig::default()`).
+  #[test]
+  fn request_max_body_size_default_when_unset() {
+    let toml_str = r#"
+      listen_port = 8080
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    // Default is 256 MiB matching DEFAULTS::REQUEST_MAX_BODY_SIZE; assert against
+    // ProxyConfig::default() so the test does not have to be updated if the constant
+    // (which lives in rpxy-lib) changes.
+    assert_eq!(
+      proxy_config.request_max_body_size,
+      ProxyConfig::default().request_max_body_size
+    );
+  }
+
+  /// The deprecated `experimental.h3.request_max_body_size` continues to populate the h3
+  /// override and takes precedence on the h3 path. (Both fields are `Option<usize>`;
+  /// h3-side enforcement uses `h3.or(global)`.)
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn request_max_body_size_h3_override_populates_h3_field_and_takes_precedence() {
+    let toml_str = r#"
+      listen_port = 8080
+      request_max_body_size = 100000
+      [experimental.h3]
+      request_max_body_size = 65536
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    // Top-level still wins for h1/h2.
+    assert_eq!(proxy_config.request_max_body_size, Some(100_000));
+    // H3 override populated; combined via `h3.or(global)` it wins on the h3 path.
+    assert_eq!(proxy_config.h3_request_max_body_size, Some(65_536));
+    assert_eq!(
+      proxy_config.h3_request_max_body_size.or(proxy_config.request_max_body_size),
+      Some(65_536)
     );
   }
 }
