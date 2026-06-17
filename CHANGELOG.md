@@ -16,6 +16,7 @@
 - **Nits: clean up in-source TODO comments.** Empty or stale markers were removed, Japanese-only notes were translated, and the remaining future-work comments were clarified without changing runtime behavior.
 - **Refactor: clear scoped Clippy carry-over warnings in the forwarding-header and hop-header helpers.** The cleanup reshapes nested control flow, fixes doc-comment placement, and adds direct `Upgrade` extraction tests without changing header parsing or proxy behavior.
 - **Refactor: remove an unused sticky-cookie duration getter.** The stored sticky-cookie duration is still used when generating `Set-Cookie` metadata, and the current cookie lifetime behavior is unchanged.
+- **Refactor: replace the hard-coded sticky-cookie duration with a named constant and add a defensive validation guard.** The 300-second default is now `STICKY_COOKIE_DURATION_SECS`, and `StickyCookieConfig::try_new` rejects non-positive durations at build time. No behavior change.
 
 ## 0.13.1
 

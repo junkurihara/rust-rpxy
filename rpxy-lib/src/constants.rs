@@ -33,6 +33,10 @@ pub mod H3 {
 /// Current cookie name for sticky load-balancing tokens.
 pub const STICKY_COOKIE_NAME: &str = "rpxy_sticky_token";
 
+#[cfg(feature = "sticky-cookie")]
+/// Default sticky-cookie lifetime in seconds.
+pub const STICKY_COOKIE_DURATION_SECS: i64 = 300;
+
 #[cfg(feature = "cache")]
 // # of entries in cache
 pub const MAX_CACHE_ENTRY: usize = 1_000;
