@@ -319,7 +319,8 @@ fn check_content_length_limit<B>(req: &Request<B>, limit: Option<usize>) -> Http
   // Malformed Content-Length: let the downstream parser (hyper) handle it; we are only
   // responsible for the size-bound check here. Parse as `u64` so that a syntactically
   // valid but very large value (e.g. > 4 GiB on a 32-bit target) does not silently fall
-  // out of `usize::parse` and skip the pre-flight 413; the comparison is widened to `u64`.
+  // out of `s.parse::<usize>()` and skip the pre-flight 413; the comparison is widened
+  // to `u64`.
   let Ok(s) = value.to_str() else { return Ok(()) };
   let Ok(n) = s.parse::<u64>() else { return Ok(()) };
   if n > limit as u64 {
@@ -392,5 +393,27 @@ mod tests {
     ));
     let req = req_with_cl("0");
     assert!(check_content_length_limit(&req, Some(0)).is_ok());
+  }
+
+  /// Regression: an oversize CL whose numeric value would overflow `usize` on a 32-bit
+  /// target (and `u64::MAX` even on 64-bit) must still be rejected as PayloadTooLarge.
+  /// Parsing as `u64` and comparing against `limit as u64` is what guarantees this; a
+  /// previous `s.parse::<usize>()` would have failed on 32-bit and silently skipped the
+  /// pre-flight 413.
+  #[test]
+  fn check_content_length_limit_rejects_value_overflowing_usize() {
+    // Larger than usize::MAX on a 32-bit target (4_294_967_295) and larger than any
+    // realistic `request_max_body_size`; still well within u64 (u64::MAX ~= 1.8e19).
+    let req = req_with_cl("9999999999999");
+    let err = check_content_length_limit(&req, Some(256 * 1024 * 1024)).unwrap_err();
+    assert!(matches!(err, HttpError::PayloadTooLarge));
+    // u64::MAX as a header value is still rejected (the largest value that parses).
+    let req = req_with_cl(&u64::MAX.to_string());
+    let err = check_content_length_limit(&req, Some(256 * 1024 * 1024)).unwrap_err();
+    assert!(matches!(err, HttpError::PayloadTooLarge));
+    // A value that does not even fit in `u64` is treated as malformed and deferred to
+    // the streaming body adapter (consistent with the existing malformed-header test).
+    let req = req_with_cl("99999999999999999999999999");
+    assert!(check_content_length_limit(&req, Some(256 * 1024 * 1024)).is_ok());
   }
 }
