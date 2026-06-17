@@ -34,16 +34,16 @@ fn overwrite_x_forwarded_host_from_original(headers: &mut HeaderMap, authoritati
 /* Forwarding header normalization model                                                                   */
 /* --------------------------------------------------------------------------------------------------------- */
 
-/// Internal representation of the forwarding chain used by rpxy.
-///
-/// The flow is:
-/// 1. Parse `Forwarded` and/or `X-Forwarded-*` into `ForwardedEntry`
-/// 2. Append the immediate peer as rpxy's authoritative latest hop
-/// 3. Trim trusted proxy hops from the right-hand side
-/// 4. Regenerate outgoing `X-Forwarded-*` / `Forwarded` from the normalized chain
-///
-/// Keeping this representation in one place makes the trust-boundary logic
-/// easier to audit than passing partially parsed headers across multiple helpers.
+// Internal representation of the forwarding chain used by rpxy.
+//
+// The flow is:
+// 1. Parse `Forwarded` and/or `X-Forwarded-*` into `ForwardedEntry`
+// 2. Append the immediate peer as rpxy's authoritative latest hop
+// 3. Trim trusted proxy hops from the right-hand side
+// 4. Regenerate outgoing `X-Forwarded-*` / `Forwarded` from the normalized chain
+//
+// Keeping this representation in one place makes the trust-boundary logic
+// easier to audit than passing partially parsed headers across multiple helpers.
 
 /// An entry in Forwarded header with only the parameters relevant for forwarding chain normalization and consistency check.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -398,10 +398,10 @@ fn forwarded_is_consistent(forwarded: &[ForwardedEntry], xff_chain: &[ForwardedE
 
   // Optional proto check for the last entry, if proto is present in both headers. This is a sanity check to prevent trusting a forged Forwarded header when X-Forwarded-Proto is also present and inconsistent.
   let proto = xff_chain.last().and_then(|entry| entry.proto.as_deref());
-  if let (Some(forwarded_proto), Some(proto)) = (forwarded.last().and_then(|entry| entry.proto.as_deref()), proto) {
-    if !forwarded_proto.eq_ignore_ascii_case(proto.trim()) {
-      return false;
-    }
+  if let (Some(forwarded_proto), Some(proto)) = (forwarded.last().and_then(|entry| entry.proto.as_deref()), proto)
+    && !forwarded_proto.eq_ignore_ascii_case(proto.trim())
+  {
+    return false;
   }
 
   true
@@ -521,42 +521,41 @@ fn parse_forwarded_node(token: &str) -> Result<ForwardedNode> {
   // Applying rsplit_once(':') unconditionally would mis-parse an unbracketed IPv6 such as
   // `2001:db8::4711` as `ip=2001:db8::` + `port=4711`. So only split on ':' when the token
   // is bracketed, or when it contains exactly one ':' (IPv4 / unknown / obfuscated).
-  if trimmed.starts_with('[') {
-    if let Some((node, port)) = trimmed.rsplit_once(':') {
-      if let Some(inner) = node.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-        let ip = canonicalize_ip(IpAddr::from_str(inner).map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?);
-        return Ok(ForwardedNode {
-          ip: Some(ip),
-          port: Some(parse_forwarded_port(port, token)?),
-          raw: ForwardedNodeRaw::Ip,
-        });
-      }
+  if trimmed.starts_with('[')
+    && let Some((node, port)) = trimmed.rsplit_once(':')
+    && let Some(inner) = node.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
+  {
+    let ip = canonicalize_ip(IpAddr::from_str(inner).map_err(|e| anyhow!("invalid forwarded address `{token}`: {e}"))?);
+    return Ok(ForwardedNode {
+      ip: Some(ip),
+      port: Some(parse_forwarded_port(port, token)?),
+      raw: ForwardedNodeRaw::Ip,
+    });
+  } else if trimmed.matches(':').count() == 1
+    && let Some((node, port)) = trimmed.rsplit_once(':')
+  {
+    if node.eq_ignore_ascii_case("unknown") {
+      return Ok(ForwardedNode {
+        ip: None,
+        port: Some(parse_forwarded_port(port, token)?),
+        raw: ForwardedNodeRaw::Unknown,
+      });
     }
-  } else if trimmed.matches(':').count() == 1 {
-    if let Some((node, port)) = trimmed.rsplit_once(':') {
-      if node.eq_ignore_ascii_case("unknown") {
-        return Ok(ForwardedNode {
-          ip: None,
-          port: Some(parse_forwarded_port(port, token)?),
-          raw: ForwardedNodeRaw::Unknown,
-        });
-      }
-      if is_obfnode(node) {
-        return Ok(ForwardedNode {
-          ip: None,
-          port: Some(parse_forwarded_port(port, token)?),
-          raw: ForwardedNodeRaw::Obfuscated(node.to_string()),
-        });
-      } else if node.starts_with('_') {
-        return Err(anyhow!("invalid forwarded obfnode in `{token}`: `{node}`"));
-      }
-      if let Ok(ip) = IpAddr::from_str(node) {
-        return Ok(ForwardedNode {
-          ip: Some(canonicalize_ip(ip)),
-          port: Some(parse_forwarded_port(port, token)?),
-          raw: ForwardedNodeRaw::Ip,
-        });
-      }
+    if is_obfnode(node) {
+      return Ok(ForwardedNode {
+        ip: None,
+        port: Some(parse_forwarded_port(port, token)?),
+        raw: ForwardedNodeRaw::Obfuscated(node.to_string()),
+      });
+    } else if node.starts_with('_') {
+      return Err(anyhow!("invalid forwarded obfnode in `{token}`: `{node}`"));
+    }
+    if let Ok(ip) = IpAddr::from_str(node) {
+      return Ok(ForwardedNode {
+        ip: Some(canonicalize_ip(ip)),
+        port: Some(parse_forwarded_port(port, token)?),
+        raw: ForwardedNodeRaw::Ip,
+      });
     }
   }
 
