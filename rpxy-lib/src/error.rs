@@ -96,6 +96,9 @@ pub enum RpxyError {
   #[error("Invalid sticky cookie AAD: {0}")]
   InvalidStickyCookieAad(String),
   #[cfg(feature = "sticky-cookie")]
+  #[error("Invalid sticky cookie configuration: {0}")]
+  InvalidStickyCookieConfig(String),
+  #[cfg(feature = "sticky-cookie")]
   #[error("Failed to seal sticky cookie value")]
   FailedToSealStickyCookie,
 

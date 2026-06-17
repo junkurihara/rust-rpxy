@@ -5,7 +5,7 @@ use super::load_balance::{
 use super::load_balance::{LoadBalanceStickyBuilder, StickyCookieConfig};
 use super::upstream_opts::UpstreamOption;
 #[cfg(feature = "sticky-cookie")]
-use crate::constants::STICKY_COOKIE_NAME;
+use crate::constants::{STICKY_COOKIE_DURATION_SECS, STICKY_COOKIE_NAME};
 #[cfg(feature = "health-check")]
 use crate::globals::HealthCheckConfig;
 use crate::{
@@ -278,8 +278,8 @@ impl UpstreamCandidatesBuilder {
         lb_opts::ROUND_ROBIN => LoadBalance::RoundRobin(LoadBalanceRoundRobinBuilder::default().build().unwrap()),
         #[cfg(feature = "sticky-cookie")]
         lb_opts::STICKY_ROUND_ROBIN => {
-          // TODO: Make sticky cookie name and duration configurable.
-          let sticky_config = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, server_name, path_opt, 300)?;
+          let sticky_config =
+            StickyCookieConfig::try_new(STICKY_COOKIE_NAME, server_name, path_opt, STICKY_COOKIE_DURATION_SECS)?;
           LoadBalance::StickyRoundRobin(
             LoadBalanceStickyBuilder::default()
               .sticky_config(sticky_config)
