@@ -116,7 +116,7 @@ where
     let (body_sender, req_body) = IncomingLike::channel();
 
     // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
-    // The underling buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
+    // The underlying buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
     //
     // Effective h3 body-size limit: the deprecated h3-specific override (`h3_request_max_body_size`,
     // set via `experimental.h3.request_max_body_size`) wins when present; otherwise inherit the
