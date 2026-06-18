@@ -97,9 +97,12 @@ pub struct ProxyConfig {
   pub connection_handling_timeout: Option<Duration>,
 
   /// Maximum allowed inbound request body size in bytes.
-  /// `None` means unlimited; `Some(n)` enforces an `n`-byte upper bound (including
-  /// `Some(0)`, which rejects any non-empty body). Applies to h1/h2 and serves as the
-  /// fallback for h3 when `h3_request_max_body_size` is `None`.
+  /// `None` means unlimited; `Some(n)` enforces an `n`-byte upper bound.
+  /// The top-level config loader maps TOML `0` / `"unlimited"` to `None`;
+  /// the deprecated `experimental.h3.request_max_body_size = 0` still produces
+  /// `Some(0)` for backward compatibility (programmatic `Some(0)` is otherwise
+  /// not reachable from the top-level config key). Applies to h1/h2 and serves
+  /// as the fallback for h3 when `h3_request_max_body_size` is `None`.
   /// Default after config load is `Some(DEFAULTS::REQUEST_MAX_BODY_SIZE)`.
   pub request_max_body_size: Option<usize>,
 
@@ -119,10 +122,13 @@ pub struct ProxyConfig {
   pub http3: bool,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_alt_svc_max_age: u32,
-  /// HTTP/3-specific override for `request_max_body_size`.
+  /// Deprecated override for the h3 streaming body-size limit only.
   /// `None` (the default after config load) inherits the top-level
-  /// `request_max_body_size`; `Some(n)` overrides on the h3 path only. Populated from the
-  /// deprecated `experimental.h3.request_max_body_size` TOML key during the 0.13.x
+  /// `request_max_body_size`; `Some(n)` overrides the h3 streaming body-size limit only
+  /// (via `h3_request_max_body_size.or(request_max_body_size)` in the h3 body-forwarding
+  /// task). Pre-flight Content-Length checks still use the top-level
+  /// `request_max_body_size`. Populated from the deprecated
+  /// `experimental.h3.request_max_body_size` TOML key during the 0.13.x
   /// deprecation window; removed in 0.14.0.
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_request_max_body_size: Option<usize>,

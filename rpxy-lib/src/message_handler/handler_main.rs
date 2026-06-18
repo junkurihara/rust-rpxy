@@ -382,8 +382,10 @@ mod tests {
     assert!(check_content_length_limit(&req, None).is_ok());
   }
 
-  /// `Some(0)` semantics: only the zero-length body passes (current h3 behaviour
-  /// preserved for the unified limit).
+  /// `Some(0)` semantics: only the zero-length body passes. The top-level config
+  /// key can no longer produce `Some(0)` (top-level `0` maps to `None` = unlimited);
+  /// the deprecated `experimental.h3.request_max_body_size = 0` still produces
+  /// `Some(0)` but only affects the h3 streaming path, not this pre-flight check.
   #[test]
   fn check_content_length_limit_zero_rejects_non_empty() {
     let req = req_with_cl("1");

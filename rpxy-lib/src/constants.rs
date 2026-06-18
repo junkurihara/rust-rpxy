@@ -7,15 +7,14 @@ pub const MAX_CLIENTS: usize = 512;
 pub const MAX_CLIENTS_PER_IP: usize = 0; // 0 disables the per-IP connection limit
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 
-/// Protocol-agnostic defaults that apply to h1/h2/h3 alike.
+/// Protocol-agnostic defaults applied across h1/h2/h3 when unconfigured.
 #[allow(non_snake_case)]
 pub mod DEFAULTS {
   /// Default `request_max_body_size` applied to every protocol when unconfigured. 256 MiB.
   /// Conservative bound that closes the unbounded-body DoS hole on h1/h2 while matching the
   /// historical h3-only default so existing h3 deployments see no change. Operators with
-  /// larger uploads override via the top-level `request_max_body_size` TOML key; an
-  /// effectively-unlimited deployment uses a deliberately large value within TOML's signed
-  /// 64-bit integer range (e.g. `9000000000000` for ~9 TB).
+  /// larger uploads override via the top-level `request_max_body_size` TOML key; operators
+  /// can set `0` or `"unlimited"` for no limit.
   pub const REQUEST_MAX_BODY_SIZE: usize = 268_435_456;
 }
 
