@@ -41,8 +41,8 @@ where
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
     debug!("QUIC/HTTP3 connection established from {:?} {}", client_addr, tls_server_name);
 
-    // TODO: Is here enough to fetch server_name from NewConnection?
-    // to avoid deep nested call from listener_service_h3
+    // TODO: Evaluate whether tls_server_name should live in connection context
+    // so listener_service_h3 does not need to thread it through this call.
     loop {
       // this routine follows hyperium/h3 examples https://github.com/hyperium/h3/blob/master/examples/server.rs
       match h3_conn.accept().await {
@@ -116,20 +116,32 @@ where
     let (body_sender, req_body) = IncomingLike::channel();
 
     // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
-    // The underling buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
-    let max_body_size = self.globals.proxy_config.h3_request_max_body_size;
+    // The underlying buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
+    //
+    // Effective h3 body-size limit: the deprecated h3-specific override (`h3_request_max_body_size`,
+    // set via `experimental.h3.request_max_body_size`) wins when present; otherwise inherit the
+    // global `request_max_body_size`. Both are `Option<usize>` — `None` means unlimited and skips
+    // the count entirely. The pre-flight Content-Length check in `handle_request_inner` covers
+    // CL-known oversize uploads with a clean 413; this loop covers chunked / streaming overrun.
+    let effective_body_limit: Option<usize> = self
+      .globals
+      .proxy_config
+      .h3_request_max_body_size
+      .or(self.globals.proxy_config.request_max_body_size);
     self.globals.runtime_handle.spawn(async move {
       let mut sender = body_sender;
       let mut size = 0usize;
       while let Some(mut body) = recv_stream.recv_data().await? {
         trace!("HTTP/3 incoming request body: remaining {}", body.remaining());
         size += body.remaining();
-        if size > max_body_size {
-          error!(
-            "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
-            size, max_body_size
-          );
-          return Err(RpxyError::H3TooLargeBody);
+        if let Some(limit) = effective_body_limit {
+          if size > limit {
+            error!(
+              "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
+              size, limit
+            );
+            return Err(RpxyError::H3TooLargeBody);
+          }
         }
         // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
         sender.send_data(body.copy_to_bytes(body.remaining())).await?;

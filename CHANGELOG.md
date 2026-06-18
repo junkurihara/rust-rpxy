@@ -1,6 +1,25 @@
 # CHANGELOG
 
-## 0.13.2 or 0.14.0 (Unreleased)
+## 0.13.3 or 0.14.0 (Unreleased)
+
+## 0.13.2
+
+### Important Changes
+
+- **HTTP/1.1 and HTTP/2 now have a 256 MiB default request body cap.** Previously HTTP/1.1 and HTTP/2 had no body size limit. Operators handling >256 MiB uploads via HTTP/1.1 or HTTP/2 must explicitly set `request_max_body_size` to a larger value in the top-level config; set `request_max_body_size = 0` or `"unlimited"` for no limit; human-readable suffixes (`"256k"`, `"10m"`, `"1g"`) are also accepted. The HTTP/3 default is unchanged. The previous `experimental.h3.request_max_body_size` key continues to work as a deprecated override for the HTTP/3 streaming body-size limit only (pre-flight Content-Length checks still use the top-level key) and emits a deprecation warning on config load/reload; it will be removed in 0.14.0.
+
+### Bugfix
+
+- **Fix: enforce a request body size limit on HTTP/1.1 and HTTP/2.** Previously rpxy enforced `request_max_body_size` only on HTTP/3; a client could stream arbitrarily many request body bytes via HTTP/1.1 or HTTP/2 with no proxy-side bound, allowing a denial-of-service via unbounded request bodies. The same limit (default 256 MiB, matching the previous HTTP/3-only default) now applies to all three protocols, configurable via a new top-level `request_max_body_size` TOML key. Oversize requests with a known `Content-Length` are rejected up front with `413 Payload Too Large` before any upstream contact (HTTP/1.x responses include `Connection: close` so the unread body bytes are not fed into a recycled connection; HTTP/2 and HTTP/3 close the affected stream in-band); oversize chunked / streamed bodies are detected mid-flight by a per-request body adapter which emits one `error!` log line of the form "Request body exceeded limit: received N bytes, maximum allowed M" and surfaces to the client as an upstream-forwarder error (typically 502) or a connection drop, with the log line identifying the cause. HTTP/3's pre-existing streaming-overrun behaviour is preserved; HTTP/3 also newly gets the CL-known 413 pre-flight by routing through the unified handler entry. The internal representation moved from `usize` to `Option<usize>` (`None` = unlimited). The top-level `request_max_body_size = 0` now maps to unlimited (`None`); the deprecated `experimental.h3.request_max_body_size = 0` remains `Some(0)` for backward compatibility.
+- **Fix: validate obfuscated nodenames in `Forwarded for=` values per RFC 7239.** rpxy now rejects invalid `obfnode` values instead of storing and re-emitting them into generated `Forwarded` headers. The same ABNF guard is shared with obfuscated ports, keeping both obfuscated `for=` components valid-by-construction before the writer serializes them.
+
+### Improvement
+
+- **UX: `request_max_body_size` now accepts human-readable size strings and an explicit unlimited mode.** The top-level `request_max_body_size` TOML key accepts an integer (bytes), a string with a binary suffix (`"256k"`, `"10m"`, `"1g"`), or `0` / `"unlimited"` to disable the top-level/default limit. Existing positive integer configs continue to work unchanged (top-level `0` now maps to unlimited in this unreleased cycle). A config-load warning is emitted when the top-level/default limit is disabled. The deprecated `experimental.h3.request_max_body_size` key remains integer-only for backward compatibility.
+- **Nits: clean up in-source TODO comments.** Empty or stale markers were removed, Japanese-only notes were translated, and the remaining future-work comments were clarified without changing runtime behavior.
+- **Refactor: clear scoped Clippy carry-over warnings in the forwarding-header and hop-header helpers.** The cleanup reshapes nested control flow, fixes doc-comment placement, and adds direct `Upgrade` extraction tests without changing header parsing or proxy behavior.
+- **Refactor: remove an unused sticky-cookie duration getter.** The stored sticky-cookie duration is still used when generating `Set-Cookie` metadata, and the current cookie lifetime behavior is unchanged.
+- **Refactor: replace the hard-coded sticky-cookie duration with a named constant and add a defensive validation guard.** The 300-second default is now `STICKY_COOKIE_DURATION_SECS`, and `StickyCookieConfig::try_new` rejects non-positive durations at build time. No behavior change.
 
 ## 0.13.1
 

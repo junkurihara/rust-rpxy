@@ -15,7 +15,7 @@ pub enum UpstreamOption {
   ForceHttp2Upstream,
   /// Add RFC 7239 Forwarded header
   ForwardedHeader,
-  // TODO: Adds more options for heder override
+  // TODO: Add more request-header override options as configuration needs grow.
 }
 impl TryFrom<&str> for UpstreamOption {
   type Error = RpxyError;

@@ -1,5 +1,5 @@
 use super::{LoadBalanceError, LoadBalanceResult, sticky_cookie_seal::build_sticky_cookie_aad};
-use crate::error::RpxyResult;
+use crate::error::{RpxyError, RpxyResult};
 use chrono::{TimeZone, Utc};
 use derive_builder::Builder;
 use std::{borrow::Cow, sync::Arc};
@@ -172,6 +172,11 @@ impl StickyCookieConfig {
   /// re-validating and re-allocating it on every request. An invalid component (NUL byte) is thus
   /// rejected when the backend is built (startup/config reload), not on each request.
   pub fn try_new(name: &str, server_name: &str, path_opt: &Option<String>, duration: i64) -> RpxyResult<Self> {
+    if duration <= 0 {
+      return Err(RpxyError::InvalidStickyCookieConfig(format!(
+        "sticky_cookie_duration must be positive, got {duration}"
+      )));
+    }
     let name = name.to_string();
     let name_prefix = format!("{name}=");
     let domain = server_name.to_ascii_lowercase();
@@ -210,11 +215,6 @@ impl StickyCookieConfig {
   /// Cookie path (verbatim; route matching is case-sensitive).
   pub fn path(&self) -> &str {
     &self.path
-  }
-
-  /// Cookie lifetime in seconds.
-  pub fn duration(&self) -> i64 {
-    self.duration
   }
 }
 
@@ -266,6 +266,16 @@ mod tests {
       )
     );
   }
+
+  #[test]
+  fn try_new_rejects_non_positive_duration() {
+    for duration in [0, -1] {
+      let err = StickyCookieConfig::try_new(STICKY_COOKIE_NAME, "example.com", &Some("/path".to_string()), duration).unwrap_err();
+      assert!(matches!(err, RpxyError::InvalidStickyCookieConfig(_)));
+      assert!(err.to_string().contains("sticky_cookie_duration must be positive"));
+    }
+  }
+
   #[test]
   fn to_string_works() {
     let sc = StickyCookie {

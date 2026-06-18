@@ -52,6 +52,67 @@ impl OneOrMany {
   }
 }
 
+/// Accepts either a TOML integer (bytes) or a string with an optional binary
+/// suffix (`"256k"`, `"10m"`, `"1g"`) or the literal `"unlimited"`.
+/// Used for `request_max_body_size` at the top-level config.
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum BodySizeValue {
+  Integer(i64),
+  String(String),
+}
+
+fn parse_body_size(value: BodySizeValue, key_name: &str) -> Result<Option<usize>, anyhow::Error> {
+  match value {
+    BodySizeValue::Integer(n) => {
+      ensure!(n >= 0, "{key_name} must not be negative, got {n}");
+      if n == 0 {
+        Ok(None)
+      } else {
+        Ok(Some(usize::try_from(n).map_err(|_| {
+          anyhow!("{key_name} value {n} overflows platform address space")
+        })?))
+      }
+    }
+    BodySizeValue::String(s) => parse_body_size_string(&s, key_name),
+  }
+}
+
+fn parse_body_size_string(s: &str, key_name: &str) -> Result<Option<usize>, anyhow::Error> {
+  let s = s.trim();
+  ensure!(!s.is_empty(), "{key_name} must not be an empty string");
+  if s.eq_ignore_ascii_case("unlimited") {
+    return Ok(None);
+  }
+  let (digits, multiplier) = if let Some(d) = s.strip_suffix(|c: char| "kKmMgG".contains(c)) {
+    let suffix = s.as_bytes()[s.len() - 1];
+    let mult: u64 = match suffix {
+      b'k' | b'K' => 1024,
+      b'm' | b'M' => 1024 * 1024,
+      b'g' | b'G' => 1024 * 1024 * 1024,
+      _ => unreachable!(),
+    };
+    (d.trim(), mult)
+  } else {
+    (s, 1u64)
+  };
+  // Enforce digits-only (the approved grammar is `^\s*(\d+)\s*([kKmMgG])?\s*$`).
+  // `u64::from_str` would otherwise accept a leading `+` (e.g. "+1", "+1m").
+  ensure!(
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()),
+    "{key_name} has invalid format: {s:?}"
+  );
+  let n: u64 = digits.parse().map_err(|_| anyhow!("{key_name} has invalid format: {s:?}"))?;
+  if n == 0 {
+    return Ok(None);
+  }
+  let bytes = n
+    .checked_mul(multiplier)
+    .ok_or_else(|| anyhow!("{key_name} value {s:?} overflows u64"))?;
+  let result = usize::try_from(bytes).map_err(|_| anyhow!("{key_name} value {s:?} overflows platform address space"))?;
+  Ok(Some(result))
+}
+
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 /// Main configuration structure parsed from the TOML file.
 ///
@@ -68,6 +129,7 @@ impl OneOrMany {
 /// - `max_clients_per_ip`: Optional max concurrent connections per source IP (0 disables it).
 /// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
 /// - `redact_query_in_access_log`: Optional. Redact query-string values in the access log (default: false).
+/// - `request_max_body_size`: Optional maximum inbound request body size (h1/h2/h3 by default). Defaults to 256 MiB. Accepts an integer (bytes) or a string with a suffix (`"256k"`, `"10m"`, `"1g"`); set `0` or `"unlimited"` for no limit.
 /// - `apps`: Optional application definitions.
 /// - `default_app`: Optional default application name.
 /// - `experimental`: Optional experimental features.
@@ -89,6 +151,13 @@ pub struct ConfigToml {
   pub sticky_cookie_secret: Option<String>,
   pub trusted_forwarded_proxies: Option<OneOrMany>,
   pub redact_query_in_access_log: Option<bool>,
+  /// Maximum inbound request body size (h1/h2/h3 by default). Accepts an integer
+  /// (bytes) or a string with a binary suffix (`"256k"`, `"10m"`, `"1g"`). Set to
+  /// `0` or `"unlimited"` for no limit. When unset the loader substitutes the
+  /// default (`DEFAULTS::REQUEST_MAX_BODY_SIZE`, 256 MiB).
+  /// `experimental.h3.request_max_body_size` continues to function as a deprecated
+  /// override for the h3 streaming body-size limit only; it will be removed in 0.14.0.
+  pub request_max_body_size: Option<BodySizeValue>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
   pub experimental: Option<Experimental>,
@@ -378,6 +447,17 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       proxy_config.redact_query_in_access_log = redact;
     }
 
+    if let Some(v) = self.request_max_body_size.clone() {
+      proxy_config.request_max_body_size = parse_body_size(v, "request_max_body_size")?;
+      if proxy_config.request_max_body_size.is_none() {
+        warn!(
+          "request_max_body_size disables the top-level request body size limit; \
+           protocol-specific deprecated overrides, where enabled, may still apply. \
+           Ensure external controls (load balancer, WAF, firewall) are in place."
+        );
+      }
+    }
+
     // experimental
     if let Some(exp) = &self.experimental {
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -388,7 +468,13 @@ impl TryInto<ProxyConfig> for &ConfigToml {
             proxy_config.h3_alt_svc_max_age = x;
           }
           if let Some(x) = h3option.request_max_body_size {
-            proxy_config.h3_request_max_body_size = x;
+            warn!(
+              "`experimental.h3.request_max_body_size` is deprecated and will be removed in 0.14.0; \
+               use the top-level `request_max_body_size` instead. \
+               The h3 streaming body-size limit will use the deprecated value until then; \
+               pre-flight Content-Length checks still use the top-level `request_max_body_size`."
+            );
+            proxy_config.h3_request_max_body_size = Some(x);
           }
           if let Some(x) = h3option.max_concurrent_connections {
             proxy_config.h3_max_concurrent_connections = x;
@@ -1393,14 +1479,7 @@ mod tests {
 
   #[test]
   fn validate_server_name_rejects_invalid_label_syntax() {
-    for name in [
-      "",
-      ".example.com",
-      "example.com.",
-      "a..b.com",
-      "-bad.example",
-      "bad-.example",
-    ] {
+    for name in ["", ".example.com", "example.com.", "a..b.com", "-bad.example", "bad-.example"] {
       assert!(validate_server_name(name).is_err(), "expected reject: {name:?}");
     }
     // over-long label (64 chars) and over-long name (>253 chars)
@@ -1413,7 +1492,7 @@ mod tests {
   #[test]
   fn validate_server_name_rejects_wildcard_underscore_ipv6_idn() {
     for name in [
-      "*.example.com",     // wildcard: unsupported
+      "*.example.com",      // wildcard: unsupported
       "_dmarc.example.com", // underscore: not a valid TLS SNI hostname
       "::1",                // IPv6 literal
       "2001:db8::1",        // IPv6 literal
@@ -1430,5 +1509,234 @@ mod tests {
       err.to_string().contains("Invalid server_name"),
       "error must be the validation error: {err}"
     );
+  }
+
+  /// Top-level `request_max_body_size` flows into `ProxyConfig.request_max_body_size`.
+  #[test]
+  fn request_max_body_size_top_level_populates_proxy_config() {
+    let toml_str = r#"
+      listen_port = 8080
+      request_max_body_size = 100000
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.request_max_body_size, Some(100_000));
+  }
+
+  /// Unset top-level key falls back to the default (256 MiB applied by `ProxyConfig::default()`).
+  #[test]
+  fn request_max_body_size_default_when_unset() {
+    let toml_str = r#"
+      listen_port = 8080
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    // Default is 256 MiB matching DEFAULTS::REQUEST_MAX_BODY_SIZE; assert against
+    // ProxyConfig::default() so the test does not have to be updated if the constant
+    // (which lives in rpxy-lib) changes.
+    assert_eq!(
+      proxy_config.request_max_body_size,
+      ProxyConfig::default().request_max_body_size
+    );
+  }
+
+  /// The deprecated `experimental.h3.request_max_body_size` continues to populate the
+  /// deprecated h3 streaming override. (Both fields are `Option<usize>`; only the h3
+  /// streaming body-size calculation uses `h3.or(global)`, so the override is selected
+  /// there. Pre-flight Content-Length checks still use the top-level value.)
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn request_max_body_size_h3_override_populates_h3_field_and_wins_streaming_calc() {
+    let toml_str = r#"
+      listen_port = 8080
+      request_max_body_size = 100000
+      [experimental.h3]
+      request_max_body_size = 65536
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    // Top-level still wins for h1/h2.
+    assert_eq!(proxy_config.request_max_body_size, Some(100_000));
+    // H3 override populated; combined via `h3.or(global)` it is selected for the h3
+    // streaming body-size limit only (pre-flight CL checks still use the top-level value).
+    assert_eq!(proxy_config.h3_request_max_body_size, Some(65_536));
+    assert_eq!(
+      proxy_config.h3_request_max_body_size.or(proxy_config.request_max_body_size),
+      Some(65_536)
+    );
+  }
+
+  // --- parse_body_size unit tests ---
+
+  #[test]
+  fn request_max_body_size_integer_backward_compat() {
+    let r = parse_body_size(BodySizeValue::Integer(100_000), "test").unwrap();
+    assert_eq!(r, Some(100_000));
+  }
+
+  #[test]
+  fn request_max_body_size_zero_means_unlimited() {
+    let r = parse_body_size(BodySizeValue::Integer(0), "test").unwrap();
+    assert_eq!(r, None);
+  }
+
+  #[test]
+  fn request_max_body_size_string_zero_means_unlimited() {
+    let r = parse_body_size(BodySizeValue::String("0".to_string()), "test").unwrap();
+    assert_eq!(r, None);
+  }
+
+  #[test]
+  fn request_max_body_size_string_suffix_k() {
+    let r = parse_body_size(BodySizeValue::String("256k".to_string()), "test").unwrap();
+    assert_eq!(r, Some(262_144));
+  }
+
+  #[test]
+  fn request_max_body_size_string_suffix_m() {
+    let r = parse_body_size(BodySizeValue::String("10m".to_string()), "test").unwrap();
+    assert_eq!(r, Some(10_485_760));
+  }
+
+  #[test]
+  fn request_max_body_size_string_suffix_g() {
+    let r = parse_body_size(BodySizeValue::String("1g".to_string()), "test").unwrap();
+    assert_eq!(r, Some(1_073_741_824));
+  }
+
+  #[test]
+  fn request_max_body_size_string_suffix_uppercase() {
+    let r = parse_body_size(BodySizeValue::String("256M".to_string()), "test").unwrap();
+    assert_eq!(r, Some(268_435_456));
+  }
+
+  #[test]
+  fn request_max_body_size_string_unlimited() {
+    let r = parse_body_size(BodySizeValue::String("unlimited".to_string()), "test").unwrap();
+    assert_eq!(r, None);
+  }
+
+  #[test]
+  fn request_max_body_size_string_unlimited_case() {
+    let r = parse_body_size(BodySizeValue::String("UNLIMITED".to_string()), "test").unwrap();
+    assert_eq!(r, None);
+  }
+
+  #[test]
+  fn request_max_body_size_string_no_suffix() {
+    let r = parse_body_size(BodySizeValue::String("65536".to_string()), "test").unwrap();
+    assert_eq!(r, Some(65_536));
+  }
+
+  #[test]
+  fn request_max_body_size_negative_rejected() {
+    assert!(parse_body_size(BodySizeValue::Integer(-1), "test").is_err());
+  }
+
+  #[test]
+  fn request_max_body_size_invalid_string_rejected() {
+    assert!(parse_body_size(BodySizeValue::String("abc".to_string()), "test").is_err());
+  }
+
+  #[test]
+  fn request_max_body_size_leading_plus_rejected() {
+    assert!(parse_body_size(BodySizeValue::String("+1".to_string()), "test").is_err());
+  }
+
+  #[test]
+  fn request_max_body_size_leading_plus_with_suffix_rejected() {
+    assert!(parse_body_size(BodySizeValue::String("+1m".to_string()), "test").is_err());
+  }
+
+  #[test]
+  fn request_max_body_size_empty_string_rejected() {
+    assert!(parse_body_size(BodySizeValue::String("".to_string()), "test").is_err());
+  }
+
+  #[test]
+  fn request_max_body_size_overflow_rejected() {
+    assert!(parse_body_size(BodySizeValue::String("17179869184g".to_string()), "test").is_err());
+  }
+
+  #[test]
+  fn request_max_body_size_zero_with_suffix_unlimited() {
+    let r = parse_body_size(BodySizeValue::String("0m".to_string()), "test").unwrap();
+    assert_eq!(r, None);
+  }
+
+  // --- end-to-end TOML -> ProxyConfig tests ---
+
+  #[test]
+  fn request_max_body_size_zero_end_to_end_unlimited() {
+    let toml_str = r#"
+      listen_port = 8080
+      request_max_body_size = 0
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.request_max_body_size, None);
+  }
+
+  #[test]
+  fn request_max_body_size_string_suffix_end_to_end() {
+    let toml_str = r#"
+      listen_port = 8080
+      request_max_body_size = "10m"
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.request_max_body_size, Some(10_485_760));
+  }
+
+  // --- deprecated h3 key regression tests ---
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn request_max_body_size_h3_zero_maps_to_some_zero() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.h3]
+      request_max_body_size = 0
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.h3_request_max_body_size, Some(0));
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn request_max_body_size_h3_string_suffix_rejected() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.h3]
+      request_max_body_size = "64k"
+    "#;
+    assert!(toml::from_str::<ConfigToml>(toml_str).is_err());
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn request_max_body_size_h3_unlimited_string_rejected() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.h3]
+      request_max_body_size = "unlimited"
+    "#;
+    assert!(toml::from_str::<ConfigToml>(toml_str).is_err());
+  }
+
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[test]
+  fn request_max_body_size_top_level_suffix_with_h3_zero_keeps_both_semantics() {
+    let toml_str = r#"
+      listen_port = 8080
+      request_max_body_size = "10m"
+      [experimental.h3]
+      request_max_body_size = 0
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.request_max_body_size, Some(10_485_760));
+    assert_eq!(proxy_config.h3_request_max_body_size, Some(0));
   }
 }

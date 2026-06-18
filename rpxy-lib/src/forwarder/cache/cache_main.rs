@@ -683,7 +683,9 @@ impl CacheObject {
 /// Lru cache manager that is responsible to handle `Mutex` as an outer of `LruCache`
 struct LruCacheManager {
   /// Inner lru cache manager main object
-  inner: Arc<Mutex<LruCache<String, CacheObject>>>, // TODO: keyはstring urlでいいのか疑問。全requestに対してcheckすることになりそう
+  /// TODO: Revisit the string URL key when adding vhost-aware cache keys or
+  /// broader request-attribute checks.
+  inner: Arc<Mutex<LruCache<String, CacheObject>>>,
   /// Counter of current cached object (total)
   cnt: Arc<AtomicUsize>,
 }

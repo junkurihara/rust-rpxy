@@ -75,6 +75,16 @@ max_clients = 512
 # query strings.
 # redact_query_in_access_log = true
 
+# Optional. Maximum inbound request body size (h1/h2/h3 by default; the deprecated
+# h3 override can still override the h3 streaming limit during the deprecation
+# window). Default: 256 MiB.
+# Accepts an integer (bytes), or a string with a suffix: "256k", "10m", "1g".
+# Requests whose Content-Length exceeds this limit are rejected with 413 before
+# any upstream contact; chunked/streamed bodies are detected mid-flight.
+# Set to 0 or "unlimited" to disable the top-level limit (ensure external controls
+# are in place; a deprecated h3 streaming override, where configured, may still apply).
+# request_max_body_size = "256m"
+
 # Optional. Required when any reverse_proxy entry uses load_balance = "sticky".
 # Value must be a 32-byte secret encoded as unpadded base64url.
 # Generate with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'
@@ -196,9 +206,14 @@ connection_handling_timeout = 0 # sec
 # If this specified, h3 is enabled
 [experimental.h3]
 alt_svc_max_age = 3600             # sec
-# Limits the total HTTP/3 request body size per request stream.
-# Default: 268435456 bytes (256 MiB). Set lower when large uploads are not required.
-request_max_body_size = 65536      # bytes
+# DEPRECATED in 0.13.2; will be removed in 0.14.0. Use the top-level `request_max_body_size`
+# instead (which applies to h1/h2 and to h3 by default). When this key is set it overrides the
+# h3 streaming body-size limit only; the top-level limit still handles pre-flight
+# Content-Length checks, and rpxy emits a deprecation warning on config load/reload.
+# This deprecated key remains integer-only (bytes); 0 keeps the legacy
+# reject-non-empty-body behavior. Suffixes ("256k") and the "unlimited"
+# string are only supported by the top-level key.
+# request_max_body_size = 65536    # bytes
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100

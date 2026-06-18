@@ -33,7 +33,7 @@ pub struct Globals {
   pub per_ip_connection_count: PerIpConnectionCount,
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
-  /// Shared context - Certificate reloader service receiver // TODO: newer one
+  /// Shared context - Certificate reloader service receiver
   pub cert_reloader_rx: Option<ReloaderReceiver<ServerCryptoBase>>,
   /// Operator opt-out (env `RPXY_UNSAFE_DEBUG_HEADERS`) that disables
   /// credential-header redaction in DEBUG request logs. Default false.
@@ -96,6 +96,16 @@ pub struct ProxyConfig {
   /// timeout to handle a connection, total time of receive request, serve, and send response. this might limits the max length of response.
   pub connection_handling_timeout: Option<Duration>,
 
+  /// Maximum allowed inbound request body size in bytes.
+  /// `None` means unlimited; `Some(n)` enforces an `n`-byte upper bound.
+  /// The top-level config loader maps TOML `0` / `"unlimited"` to `None`;
+  /// the deprecated `experimental.h3.request_max_body_size = 0` still produces
+  /// `Some(0)` for backward compatibility (programmatic `Some(0)` is otherwise
+  /// not reachable from the top-level config key). Applies to h1/h2 and serves
+  /// as the fallback for h3 when `h3_request_max_body_size` is `None`.
+  /// Default after config load is `Some(DEFAULTS::REQUEST_MAX_BODY_SIZE)`.
+  pub request_max_body_size: Option<usize>,
+
   #[cfg(feature = "cache")]
   pub cache_enabled: bool,
   #[cfg(feature = "cache")]
@@ -112,8 +122,16 @@ pub struct ProxyConfig {
   pub http3: bool,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_alt_svc_max_age: u32,
+  /// Deprecated override for the h3 streaming body-size limit only.
+  /// `None` (the default after config load) inherits the top-level
+  /// `request_max_body_size`; `Some(n)` overrides the h3 streaming body-size limit only
+  /// (via `h3_request_max_body_size.or(request_max_body_size)` in the h3 body-forwarding
+  /// task). Pre-flight Content-Length checks still use the top-level
+  /// `request_max_body_size`. Populated from the deprecated
+  /// `experimental.h3.request_max_body_size` TOML key during the 0.13.x
+  /// deprecation window; removed in 0.14.0.
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-  pub h3_request_max_body_size: usize,
+  pub h3_request_max_body_size: Option<usize>,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_concurrent_bidistream: u32,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -133,7 +151,7 @@ impl Default for ProxyConfig {
       public_https_port: None,
       tcp_listen_backlog: TCP_LISTEN_BACKLOG,
 
-      // TODO: Reconsider each timeout values
+      // TODO: Revisit default timeout values against downstream connection lifetimes and upstream latency expectations.
       proxy_idle_timeout: Duration::from_secs(PROXY_IDLE_TIMEOUT_SEC),
       upstream_idle_timeout: Duration::from_secs(UPSTREAM_IDLE_TIMEOUT_SEC),
 
@@ -147,6 +165,7 @@ impl Default for ProxyConfig {
       sni_consistency: true,
       trusted_forwarded_proxies: Vec::new(),
       connection_handling_timeout: None,
+      request_max_body_size: Some(DEFAULTS::REQUEST_MAX_BODY_SIZE),
 
       #[cfg(feature = "proxy-protocol")]
       tcp_recv_proxy_protocol: None,
@@ -167,7 +186,7 @@ impl Default for ProxyConfig {
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_alt_svc_max_age: H3::ALT_SVC_MAX_AGE,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-      h3_request_max_body_size: H3::REQUEST_MAX_BODY_SIZE,
+      h3_request_max_body_size: None,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_max_concurrent_connections: H3::MAX_CONCURRENT_CONNECTIONS,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]

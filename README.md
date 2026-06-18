@@ -348,18 +348,25 @@ The [`./bench`](./bench/) directory contains a very simple example of `rpxy` con
 ```toml
 [experimental.h3]
 alt_svc_max_age = 3600
-# Limits the total HTTP/3 request body size per request stream.
-# If omitted, the default is 268435456 bytes (256 MiB).
-request_max_body_size = 65536
 max_concurrent_connections = 10000
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100
 max_idle_timeout = 10
 ```
 
-`request_max_body_size` limits the total HTTP/3 request body size per request stream.
-The body is processed as a stream; this setting is not a preallocated memory buffer size.
-Set this explicitly to a smaller value in production when large uploads are not required.
+The request body size limit is no longer HTTP/3-specific. Configure it via the **top-level** `request_max_body_size` key, which applies to HTTP/1.1, HTTP/2, and to HTTP/3 by default (the deprecated h3 streaming override below can still replace the h3 streaming limit during the deprecation window):
+
+```toml
+# Top-level (applies to h1/h2 and to h3 by default).
+# Default: 256 MiB. Accepts an integer (bytes) or a string with a binary suffix.
+request_max_body_size = "256m"   # or 268435456, "1g"; 0 / "unlimited" disables the top-level limit
+```
+
+The value is either an integer (bytes) or a string with an optional binary suffix: `"256k"` (KiB), `"10m"` (MiB), `"1g"` (GiB). Set it to `0` or `"unlimited"` to disable the top-level/default body-size limit (ensure external controls such as a load balancer, WAF, or firewall are in place). Deprecated protocol-specific overrides, where configured, may still apply. A config-load warning is emitted when the top-level/default limit is disabled.
+
+The body is processed as a stream; this setting is not a preallocated memory buffer size. Requests whose `Content-Length` exceeds the limit are rejected up front with `413 Payload Too Large` before any upstream contact; chunked / streamed bodies are detected mid-flight and the stream/connection is reset. Set this explicitly to a smaller value in production when large uploads are not required.
+
+The previous HTTP/3-only `experimental.h3.request_max_body_size` key continues to work as a deprecated override and emits a deprecation warning on config load/reload. It remains integer-only (bytes); the suffix and `"unlimited"` formats are supported by the top-level key only, and `0` on the deprecated key keeps its legacy "reject any non-empty body" behavior. It overrides the HTTP/3 streaming body-size limit only — pre-flight `Content-Length` checks still use the top-level `request_max_body_size`. It will be removed in 0.14.0; migrate to the top-level key.
 
 ### Client Authentication via Client Certificates
 

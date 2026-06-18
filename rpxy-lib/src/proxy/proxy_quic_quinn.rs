@@ -75,8 +75,9 @@ where
             "HTTP/3 connection incoming (SNI {:?})",
             new_server_name
           );
-          // TODO: server_nameをここで出してどんどん深く投げていくのは効率が悪い。connecting -> connectionsの後でいいのでは？
-          // TODO: 通常のTLSと同じenumか何かにまとめたい
+          // TODO: Avoid passing server_name through deeper call layers; consider attaching
+          // it after the connection is established.
+          // TODO: Unify TLS and QUIC server-name handling behind a shared representation.
           let self_clone = self.clone();
           self.globals.runtime_handle.spawn(async move {
             let client_addr = incoming.remote_address();

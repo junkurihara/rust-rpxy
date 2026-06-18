@@ -43,7 +43,6 @@ where
   type Error = RpxyError;
 
   async fn request(&self, req: Request<B1>) -> Result<Response<ResponseBody>, Self::Error> {
-    // TODO: cache handling
     #[cfg(feature = "cache")]
     {
       let mut synth_req = None;
@@ -103,9 +102,8 @@ where
   <B1 as Body>::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
 {
   async fn request_directly(&self, req: Request<B1>) -> RpxyResult<Response<Incoming>> {
-    // TODO: This 'match' condition is always evaluated at every 'request' invocation. So, it is inefficient.
-    // Needs to be reconsidered. Currently, this is a kind of work around.
-    // This possibly relates to https://github.com/hyperium/hyper/issues/2417.
+    // TODO: Revisit this per-request HTTP version dispatch if hyper-util exposes
+    // a setup-time h1/h2 client selection path. See https://github.com/hyperium/hyper/issues/2417.
     match req.version() {
       Version::HTTP_2 => self.inner_h2.request(req).await, // handles `h2c` requests
       _ => self.inner.request(req).await,
@@ -249,7 +247,7 @@ where
 /// Build synthetic request to cache
 fn build_synth_req_for_cache<T>(req: &Request<T>) -> Request<()> {
   let mut builder = Request::builder().method(req.method()).uri(req.uri()).version(req.version());
-  // TODO: omit extensions. is this approach correct?
+  // TODO: Include request extensions only if a future cache policy needs them.
   for (header_key, header_value) in req.headers() {
     builder = builder.header(header_key, header_value);
   }

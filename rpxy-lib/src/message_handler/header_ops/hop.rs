@@ -43,22 +43,20 @@ pub(in crate::message_handler) fn remove_hop_header(headers: &mut HeaderMap) {
   });
 }
 
-/// Extract upgrade header value if exist
+/// Extract the `Upgrade` header value when `Connection` lists `upgrade`.
 pub(in crate::message_handler) fn extract_upgrade(headers: &HeaderMap) -> Option<String> {
-  if let Some(c) = headers.get(header::CONNECTION) {
-    if c
-      .to_str()
-      .unwrap_or("")
-      .split(',')
-      .any(|w| w.trim().eq_ignore_ascii_case(header::UPGRADE.as_str()))
-    {
-      if let Some(Ok(m)) = headers.get(header::UPGRADE).map(|u| u.to_str()) {
-        debug!("Upgrade in request header: {}", m);
-        return Some(m.to_owned());
-      }
-    }
+  let c = headers.get(header::CONNECTION)?;
+  let has_upgrade_token = c
+    .to_str()
+    .unwrap_or("")
+    .split(',')
+    .any(|w| w.trim().eq_ignore_ascii_case(header::UPGRADE.as_str()));
+  if !has_upgrade_token {
+    return None;
   }
-  None
+  let m = headers.get(header::UPGRADE)?.to_str().ok()?;
+  debug!("Upgrade in request header: {}", m);
+  Some(m.to_owned())
 }
 
 #[cfg(test)]
@@ -187,6 +185,52 @@ mod tests {
     remove_connection_header(&mut h);
 
     assert!(!h.contains_key(header::CONNECTION), "Connection itself must be removed");
+  }
+
+  #[test]
+  fn extract_upgrade_returns_value_when_connection_lists_upgrade() {
+    let mut h = HeaderMap::new();
+    h.insert(header::CONNECTION, HeaderValue::from_static("keep-alive, Upgrade"));
+    h.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
+    assert_eq!(extract_upgrade(&h).as_deref(), Some("websocket"));
+  }
+
+  #[test]
+  fn extract_upgrade_returns_none_when_connection_absent() {
+    let mut h = HeaderMap::new();
+    h.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
+    assert_eq!(extract_upgrade(&h), None);
+  }
+
+  #[test]
+  fn extract_upgrade_returns_none_when_no_upgrade_token() {
+    let mut h = HeaderMap::new();
+    h.insert(header::CONNECTION, HeaderValue::from_static("keep-alive"));
+    h.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
+    assert_eq!(extract_upgrade(&h), None);
+  }
+
+  #[test]
+  fn extract_upgrade_returns_none_when_upgrade_header_absent() {
+    let mut h = HeaderMap::new();
+    h.insert(header::CONNECTION, HeaderValue::from_static("Upgrade"));
+    assert_eq!(extract_upgrade(&h), None);
+  }
+
+  #[test]
+  fn extract_upgrade_returns_none_for_non_utf8_connection() {
+    let mut h = HeaderMap::new();
+    h.insert(header::CONNECTION, HeaderValue::from_bytes(b"Upgrade, \xff").unwrap());
+    h.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
+    assert_eq!(extract_upgrade(&h), None);
+  }
+
+  #[test]
+  fn extract_upgrade_returns_none_for_non_utf8_upgrade() {
+    let mut h = HeaderMap::new();
+    h.insert(header::CONNECTION, HeaderValue::from_static("Upgrade"));
+    h.insert(header::UPGRADE, HeaderValue::from_bytes(b"\xff").unwrap());
+    assert_eq!(extract_upgrade(&h), None);
   }
 
   #[test]

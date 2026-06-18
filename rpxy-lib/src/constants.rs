@@ -7,11 +7,21 @@ pub const MAX_CLIENTS: usize = 512;
 pub const MAX_CLIENTS_PER_IP: usize = 0; // 0 disables the per-IP connection limit
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 
+/// Protocol-agnostic defaults applied across h1/h2/h3 when unconfigured.
+#[allow(non_snake_case)]
+pub mod DEFAULTS {
+  /// Default `request_max_body_size` applied to every protocol when unconfigured. 256 MiB.
+  /// Conservative bound that closes the unbounded-body DoS hole on h1/h2 while matching the
+  /// historical h3-only default so existing h3 deployments see no change. Operators with
+  /// larger uploads override via the top-level `request_max_body_size` TOML key; operators
+  /// can set `0` or `"unlimited"` for no limit.
+  pub const REQUEST_MAX_BODY_SIZE: usize = 268_435_456;
+}
+
 #[allow(non_snake_case)]
 #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
 pub mod H3 {
   pub const ALT_SVC_MAX_AGE: u32 = 3600;
-  pub const REQUEST_MAX_BODY_SIZE: usize = 268_435_456; // 256MB
   pub const MAX_CONCURRENT_CONNECTIONS: u32 = 4096;
   pub const MAX_CONCURRENT_BIDISTREAM: u32 = 64;
   pub const MAX_CONCURRENT_UNISTREAM: u32 = 64;
@@ -21,6 +31,10 @@ pub mod H3 {
 #[cfg(feature = "sticky-cookie")]
 /// Current cookie name for sticky load-balancing tokens.
 pub const STICKY_COOKIE_NAME: &str = "rpxy_sticky_token";
+
+#[cfg(feature = "sticky-cookie")]
+/// Default sticky-cookie lifetime in seconds.
+pub const STICKY_COOKIE_DURATION_SECS: i64 = 300;
 
 #[cfg(feature = "cache")]
 // # of entries in cache
@@ -42,7 +56,7 @@ pub mod proxy_protocol {
   pub const TIMEOUT_MSEC: u64 = 50;
 }
 
-// TODO: max cache size in total
+// TODO: Add a total cache size ceiling; current cache limits cover entry count and per-entry size only.
 
 #[cfg(feature = "health-check")]
 /// Default health check constants
@@ -59,7 +73,9 @@ pub mod health_check {
   pub const DEFAULT_EXPECTED_STATUS: u16 = 200;
 }
 
-/// Logging event name TODO: Other separated logs?
+/// Logging event names.
+///
+/// TODO: Split access, operational, and error logs into separate targets if logging needs diverge.
 pub mod log_event_names {
   /// access log
   pub const ACCESS_LOG: &str = "rpxy::access";
