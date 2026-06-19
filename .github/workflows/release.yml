@@ -127,7 +127,7 @@ jobs:
 
       - name: checkout
         if: ${{ steps.regex-match.outputs.match != '' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: download artifacts
         if: ${{ steps.regex-match.outputs.match != ''}}
