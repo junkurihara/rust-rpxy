@@ -32,6 +32,12 @@ webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
 acme = ["rpxy-acme"]
 post-quantum = [
   "rustls/prefer-post-quantum",
+  # s2n-quic-rustls is the forked submodule; its QUIC/HTTP3 post-quantum key
+  # exchange is gated on its own `post-quantum` feature (cipher_suite.rs selects
+  # rustls_post_quantum::provider() via builder_with_provider()), not on
+  # rustls/prefer-post-quantum. Keep it in the chain so X25519MLKEM768 stays
+  # offered on the QUIC path. See #602 review.
+  "s2n-quic-rustls/post-quantum",
   "rpxy-acme/post-quantum",
   "rpxy-certs/post-quantum",
 ]
