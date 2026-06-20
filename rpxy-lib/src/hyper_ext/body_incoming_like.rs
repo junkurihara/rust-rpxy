@@ -357,4 +357,30 @@ mod tests {
       unexpected => panic!("tx poll ready unexpected: {:?}", unexpected),
     }
   }
+
+  #[tokio::test]
+  async fn dropped_sender_is_clean_eof_but_abort_is_error() {
+    // Regression guard for the HTTP/3 oversize-body fix in `proxy/proxy_h3.rs`.
+    //
+    // The h3 body-forwarding task feeds the upstream-facing request body through this
+    // channel. On a `request_max_body_size` overrun it must `abort()` the sender so the
+    // consumer (the upstream forwarder) observes an error and aborts the upstream
+    // request. If the sender were merely dropped (as the pre-fix code did by returning
+    // early), the consumer would observe a clean end-of-stream and forward a silently
+    // truncated body upstream as if it were complete. This test pins the exact
+    // distinction the fix relies on.
+
+    // Plain drop -> clean EOF (the old, buggy termination).
+    let (tx, mut rx) = IncomingLike::channel();
+    drop(tx);
+    assert!(rx.frame().await.is_none(), "dropping the sender must surface a clean EOF");
+
+    // abort() -> error terminating the stream (the fix).
+    let (tx, mut rx) = IncomingLike::channel();
+    tx.abort();
+    match rx.frame().await {
+      Some(Err(RpxyError::HyperNewBodyWriteAborted)) => {}
+      other => panic!("abort() must surface an error, got {:?}", other),
+    }
+  }
 }

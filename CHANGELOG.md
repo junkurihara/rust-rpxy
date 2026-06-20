@@ -2,6 +2,10 @@
 
 ## 0.13.3 or 0.14.0 (Unreleased)
 
+### Bugfix
+
+- Fix: reject oversize HTTP/3 request bodies with an error instead of forwarding a silently truncated body upstream.
+
 ## 0.13.2
 
 ### Important Changes

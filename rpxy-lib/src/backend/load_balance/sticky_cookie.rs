@@ -207,11 +207,13 @@ impl StickyCookieConfig {
     &self.name_prefix
   }
 
+  #[allow(unused)]
   /// Cookie domain (lowercased server name).
   pub fn domain(&self) -> &str {
     &self.domain
   }
 
+  #[allow(unused)]
   /// Cookie path (verbatim; route matching is case-sensitive).
   pub fn path(&self) -> &str {
     &self.path

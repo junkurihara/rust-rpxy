@@ -140,6 +140,8 @@ where
               "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
               size, limit
             );
+            // terminate the stream with an error code, and return an error to the caller.
+            sender.abort();
             return Err(RpxyError::H3TooLargeBody);
           }
         }
