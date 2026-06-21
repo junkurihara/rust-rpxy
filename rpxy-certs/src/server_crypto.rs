@@ -244,10 +244,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_server_crypto_base_try_into() {
-    #[cfg(not(feature = "post-quantum"))]
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
-    #[cfg(feature = "post-quantum")]
-    let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
     let mut server_crypto_base = ServerCryptoBase::default();
 
@@ -296,10 +293,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_non_mtls_configs_use_stateless_tickets_without_session_cache() {
-    #[cfg(not(feature = "post-quantum"))]
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
-    #[cfg(feature = "post-quantum")]
-    let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
     let mut server_crypto_base = ServerCryptoBase::default();
     server_crypto_base
@@ -334,10 +328,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_mtls_config_disables_session_resumption_entirely() {
-    #[cfg(not(feature = "post-quantum"))]
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
-    #[cfg(feature = "post-quantum")]
-    let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
     let mut server_crypto_base = ServerCryptoBase::default();
     server_crypto_base
@@ -362,10 +353,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_ticketer_is_shared_across_rebuilds() {
-    #[cfg(not(feature = "post-quantum"))]
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
-    #[cfg(feature = "post-quantum")]
-    let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
 
     let mut server_crypto_base = ServerCryptoBase::default();
     server_crypto_base

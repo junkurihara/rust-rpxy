@@ -168,13 +168,10 @@ pub async fn entrypoint(
     None
   };
 
-  #[cfg(not(feature = "post-quantum"))]
   // Install aws_lc_rs as default crypto provider for rustls
   let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
   #[cfg(feature = "post-quantum")]
-  let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
-  #[cfg(feature = "post-quantum")]
-  info!("Post-quantum crypto provider is installed");
+  info!("Post-quantum key exchange (X25519MLKEM768) is preferred");
 
   // 1. build backends, and make it contained in Arc
   let app_manager = Arc::new(backend::BackendAppManager::try_from(app_config_list)?);
