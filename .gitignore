@@ -1,6 +1,9 @@
 .claude
+.codex
+.agents
 .vscode
 .private
+.env
 .tmp
 docker/log
 docker/cache

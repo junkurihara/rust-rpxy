@@ -395,6 +395,8 @@ max_cache_each_size_on_memory = 65535 # optional. default is 64k, same as max_ca
 
 A *storable* (in the context of an HTTP message) response is stored if its size is less than or equal to `max_cache_each_size` in bytes. If it is also less than or equal to `max_cache_each_size_on_memory`, it is stored as an in-memory object. Otherwise, it is stored as a temporary file. Note that `max_cache_each_size` must be greater than or equal to `max_cache_each_size_on_memory`. Also note that once `rpxy` restarts or the config is updated, the cache is completely eliminated not only from the in-memory table but also from the file system.
 
+Cache entries are keyed on the scheme, host, and path/query the client requested, so different virtual hosts never share cached responses even when they proxy to the same backend.
+
 ### Automated Certificate Issuance and Renewal via TLS-ALPN-01 ACME Protocol
 
 This is a brand-new feature and may still be unstable. Thanks to [`rustls-acme`](https://github.com/FlorianUekermann/rustls-acme), automatic issuance and renewal of certificates are finally available in `rpxy`. To enable this feature, you need to specify the following entries in `config.toml`.
