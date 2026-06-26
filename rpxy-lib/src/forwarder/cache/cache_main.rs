@@ -140,7 +140,7 @@ impl RpxyCache {
         return;
       };
 
-      let cache_key = derive_cache_key_from_uri(&uri);
+      let cache_key = derive_cache_key_from_effective_uri(&uri);
       let cache_object = CacheObject::new(policy_clone, target, hash);
       // The file (if any) is now fully written and renamed into place, so it is safe to publish
       // the metadata; this also accounts for the file count and evicts any displaced file.
@@ -155,7 +155,7 @@ impl RpxyCache {
   /// Get cached response
   pub(crate) async fn get<R>(&self, req: &Request<R>) -> Option<Response<ResponseBody>> {
     trace!("Current cache status: (total, on-memory, file) = {:?}", self.count().await);
-    let cache_key = derive_cache_key_from_uri(req.uri());
+    let cache_key = derive_cache_key_from_effective_uri(req.uri());
 
     // First check cache chance
     let cached_object = self.inner.get(&cache_key).ok()??;
@@ -787,7 +787,11 @@ fn derive_filename_from_uri(uri: &hyper::Uri) -> String {
   general_purpose::URL_SAFE_NO_PAD.encode(digest)
 }
 
-fn derive_cache_key_from_uri(uri: &hyper::Uri) -> String {
+/// Derive the LRU cache key from the client-facing effective request URI. The caller MUST pass
+/// the effective URI (scheme + authority + path/query, as the client addressed it), NOT the
+/// upstream-rewritten request URI - otherwise distinct client-facing vhosts that rewrite to the
+/// same upstream target would collide on one key (cross-vhost cache poisoning).
+fn derive_cache_key_from_effective_uri(uri: &hyper::Uri) -> String {
   uri.to_string()
 }
 
@@ -1061,7 +1065,7 @@ mod tests {
       // Intentionally wrong: an on-memory hit must not consult this hash.
       Bytes::from_static(&[0u8; 32]),
     );
-    let cache_key = derive_cache_key_from_uri(&uri);
+    let cache_key = derive_cache_key_from_effective_uri(&uri);
     cache.inner.push(&cache_key, &cache_object).unwrap();
 
     let req = Request::builder().uri(uri.clone()).body(()).unwrap();
@@ -1251,7 +1255,7 @@ mod tests {
     let manager = LruCacheManager::new(10);
     let file_store = test_file_store();
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_uri(&uri);
+    let key = derive_cache_key_from_effective_uri(&uri);
 
     let path_a = dir.join("file-a");
     fs::write(&path_a, b"AAAA").await.unwrap();
@@ -1289,7 +1293,7 @@ mod tests {
     let manager = LruCacheManager::new(10);
     let file_store = test_file_store();
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_uri(&uri);
+    let key = derive_cache_key_from_effective_uri(&uri);
 
     let path_a = dir.join("file-a");
     fs::write(&path_a, b"AAAA").await.unwrap();
@@ -1329,7 +1333,7 @@ mod tests {
       CacheFileOrOnMemory::File(path_a.clone()),
       Bytes::from_static(&[1u8; 32]),
     );
-    publish_cache_object(&manager, &file_store, &derive_cache_key_from_uri(&uri_x), obj_a).await;
+    publish_cache_object(&manager, &file_store, &derive_cache_key_from_effective_uri(&uri_x), obj_a).await;
     assert_eq!(file_store.count().await, 1);
 
     let uri_y: Uri = "http://example.com/y".parse().unwrap();
@@ -1338,7 +1342,7 @@ mod tests {
       CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"small")),
       Bytes::from_static(&[2u8; 32]),
     );
-    publish_cache_object(&manager, &file_store, &derive_cache_key_from_uri(&uri_y), obj_b).await;
+    publish_cache_object(&manager, &file_store, &derive_cache_key_from_effective_uri(&uri_y), obj_b).await;
 
     assert!(
       fs::metadata(&path_a).await.is_err(),
@@ -1397,7 +1401,7 @@ mod tests {
   async fn evict_if_generation_spares_newer_entry() {
     let manager = LruCacheManager::new(10);
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_uri(&uri);
+    let key = derive_cache_key_from_effective_uri(&uri);
 
     let obj_a = CacheObject::new(
       fresh_policy(&uri),

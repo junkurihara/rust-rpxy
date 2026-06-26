@@ -5,6 +5,7 @@
 ### Bugfix
 
 - Fix: reject oversize HTTP/3 request bodies with an error instead of forwarding a silently truncated body upstream.
+- **Fix: partition the HTTP cache by the client-facing effective request URI (scheme + authoritative host + path/query) to prevent cross-virtual-host cache poisoning.** Previously, with the `cache` feature enabled, entries were keyed on the request URI after rewrite to the upstream target, so two virtual hosts sharing one upstream could serve each other's cached responses. The scheme is derived with the same trusted-forwarded-proxy boundary used elsewhere, and requests without a safe client-facing URI are served uncached (fail closed). This may lower the cache hit rate when virtual hosts intentionally share a backend; no config change is required.
 
 ## 0.13.2
 

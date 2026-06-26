@@ -10,6 +10,10 @@ pub(super) use common::{add_header_entry_overwrite_if_exist, host_from_uri_or_ho
 pub(super) use forwarding::add_forwarding_header;
 #[cfg(feature = "sticky-cookie")]
 pub(super) use forwarding::client_visible_secure;
+// Only the cache path consumes the re-exported `client_visible_scheme` name; under
+// sticky-cookie the scheme helper is reached internally via `client_visible_secure`.
+#[cfg(feature = "cache")]
+pub(super) use forwarding::{build_client_facing_effective_uri, client_visible_scheme};
 pub(super) use hop::{extract_upgrade, remove_connection_header, remove_hop_header};
 pub(crate) use redact::DebugHeaders;
 #[cfg(feature = "sticky-cookie")]

@@ -92,7 +92,16 @@ where
     remove_hop_header(headers);
     // Capture the client-visible scheme from the inbound forwarding headers BEFORE
     // add_forwarding_header() overwrites X-Forwarded-Proto with rpxy's listener TLS state.
-    // Used by the sticky-cookie `Secure` attribute on the response side.
+    // Used by the sticky-cookie `Secure` attribute (response side) and, when the cache feature
+    // is enabled, the cache effective-URI key (request side). The two consumers call the shared
+    // scheme boundary independently so neither feature depends on the other.
+    #[cfg(feature = "cache")]
+    let client_scheme = client_visible_scheme(
+      tls_enabled,
+      client_addr,
+      headers,
+      &self.globals.proxy_config.trusted_forwarded_proxies,
+    );
     #[cfg(feature = "sticky-cookie")]
     let sticky_cookie_secure = client_visible_secure(
       tls_enabled,
@@ -171,9 +180,11 @@ where
     // Default-app fallback hardening: when the request was matched via the `default_app`
     // path, the incoming `Host` is untrusted. Force-overwrite it with the default app's
     // authoritative server_name. Observational forwarding headers such as
-    // `X-Forwarded-Host` are rebuilt earlier by `add_forwarding_header()`.
-    if let Some(authoritative_host) = fallback_host {
-      apply_default_app_host_rewrite(headers, authoritative_host)?;
+    // `X-Forwarded-Host` are rebuilt earlier by `add_forwarding_header()`. Bind the rewrite
+    // target as `default_app_host` (not `authoritative_host`) so it does not shadow the outer
+    // client-facing `authoritative_host`, which the cache effective URI must keep using.
+    if let Some(default_app_host) = fallback_host {
+      apply_default_app_host_rewrite(headers, default_app_host)?;
     }
 
     // update uri in request
@@ -206,7 +217,33 @@ where
       update_request_line(req, upstream_chosen, upstream_candidates)?;
     }
 
+    // Carry the client-facing effective URI to the forwarder/cache boundary via request
+    // extensions (see `insert_client_facing_effective_uri`). Built from `client_scheme`,
+    // `authoritative_host`, and `original_uri` captured above, before the upstream rewrite, so
+    // the cache keys on the client-facing vhost and scheme rather than the upstream target.
+    #[cfg(feature = "cache")]
+    insert_client_facing_effective_uri(req, client_scheme, authoritative_host.as_deref(), &original_uri);
+
     Ok(context)
+  }
+}
+
+/// Build and insert the client-facing effective URI into `req`'s extensions for the cache
+/// boundary. Built from the client-visible `scheme`, the original (client-facing) `authority`,
+/// and the original request URI's path/query; when no safe effective URI can be built the
+/// extension is left absent so the forwarder bypasses the cache (fail closed). A free function so
+/// the handler-to-forwarder cache wiring can be unit-tested without constructing a full handler.
+#[cfg(feature = "cache")]
+fn insert_client_facing_effective_uri<B>(req: &mut Request<B>, scheme: &str, authority: Option<&str>, original_uri: &Uri) {
+  match build_client_facing_effective_uri(scheme, authority, original_uri) {
+    Some(effective_uri) => {
+      req
+        .extensions_mut()
+        .insert(crate::forwarder::ClientFacingEffectiveUri(effective_uri));
+    }
+    None => {
+      debug!("cache: no safe client-facing effective URI; cache will be bypassed for this request");
+    }
   }
 }
 
@@ -271,6 +308,31 @@ fn rebuild_path_and_query(req_uri: &Uri, replace_path: Option<&PathName>, matche
 mod tests {
   use super::*;
   use crate::name_exp::ByteName;
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn insert_effective_uri_inserts_client_facing_uri() {
+    // Pins the handler side of the cache wiring: the effective URI built from the client-visible
+    // scheme + client-facing authority + original path/query is inserted as the extension the
+    // forwarder reads. A failure here catches a dropped insert, a wrong type, or a wrong value.
+    let mut req: Request<()> = Request::new(());
+    insert_client_facing_effective_uri(&mut req, "https", Some("vhost.example"), &Uri::from_static("/p?q=1"));
+    let ext = req
+      .extensions()
+      .get::<crate::forwarder::ClientFacingEffectiveUri>()
+      .expect("effective URI extension must be present");
+    assert_eq!(ext.0.to_string(), "https://vhost.example/p?q=1");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn insert_effective_uri_absent_authority_leaves_no_extension() {
+    // No safe authority -> no extension inserted -> the forwarder bypasses the cache (fail
+    // closed) instead of keying on the upstream-rewritten URI.
+    let mut req: Request<()> = Request::new(());
+    insert_client_facing_effective_uri(&mut req, "http", None, &Uri::from_static("/p"));
+    assert!(req.extensions().get::<crate::forwarder::ClientFacingEffectiveUri>().is_none());
+  }
 
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   fn proxy_config_for_h3_alt_svc(http3: bool, public_https_port: Option<u16>) -> crate::globals::ProxyConfig {
