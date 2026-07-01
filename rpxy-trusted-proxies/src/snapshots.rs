@@ -38,7 +38,7 @@ pub const CLOUDFLARE_CIDRS: &[&str] = &[
 ];
 
 pub const CLOUDFRONT_SOURCE_URL: &str = "https://d7uri8nf7uskq.cloudfront.net/tools/list-cloudfront-ips";
-pub const CLOUDFRONT_FETCHED_AT: &str = "2026-06-01";
+pub const CLOUDFRONT_FETCHED_AT: &str = "2026-07-01";
 
 pub const CLOUDFRONT_CIDRS: &[&str] = &[
   "108.138.0.0/15",
@@ -107,8 +107,13 @@ pub const CLOUDFRONT_CIDRS: &[&str] = &[
   "23.228.222.0/24",
   "23.228.223.0/24",
   "23.228.244.0/24",
+  "23.228.248.0/24",
+  "23.228.249.0/24",
+  "23.228.250.0/24",
+  "23.228.251.0/24",
   "23.234.192.0/18",
   "23.91.0.0/19",
+  "24.110.128.0/17",
   "24.110.32.0/19",
   "3.160.0.0/14",
   "3.164.0.0/18",
