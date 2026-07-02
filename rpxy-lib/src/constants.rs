@@ -49,14 +49,20 @@ pub const MAX_CACHE_EACH_SIZE: usize = 65_535;
 // the file tier engages only when an operator raises max_cache_each_size beyond this. Worst-case
 // on-memory footprint at defaults is MAX_CACHE_ENTRY x this value (~64 MB).
 pub const MAX_CACHE_EACH_SIZE_ON_MEMORY: usize = 65_535;
+#[cfg(feature = "cache")]
+// Default ceiling on the total bytes retained by the cache across both tiers (on-memory objects
+// + committed cache files). Bounds the LOGICAL live set (entries present in the LRU metadata),
+// not instantaneous physical disk/RSS usage. Never binds at the other defaults (implicit worst
+// case there is MAX_CACHE_ENTRY x MAX_CACHE_EACH_SIZE = ~64 MB); protects configurations that
+// raise the per-entry size or entry count past this product. 0-or-"unlimited" in the config
+// disables it.
+pub const MAX_CACHE_TOTAL_SIZE: usize = 1_073_741_824; // 1 GiB
 
 #[cfg(feature = "proxy-protocol")]
 pub mod proxy_protocol {
   /// Timeout in milliseconds for receiving the PROXY protocol header (enabled with "proxy-protocol" feature).
   pub const TIMEOUT_MSEC: u64 = 50;
 }
-
-// TODO: Add a total cache size ceiling; current cache limits cover entry count and per-entry size only.
 
 #[cfg(feature = "health-check")]
 /// Default health check constants

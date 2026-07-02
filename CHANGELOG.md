@@ -2,10 +2,15 @@
 
 ## 0.13.3 or 0.14.0 (Unreleased)
 
+### Important Changes
+
+- **The HTTP cache now has a 1 GiB default ceiling on its total size.** Previously only the number of cache entries and the per-entry size were bounded, so raising `max_cache_each_size` could let the cache grow with no explicit total limit (up to `max_cache_entry x max_cache_each_size`). A new `[experimental.cache]` key `max_cache_total_size` (default 1 GiB; integer bytes or a suffixed string like `"256m"` / `"1g"`) caps the total bytes retained across the on-memory and file tiers; when storing a new response would exceed it, the least recently used entries are evicted until the response fits. Deployments whose cache legitimately grows past 1 GiB should set a larger value or `"unlimited"` to restore the previous behavior. At the default cache settings the ceiling never binds (the implicit worst case there is ~64 MiB).
+
 ### Bugfix
 
 - Fix: reject oversize HTTP/3 request bodies with an error instead of forwarding a silently truncated body upstream.
 - **Fix: partition the HTTP cache by the client-facing effective request URI (scheme + authoritative host + path/query) to prevent cross-virtual-host cache poisoning.** Previously, with the `cache` feature enabled, entries were keyed on the request URI after rewrite to the upstream target, so two virtual hosts sharing one upstream could serve each other's cached responses. The scheme is derived with the same trusted-forwarded-proxy boundary used elsewhere, and requests without a safe client-facing URI are served uncached (fail closed). This may lower the cache hit rate when virtual hosts intentionally share a backend; no config change is required.
+- **Fix: enforce an explicit ceiling on the total cache size.** Previously the cache bounded each entry and the number of entries but never the retained total, so an operator raising the per-entry limit could have the cache consume disk (or memory) without an explicit bound - a denial-of-service risk via cache exhaustion, and one made easier to reach now that cache entries are partitioned per virtual host. The new `max_cache_total_size` ceiling (see Important Changes) closes this: publishing a response that would exceed it evicts least-recently-used entries first, and a response that could never fit is not cached at all. The ceiling bounds the data referenced by live cache entries; in-flight stores and eviction deletions can transiently use extra disk space beyond it.
 
 ## 0.13.2
 
