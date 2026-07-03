@@ -391,9 +391,12 @@ cache_dir = './cache'                # optional. default is "./cache" relative t
 max_cache_entry = 1000               # optional. default is 1k
 max_cache_each_size = 65535          # optional. default is 64k
 max_cache_each_size_on_memory = 65535 # optional. default is 64k, same as max_cache_each_size (cacheable objects are served from memory by default; the file tier engages when max_cache_each_size is raised beyond this). if 0, it is always file cache. Worst-case memory use is max_cache_entry x this value.
+max_cache_total_size = "1g"          # optional. default is 1 GiB. ceiling on the total bytes retained by the cache across both tiers; accepts an integer (bytes) or a string with a binary suffix ("256m", "1g"). set "unlimited" to disable (0 also works, but note that 0 means "always file cache" for max_cache_each_size_on_memory above, so the string form is recommended here).
 ```
 
 A *storable* (in the context of an HTTP message) response is stored if its size is less than or equal to `max_cache_each_size` in bytes. If it is also less than or equal to `max_cache_each_size_on_memory`, it is stored as an in-memory object. Otherwise, it is stored as a temporary file. Note that `max_cache_each_size` must be greater than or equal to `max_cache_each_size_on_memory`. Also note that once `rpxy` restarts or the config is updated, the cache is completely eliminated not only from the in-memory table but also from the file system.
+
+The total bytes retained by the cache are additionally capped by `max_cache_total_size` (default 1 GiB): when storing a new response would exceed it, the least recently used entries are evicted until the new response fits. The ceiling bounds the data referenced by live cache entries; transient extra disk usage can briefly appear while responses are being stored or evicted files are being deleted.
 
 Cache entries are keyed on the scheme, host, and path/query the client requested, so different virtual hosts never share cached responses even when they proxy to the same backend.
 

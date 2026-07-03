@@ -116,6 +116,12 @@ pub struct ProxyConfig {
   pub cache_max_each_size: usize,
   #[cfg(feature = "cache")]
   pub cache_max_each_size_on_memory: usize,
+  /// Ceiling on the total bytes retained by the cache across both tiers (on-memory objects
+  /// and committed cache files). Bounds the logical live set, not instantaneous physical
+  /// disk/RSS usage. `None` means unlimited (TOML `0` / `"unlimited"`); the default is
+  /// `Some(MAX_CACHE_TOTAL_SIZE)`.
+  #[cfg(feature = "cache")]
+  pub cache_max_total_size: Option<usize>,
 
   // All need to make packet acceptor
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -180,6 +186,8 @@ impl Default for ProxyConfig {
       cache_max_each_size: MAX_CACHE_EACH_SIZE,
       #[cfg(feature = "cache")]
       cache_max_each_size_on_memory: MAX_CACHE_EACH_SIZE_ON_MEMORY,
+      #[cfg(feature = "cache")]
+      cache_max_total_size: Some(MAX_CACHE_TOTAL_SIZE),
 
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       http3: false,

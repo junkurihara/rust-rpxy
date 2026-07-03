@@ -285,6 +285,11 @@ pub struct CacheOption {
   pub max_cache_entry: Option<usize>,
   pub max_cache_each_size: Option<usize>,
   pub max_cache_each_size_on_memory: Option<usize>,
+  /// Ceiling on the total bytes retained by the cache (both tiers). Accepts an integer
+  /// (bytes) or a string with a binary suffix (`"256m"`, `"1g"`); `"unlimited"` (or `0`)
+  /// disables the ceiling. Note the different `0` semantics of the sibling
+  /// `max_cache_each_size_on_memory`, where `0` means "always file cache".
+  pub max_cache_total_size: Option<BodySizeValue>,
 }
 
 #[cfg(feature = "acme")]
@@ -522,6 +527,15 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         }
         if let Some(num) = cache_option.max_cache_each_size_on_memory {
           proxy_config.cache_max_each_size_on_memory = num;
+        }
+        if let Some(v) = cache_option.max_cache_total_size.clone() {
+          proxy_config.cache_max_total_size = parse_body_size(v, "max_cache_total_size")?;
+          if proxy_config.cache_max_total_size.is_none() {
+            warn!(
+              "max_cache_total_size disables the total cache size ceiling; \
+               retained cache bytes are then bounded only by max_cache_entry x max_cache_each_size."
+            );
+          }
         }
       }
 
@@ -1564,6 +1578,87 @@ mod tests {
       proxy_config.h3_request_max_body_size.or(proxy_config.request_max_body_size),
       Some(65_536)
     );
+  }
+
+  // --- max_cache_total_size config tests ---
+
+  /// `max_cache_total_size` accepts an integer (bytes) and flows into `ProxyConfig`.
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_integer_populates_proxy_config() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.cache]
+      max_cache_total_size = 100000
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.cache_max_total_size, Some(100_000));
+  }
+
+  /// `max_cache_total_size` accepts binary-suffix strings via the shared body-size parser.
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_suffix_string_populates_proxy_config() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.cache]
+      max_cache_total_size = "256m"
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.cache_max_total_size, Some(256 * 1024 * 1024));
+  }
+
+  /// `0` and `"unlimited"` both disable the ceiling (`None`).
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_zero_and_unlimited_disable_ceiling() {
+    for value in ["max_cache_total_size = 0", r#"max_cache_total_size = "unlimited""#] {
+      let toml_str = format!(
+        r#"
+        listen_port = 8080
+        [experimental.cache]
+        {value}
+      "#
+      );
+      let config: ConfigToml = toml::from_str(&toml_str).unwrap();
+      let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+      assert_eq!(proxy_config.cache_max_total_size, None, "for {value}");
+    }
+  }
+
+  /// Unset key falls back to the bounded default supplied by `ProxyConfig::default()`.
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_default_when_unset() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.cache]
+      max_cache_entry = 10
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    // Assert against ProxyConfig::default() so the test tracks the rpxy-lib constant.
+    assert!(ProxyConfig::default().cache_max_total_size.is_some());
+    assert_eq!(proxy_config.cache_max_total_size, ProxyConfig::default().cache_max_total_size);
+  }
+
+  /// The two different `0` semantics do not cross-contaminate: `max_cache_total_size = 0`
+  /// means unlimited total, while `max_cache_each_size_on_memory = 0` means always-file.
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_zero_with_on_memory_zero_keeps_both_semantics() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.cache]
+      max_cache_total_size = 0
+      max_cache_each_size_on_memory = 0
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.cache_max_total_size, None);
+    assert_eq!(proxy_config.cache_max_each_size_on_memory, 0);
   }
 
   // --- parse_body_size unit tests ---
