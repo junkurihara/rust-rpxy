@@ -380,6 +380,8 @@ tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_p
 
 However, currently we have a limitation on HTTP/3 support for applications that enable client authentication. If an application is configured with client authentication, HTTP/3 doesn't work for that application.
 
+Client authentication is enforced per server name during the TLS handshake, so a request reaching a client-authentication application over a TLS session established for a different server name is always rejected. The `ignore_sni_consistency` relaxation never applies to such applications.
+
 ### Hybrid Caching Feature with Temporary File and On-Memory Cache
 
 If `[experimental.cache]` is specified in `config.toml`, you can leverage the local caching feature using temporary files and on-memory objects. An example configuration is as follows.

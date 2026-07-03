@@ -195,6 +195,8 @@ tls = { https_redirection = true, acme = true }
 # Highly recommend not to be true. If true, you ignore RFC. if not specified, it is always false.
 # This might be required to be true when a certificate is used by multiple backend hosts, especially in case where a TLS connection is re-used.
 # We should note that this strongly depends on the client implementation.
+# Note: this relaxation never applies to applications with client authentication (client_ca_cert_path);
+# requests reaching such an application over a TLS session established for a different server name are always rejected.
 ignore_sni_consistency = false
 
 # Force connection handling timeout regardless of the connection status, i.e., idle or not.

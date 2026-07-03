@@ -14,6 +14,8 @@ pub enum HttpError {
   InvalidHostInRequestHeader,
   #[error("SNI and Host header mismatch")]
   SniHostInconsistency,
+  #[error("Mutual TLS-protected host requires a consistent TLS session")]
+  MutualTlsHostInconsistency,
   #[error("No matching backend app")]
   NoMatchingBackendApp,
   #[error("Failed to redirect: {0}")]
@@ -48,6 +50,7 @@ impl From<HttpError> for StatusCode {
       // HttpError::NoHostInRequestHeader => StatusCode::BAD_REQUEST,
       HttpError::InvalidHostInRequestHeader => StatusCode::BAD_REQUEST,
       HttpError::SniHostInconsistency => StatusCode::MISDIRECTED_REQUEST,
+      HttpError::MutualTlsHostInconsistency => StatusCode::MISDIRECTED_REQUEST,
       HttpError::NoMatchingBackendApp => StatusCode::SERVICE_UNAVAILABLE,
       HttpError::FailedToRedirect(_) => StatusCode::INTERNAL_SERVER_ERROR,
       HttpError::NoUpstreamCandidates => StatusCode::NOT_FOUND,
@@ -74,5 +77,15 @@ mod tests {
     let code: StatusCode = HttpError::PayloadTooLarge.into();
     assert_eq!(code, StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(code.as_u16(), 413);
+  }
+
+  /// Pin the mTLS-guard mapping: a mutual-TLS host addressed over a TLS session
+  /// established for a different server name surfaces as 421, like the plain
+  /// SNI/Host mismatch.
+  #[test]
+  fn mutual_tls_host_inconsistency_maps_to_421() {
+    let code: StatusCode = HttpError::MutualTlsHostInconsistency.into();
+    assert_eq!(code, StatusCode::MISDIRECTED_REQUEST);
+    assert_eq!(code.as_u16(), 421);
   }
 }
