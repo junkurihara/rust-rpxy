@@ -970,7 +970,28 @@ impl LruCacheManager {
     if let Some(limit) = self.max_total_size {
       while new_size > limit.saturating_sub(total) {
         let Some(lru) = lock.pop_lru() else {
-          break; // empty LRU: new_size <= limit is guaranteed by the step-1 preflight
+          // An empty LRU with the fit condition still true is impossible under the invariant
+          // (empty live set => total == 0 => new_size <= limit per the step-1 preflight), so
+          // reaching here proves the counter was corrupted in the OVER-reporting direction -
+          // the one corruption the subtraction path cannot detect (`checked_sub` keeps
+          // succeeding). Without repair the stale excess would be published into the counter
+          // and every later store would evict everything, permanently. Repair it here: the
+          // recount of an empty live set is exactly 0 (an empty fold cannot overflow, so the
+          // invalidation arm is unreachable and kept only for uniformity), after which the
+          // new object fits by the preflight guarantee.
+          match self.recover_or_invalidate(&lock, "size-evicting from an empty live set") {
+            Some(t) => {
+              total = t;
+              break;
+            }
+            None => {
+              self.cnt.store(lock.len(), Ordering::Relaxed);
+              return Ok(PushOutcome {
+                stored: false,
+                displaced,
+              });
+            }
+          }
         };
         let size = lru.1.size;
         displaced.push(lru);
@@ -2061,6 +2082,43 @@ mod tests {
       2,
       "the early return must sync the advisory count to the LRU length"
     );
+  }
+
+  /// An OVER-reporting corrupted counter is the one corruption the subtraction path cannot
+  /// detect (`checked_sub` keeps succeeding). It surfaces as "the LRU is empty but the fit
+  /// condition still holds" in the step-3 loop, which must repair the counter by recounting
+  /// (empty live set = exactly 0) instead of silently publishing the stale excess - which
+  /// would leave every later store evicting everything, permanently.
+  /// (PR #643 Copilot review finding)
+  #[tokio::test]
+  async fn overreporting_corruption_repairs_when_eviction_empties_the_lru() {
+    let manager = LruCacheManager::new(10, Some(200));
+    let (uri_a, key_a) = key_of("http://example.com/a");
+    assert!(manager.push(&key_a, &sized_object(&uri_a, 10)).unwrap().stored);
+
+    // Corrupt the counter ABOVE the true total: subtractions keep succeeding, so only the
+    // empty-LRU repair point can catch this.
+    manager.total_bytes.store(500, Ordering::Relaxed);
+
+    // 100 > 200 - 500 (saturated to 0) forces eviction; A is popped (500 - 10 = 490 still
+    // "succeeds"), the LRU empties with the condition still true -> recount to 0 -> store.
+    let (uri_c, key_c) = key_of("http://example.com/c");
+    let outcome = manager.push(&key_c, &sized_object(&uri_c, 100)).unwrap();
+    assert!(outcome.stored, "the store proceeds after the repair");
+    assert_eq!(outcome.displaced.len(), 1, "A was evicted while the counter looked full");
+    assert_eq!(
+      manager.total_bytes(),
+      100,
+      "the counter must be repaired to the exact live total, not stale excess + new size"
+    );
+
+    // Self-healed: the next store behaves normally instead of evicting everything again.
+    let (uri_d, key_d) = key_of("http://example.com/d");
+    let outcome = manager.push(&key_d, &sized_object(&uri_d, 50)).unwrap();
+    assert!(outcome.stored);
+    assert!(outcome.displaced.is_empty(), "100 + 50 fits under 200; nothing is evicted");
+    assert_eq!(manager.total_bytes(), 150);
+    assert_eq!(manager.count(), 2);
   }
 
   /// When even the recount overflows, the accounting is invalidated: every further store is
