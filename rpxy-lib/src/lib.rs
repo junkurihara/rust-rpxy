@@ -128,7 +128,9 @@ pub async fn entrypoint(
     info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
   }
   if !proxy_config.sni_consistency {
-    info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
+    info!(
+      "Ignore consistency between TLS SNI and Host header (or Request line), except for client-auth (mTLS) protected hosts. Note it violates RFC."
+    );
   }
   if !proxy_config.trusted_forwarded_proxies.is_empty() {
     info!(
