@@ -4,10 +4,11 @@ use crate::{
   log::warn,
 };
 use ahash::HashMap;
-use rpxy_lib::{
-  AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri,
-  reexports::{IpNet, Uri},
-};
+use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
+// `IpNet` parses proxy-protocol trusted-proxy CIDRs (proxy-protocol only) and is also exercised
+// feature-independently by the unit tests, which reach it through `use super::*`.
+#[cfg(any(feature = "proxy-protocol", test))]
+use rpxy_lib::reexports::IpNet;
 use rpxy_trusted_proxies::resolve_trusted_proxy_entries;
 use serde::Deserialize;
 use std::{
@@ -407,11 +408,10 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       proxy_config.http_port.is_some() || proxy_config.https_port.is_some(),
       anyhow!("Either/Both of http_port or https_port must be specified")
     );
-    if proxy_config.http_port.is_some() && proxy_config.https_port.is_some() {
-      ensure!(
-        proxy_config.http_port.unwrap() != proxy_config.https_port.unwrap(),
-        anyhow!("http_port and https_port must be different")
-      );
+    if let Some(http_port) = proxy_config.http_port
+      && let Some(https_port) = proxy_config.https_port
+    {
+      ensure!(http_port != https_port, anyhow!("http_port and https_port must be different"));
     }
     if self.public_https_port.is_some() {
       ensure!(
@@ -689,9 +689,7 @@ impl Application {
       .try_for_each(|rpc| validate_lb_health_check(server_name_string, rpc.load_balance.as_deref(), &rpc.health_check))?;
 
     // tls settings
-    let tls_config = if self.tls.is_some() {
-      let tls = self.tls.as_ref().unwrap();
-
+    let tls_config = if let Some(tls) = self.tls.as_ref() {
       #[cfg(not(feature = "acme"))]
       ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
 
@@ -704,11 +702,8 @@ impl Application {
         }
       }
 
-      let https_redirection = if tls.https_redirection.is_none() {
-        true // Default true
-      } else {
-        tls.https_redirection.unwrap()
-      };
+      // Default to true when unspecified.
+      let https_redirection = tls.https_redirection.unwrap_or(true);
 
       Some(TlsConfig {
         mutual_tls: tls.client_ca_cert_path.is_some(),
@@ -752,7 +747,7 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
       let health_check = rpo
         .health_check
         .as_ref()
-        .map(|hc| build_health_check_config(hc, &_server_name_string))
+        .map(|hc| build_health_check_config(hc, _server_name_string))
         .transpose()?
         .flatten();
 

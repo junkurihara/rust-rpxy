@@ -55,14 +55,13 @@ impl TryFrom<&AppConfig> for BackendApp {
       .server_name(app_config.server_name.clone())
       .path_manager(path_manager);
     // TLS settings and build backend instance
-    let backend = if app_config.tls.is_none() {
-      backend_builder.build()?
-    } else {
-      let tls = app_config.tls.as_ref().unwrap();
+    let backend = if let Some(tls) = app_config.tls.as_ref() {
       backend_builder
         .https_redirection(Some(tls.https_redirection))
         .mutual_tls(Some(tls.mutual_tls))
         .build()?
+    } else {
+      backend_builder.build()?
     };
     Ok(backend)
   }

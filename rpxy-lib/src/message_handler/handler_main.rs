@@ -6,9 +6,11 @@ use super::{
   synthetic_response::{secure_redirection_response, synthetic_error_response, synthetic_error_response_with_close},
 };
 #[cfg(feature = "sticky-cookie")]
+use crate::backend::LoadBalanceContext;
+#[cfg(feature = "sticky-cookie")]
 use crate::backend::StickyCookieConfig;
 use crate::{
-  backend::{BackendAppManager, LoadBalanceContext},
+  backend::BackendAppManager,
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
@@ -22,10 +24,10 @@ use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
 
-#[allow(dead_code)]
 #[derive(Debug)]
 /// Context object to handle sticky cookies at HTTP message handler
 pub(super) struct HandlerContext {
+  #[cfg(feature = "sticky-cookie")]
   pub(super) context_lb: Option<LoadBalanceContext>,
   /// Client-visible request scheme captured from the inbound side (before
   /// `add_forwarding_header()` overwrites X-Forwarded-Proto). True when the request

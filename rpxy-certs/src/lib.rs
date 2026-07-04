@@ -4,7 +4,6 @@ mod error;
 mod reloader_service;
 mod server_crypto;
 
-#[allow(unused_imports)]
 mod log {
   pub(super) use tracing::{debug, error, info, warn};
 }

@@ -11,9 +11,9 @@ use rpxy_lib::{AppConfigList, ProxyConfig};
 use std::sync::Arc;
 
 #[cfg(feature = "acme")]
-use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
-#[cfg(feature = "acme")]
 use super::toml::validate_server_name;
+#[cfg(feature = "acme")]
+use rpxy_acme::{ACME_DIR_URL, ACME_REGISTRY_PATH, AcmeManager};
 
 /// Parsed options from CLI
 /// Options for configuring the application.
@@ -183,10 +183,10 @@ pub async fn build_acme_manager(
     .0
     .values()
     .filter_map(|app| {
-      if let Some(tls) = app.tls.as_ref() {
-        if let Some(true) = tls.acme {
-          return Some(app.server_name.as_ref().unwrap().to_owned());
-        }
+      if let Some(tls) = app.tls.as_ref()
+        && let Some(true) = tls.acme
+      {
+        return Some(app.server_name.as_ref().unwrap().to_owned());
       }
       None
     })
@@ -216,8 +216,8 @@ pub async fn build_acme_manager(
 
 #[cfg(all(test, feature = "acme"))]
 mod tests {
-  use super::*;
   use super::super::toml::{AcmeOption, TlsOption};
+  use super::*;
 
   #[test]
   fn build_tls_for_app_acme_rejects_traversal_server_name() {

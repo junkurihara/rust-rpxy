@@ -100,8 +100,8 @@ impl PathManager {
   }
 
   /// Get an appropriate upstream destinations for given path string.
-  /// trie使ってlongest prefix match させてもいいけどルート記述は少ないと思われるので、
-  /// コスト的にこの程度で十分では。
+  /// A trie could do longest-prefix matching, but route definitions are expected to be few,
+  /// so this simpler scan is cost-effective enough.
   pub fn get<'a>(&self, path_str: impl Into<Cow<'a, str>>) -> Option<&UpstreamCandidates> {
     // Match directly on the request path bytes. `to_path_name()`/`PathName::from(&str)` does not
     // lowercase (paths are case-sensitive), so `path_str.as_bytes()` is exactly the bytes that
@@ -116,10 +116,8 @@ impl PathManager {
         let route_bytes: &[u8] = route.as_ref();
         path_bytes.starts_with(route_bytes) && {
           route_bytes.len() == 1 // route = '/', i.e., default
-            || path_bytes.get(route_bytes.len()).map_or(
-              true, // exact case
-              |p| p == &b'/'
-            ) // sub-path case
+            // exact case (no next byte) or sub-path boundary ('/')
+            || path_bytes.get(route_bytes.len()).is_none_or(|p| p == &b'/')
         }
       })
       .max_by_key(|(route, _)| route.len());
@@ -177,13 +175,16 @@ impl Upstream {
     self.host_header.as_ref()
   }
 
-  #[allow(unused)]
+  // Consulted by the health-check load-balancer selection and, independently, by the
+  // sticky-cookie path (`load_balance_sticky::get_ptr`) to validate a cookie's target; either
+  // feature alone is enough to make this method live.
+  #[cfg(any(feature = "health-check", feature = "sticky-cookie"))]
   /// Returns whether this upstream is considered healthy.
   /// Always returns true if health check is not configured.
   pub fn is_healthy(&self) -> bool {
     #[cfg(feature = "health-check")]
     {
-      self.health.as_ref().map_or(true, |h| h.is_healthy())
+      self.health.as_ref().is_none_or(|h| h.is_healthy())
     }
     #[cfg(not(feature = "health-check"))]
     {
@@ -280,13 +281,13 @@ impl UpstreamCandidatesBuilder {
         lb_opts::STICKY_ROUND_ROBIN => {
           let sticky_config =
             StickyCookieConfig::try_new(STICKY_COOKIE_NAME, server_name, path_opt, STICKY_COOKIE_DURATION_SECS)?;
-          LoadBalance::StickyRoundRobin(
+          LoadBalance::StickyRoundRobin(Box::new(
             LoadBalanceStickyBuilder::default()
               .sticky_config(sticky_config)
               .upstream_maps(upstream_vec)
               .build()
               .unwrap(),
-          )
+          ))
         }
         #[cfg(feature = "health-check")]
         lb_opts::PRIMARY_BACKUP => LoadBalance::PrimaryBackup(super::load_balance::LoadBalancePrimaryBackup),
@@ -311,15 +312,12 @@ impl UpstreamCandidatesBuilder {
 
   /// Set the activated upstream options defined in [[UpstreamOption]]
   pub fn options(&mut self, v: &Option<Vec<String>>) -> &mut Self {
-    let opts = v.as_ref().map_or_else(
-      || Default::default(),
-      |opts| {
-        opts
-          .iter()
-          .filter_map(|str| UpstreamOption::try_from(str.as_str()).ok())
-          .collect::<HashSet<UpstreamOption>>()
-      },
-    );
+    let opts = v.as_ref().map_or_else(Default::default, |opts| {
+      opts
+        .iter()
+        .filter_map(|str| UpstreamOption::try_from(str.as_str()).ok())
+        .collect::<HashSet<UpstreamOption>>()
+    });
     self.options = Some(opts);
     self
   }
@@ -338,7 +336,6 @@ impl UpstreamCandidates {
 
 #[cfg(test)]
 mod test {
-  #[allow(unused)]
   use super::*;
 
   #[test]

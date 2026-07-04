@@ -134,7 +134,10 @@ mod tests {
   fn host_prefers_uri_over_host_header() {
     let uri: Uri = "https://uri.example/path".parse().unwrap();
     let header_value = HeaderValue::from_static("header.example");
-    assert_eq!(host_from_uri_or_host_header(&uri, Some(&header_value)).unwrap(), "uri.example");
+    assert_eq!(
+      host_from_uri_or_host_header(&uri, Some(&header_value)).unwrap(),
+      "uri.example"
+    );
   }
 
   #[test]
