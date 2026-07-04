@@ -107,7 +107,9 @@ mod tests {
 
   fn candidates_with_options(uri: &str, options: HashSet<UpstreamOption>) -> UpstreamCandidates {
     UpstreamCandidates {
-      inner: vec![Upstream::from(&UpstreamUri { inner: uri.parse().unwrap() })],
+      inner: vec![Upstream::from(&UpstreamUri {
+        inner: uri.parse().unwrap(),
+      })],
       path: "/".into(),
       replace_path: None,
       load_balance: LoadBalance::default(),

@@ -1,4 +1,3 @@
-#[allow(unused)]
 use crate::{
   error::{RpxyError, RpxyResult},
   globals::Globals,

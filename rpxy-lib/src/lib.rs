@@ -111,11 +111,11 @@ pub async fn entrypoint(
   } else {
     info!("Listen IPv4")
   }
-  if proxy_config.http_port.is_some() {
-    info!("Listen port: {}", proxy_config.http_port.unwrap());
+  if let Some(http_port) = proxy_config.http_port {
+    info!("Listen port: {}", http_port);
   }
-  if proxy_config.https_port.is_some() {
-    info!("Listen port: {} (for TLS)", proxy_config.https_port.unwrap());
+  if let Some(https_port) = proxy_config.https_port {
+    info!("Listen port: {} (for TLS)", https_port);
   }
   if proxy_config.connection_handling_timeout.is_some() {
     info!(
@@ -284,7 +284,7 @@ pub async fn entrypoint(
     .collect();
 
   #[cfg(feature = "health-check")]
-  let handles = health_checker_handles.into_iter().chain(proxy_handles.into_iter());
+  let handles = health_checker_handles.into_iter().chain(proxy_handles);
   #[cfg(not(feature = "health-check"))]
   let handles = proxy_handles.into_iter();
 

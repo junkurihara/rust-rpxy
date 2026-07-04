@@ -1,10 +1,6 @@
 use super::Upstream;
-#[allow(unused)]
 #[cfg(feature = "sticky-cookie")]
-pub use super::{
-  load_balance_sticky::{LoadBalanceSticky, LoadBalanceStickyBuilder},
-  sticky_cookie::StickyCookie,
-};
+pub use super::{load_balance_sticky::LoadBalanceSticky, sticky_cookie::StickyCookie};
 use crate::log::*;
 use derive_builder::Builder;
 use rand::RngExt;
@@ -195,10 +191,11 @@ impl LoadBalanceWithPointer for LoadBalancePrimaryBackup {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// Load Balancing Option
 pub enum LoadBalance {
   /// Fix to the first upstream. Use if only one upstream destination is specified
+  #[default]
   FixToFirst,
   /// Randomly chose one upstream server
   Random(LoadBalanceRandom),
@@ -206,15 +203,12 @@ pub enum LoadBalance {
   RoundRobin(LoadBalanceRoundRobin),
   #[cfg(feature = "sticky-cookie")]
   /// Round robin with session persistance using cookie
-  StickyRoundRobin(LoadBalanceSticky),
+  // Boxed to keep `LoadBalance` small: `LoadBalanceSticky` is far larger than the other variants,
+  // and this variant is built once at config time while the request path only borrows it.
+  StickyRoundRobin(Box<LoadBalanceSticky>),
   #[cfg(feature = "health-check")]
   /// Primary/Backup: always prefer the lowest-indexed healthy upstream
   PrimaryBackup(LoadBalancePrimaryBackup),
-}
-impl Default for LoadBalance {
-  fn default() -> Self {
-    Self::FixToFirst
-  }
 }
 
 impl LoadBalance {

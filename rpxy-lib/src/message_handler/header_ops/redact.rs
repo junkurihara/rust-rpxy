@@ -69,7 +69,10 @@ mod tests {
 
     // sensitive values are masked
     assert!(!rendered.contains("supersecret"), "authorization value leaked: {rendered}");
-    assert!(!rendered.contains("dXNlcjpwdw=="), "proxy-authorization value leaked: {rendered}");
+    assert!(
+      !rendered.contains("dXNlcjpwdw=="),
+      "proxy-authorization value leaked: {rendered}"
+    );
     assert!(!rendered.contains("sid=abc"), "cookie value leaked: {rendered}");
     assert!(!rendered.contains("pref=dark"), "second cookie value leaked: {rendered}");
     assert!(rendered.contains("<redacted>"), "expected redaction placeholder: {rendered}");
@@ -96,7 +99,10 @@ mod tests {
   fn unsafe_opt_out_prints_values_verbatim() {
     let headers = build_headers();
     let rendered = format!("{:?}", DebugHeaders::new(&headers, true));
-    assert!(rendered.contains("supersecret"), "opt-out must print authorization: {rendered}");
+    assert!(
+      rendered.contains("supersecret"),
+      "opt-out must print authorization: {rendered}"
+    );
     assert!(rendered.contains("sid=abc"), "opt-out must print cookie: {rendered}");
     assert!(!rendered.contains("<redacted>"), "opt-out must not redact: {rendered}");
   }

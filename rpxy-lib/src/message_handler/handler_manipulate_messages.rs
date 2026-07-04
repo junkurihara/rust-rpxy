@@ -18,13 +18,12 @@ where
   // Functions to generate messages
   ////////////////////////////////////////////////////
 
-  #[allow(unused_variables)]
   /// Manipulate a response message sent from a backend application to forward downstream to a client.
   pub(super) fn generate_response_forwarded<B>(
     &self,
     response: &mut Response<B>,
-    backend_app: &BackendApp,
-    is_secure_transport: bool,
+    _backend_app: &BackendApp,
+    _is_secure_transport: bool,
   ) -> Result<()> {
     let headers = response.headers_mut();
     remove_connection_header(headers);
@@ -35,7 +34,7 @@ where
     {
       // Manipulate ALT_SVC allowing h3 in response message only when mutual TLS is not enabled
       // TODO: Support per-vhost HTTP/3 client authentication so mTLS domains can advertise Alt-Svc safely.
-      if let Some(port) = h3_alt_svc_port(&self.globals.proxy_config, backend_app.mutual_tls, is_secure_transport) {
+      if let Some(port) = h3_alt_svc_port(&self.globals.proxy_config, _backend_app.mutual_tls, _is_secure_transport) {
         add_header_entry_overwrite_if_exist(
           headers,
           header::ALT_SVC,
@@ -157,8 +156,6 @@ where
     let context = HandlerContext {
       #[cfg(feature = "sticky-cookie")]
       context_lb: context_from_lb,
-      #[cfg(not(feature = "sticky-cookie"))]
-      context_lb: None,
       #[cfg(feature = "sticky-cookie")]
       sticky_cookie_secure,
       #[cfg(feature = "sticky-cookie")]

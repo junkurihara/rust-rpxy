@@ -22,7 +22,7 @@ const MIN_BLOB_B64_LEN: usize = base64_url_no_pad_encoded_len(MIN_BLOB_LEN);
 const MAX_BLOB_B64_LEN: usize = base64_url_no_pad_encoded_len(MAX_BLOB_LEN);
 
 const fn base64_url_no_pad_encoded_len(raw_len: usize) -> usize {
-  let padded_len = ((raw_len + 2) / 3) * 4;
+  let padded_len = raw_len.div_ceil(3) * 4;
   let padding_len = match raw_len % 3 {
     0 => 0,
     1 => 2,

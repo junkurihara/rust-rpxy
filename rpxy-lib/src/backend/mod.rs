@@ -12,10 +12,15 @@ pub(crate) use self::load_balance::{
 };
 #[cfg(feature = "sticky-cookie")]
 pub use self::load_balance::{StickyCookieSecret, validate_sticky_cookie_aad_component};
-#[allow(unused)]
+// `LoadBalanceContext` crosses the backend boundary only for the sticky-cookie response path.
+#[cfg(feature = "sticky-cookie")]
+pub(crate) use self::load_balance::LoadBalanceContext;
+// `LoadBalance` is referenced outside `backend` only by the sticky-cookie dispatch and by the
+// header_ops upstream unit tests; its module is private so consumers cannot take a direct path.
+#[cfg(any(feature = "sticky-cookie", test))]
+pub(crate) use self::load_balance::LoadBalance;
 pub(crate) use self::{
-  load_balance::{LoadBalance, LoadBalanceContext},
-  upstream::{PathManager, Upstream, UpstreamCandidates},
+  upstream::{Upstream, UpstreamCandidates},
   upstream_opts::UpstreamOption,
 };
 pub(crate) use backend_main::{BackendApp, BackendAppBuilderError, BackendAppManager};

@@ -59,9 +59,4 @@ impl Receiver {
     self.shared.waker.register(cx.waker());
     self.shared.value.load(Ordering::SeqCst)
   }
-
-  #[allow(dead_code)]
-  pub(crate) fn peek(&self) -> Value {
-    self.shared.value.load(Ordering::Relaxed)
-  }
 }

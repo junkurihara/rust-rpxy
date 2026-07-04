@@ -134,16 +134,16 @@ where
       while let Some(mut body) = recv_stream.recv_data().await? {
         trace!("HTTP/3 incoming request body: remaining {}", body.remaining());
         size += body.remaining();
-        if let Some(limit) = effective_body_limit {
-          if size > limit {
-            error!(
-              "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
-              size, limit
-            );
-            // terminate the stream with an error code, and return an error to the caller.
-            sender.abort();
-            return Err(RpxyError::H3TooLargeBody);
-          }
+        if let Some(limit) = effective_body_limit
+          && size > limit
+        {
+          error!(
+            "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
+            size, limit
+          );
+          // terminate the stream with an error code, and return an error to the caller.
+          sender.abort();
+          return Err(RpxyError::H3TooLargeBody);
         }
         // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
         sender.send_data(body.copy_to_bytes(body.remaining())).await?;
@@ -151,9 +151,9 @@ where
 
       // trailers: use inner for work around. (directly get trailer)
       let trailers = futures_util::future::poll_fn(|cx| recv_stream.as_mut().poll_recv_trailers(cx)).await?;
-      if trailers.is_some() {
+      if let Some(trailers) = trailers {
         trace!("HTTP/3 incoming request trailers");
-        sender.send_trailers(trailers.unwrap()).await?;
+        sender.send_trailers(trailers).await?;
       }
       Ok(()) as RpxyResult<()>
     });

@@ -61,7 +61,6 @@ pub(crate) struct RpxyCache {
 }
 
 impl RpxyCache {
-  #[allow(unused)]
   /// Generate cache storage
   pub(crate) async fn new(globals: &Globals) -> Option<Self> {
     if !globals.proxy_config.cache_enabled {
@@ -560,7 +559,6 @@ struct FileStore {
 }
 
 impl FileStore {
-  #[allow(unused)]
   /// Build manager
   async fn new(runtime_handle: &tokio::runtime::Handle) -> Self {
     Self {
@@ -776,7 +774,6 @@ struct LruCacheManager {
 }
 
 impl LruCacheManager {
-  #[allow(unused)]
   /// Build LruCache
   fn new(cache_max_entry: usize, max_total_size: Option<usize>) -> Self {
     Self {

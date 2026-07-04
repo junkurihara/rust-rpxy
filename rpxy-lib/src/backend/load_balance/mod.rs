@@ -7,6 +7,7 @@ mod sticky_cookie;
 mod sticky_cookie_seal;
 
 use super::upstream::Upstream;
+#[cfg(feature = "sticky-cookie")]
 use thiserror::Error;
 
 #[cfg(feature = "health-check")]
@@ -27,27 +28,22 @@ pub(crate) use sticky_cookie_seal::{build_sticky_cookie_cipher, open_server_id, 
 #[cfg(feature = "sticky-cookie")]
 type LoadBalanceResult<T> = std::result::Result<T, LoadBalanceError>;
 /// Describes things that can go wrong in the Load Balance
-#[allow(unused)]
+#[cfg(feature = "sticky-cookie")]
 #[derive(Debug, Error)]
 pub enum LoadBalanceError {
   // backend load balance errors
-  #[cfg(feature = "sticky-cookie")]
   #[error("Failed to cookie conversion to/from string")]
   FailedToConversionStickyCookie,
 
-  #[cfg(feature = "sticky-cookie")]
   #[error("Invalid cookie structure")]
   InvalidStickyCookieStructure,
 
-  #[cfg(feature = "sticky-cookie")]
   #[error("No sticky cookie value")]
   NoStickyCookieValue,
 
-  #[cfg(feature = "sticky-cookie")]
   #[error("Failed to cookie conversion into string: no meta information")]
   NoStickyCookieNoMetaInfo,
 
-  #[cfg(feature = "sticky-cookie")]
   #[error("Failed to build sticky cookie from config")]
   FailedToBuildStickyCookie,
 }
