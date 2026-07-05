@@ -3,7 +3,6 @@ use rpxy_lib::log_event_names;
 use std::str::FromStr;
 use tracing_subscriber::{filter::filter_fn, fmt, layer::Layer, prelude::*, registry::LookupSpan};
 
-#[allow(unused)]
 pub use tracing::{debug, error, info, warn};
 
 /// Environment variable that disables credential-header redaction in DEBUG
@@ -107,7 +106,9 @@ fn init_file_logger(level: tracing::Level, log_dir_path: &str) {
 
 /// stdio logging
 fn init_stdio_logger(level: tracing::Level) {
-  tracing_subscriber::registry().with(stdio_layer(std::io::stdout, level)).init();
+  tracing_subscriber::registry()
+    .with(stdio_layer(std::io::stdout, level))
+    .init();
 }
 
 /// Build the file-mode access-log layer over `writer`: the dedicated minimal
@@ -478,9 +479,10 @@ mod tests {
         tracing_subscriber::registry().with(compact_reference_layer(old_w.clone())),
         || tracing::info!(name: log_event_names::ACCESS_LOG, "{}", msg),
       );
-      tracing::subscriber::with_default(tracing_subscriber::registry().with(new_format_layer(new_w.clone())), || {
-        tracing::info!(name: log_event_names::ACCESS_LOG, "{}", msg)
-      });
+      tracing::subscriber::with_default(
+        tracing_subscriber::registry().with(new_format_layer(new_w.clone())),
+        || tracing::info!(name: log_event_names::ACCESS_LOG, "{}", msg),
+      );
       assert_eq!(old_w.contents(), new_w.contents(), "compact vs minimal differ for {msg:?}");
     }
   }
@@ -489,9 +491,10 @@ mod tests {
   #[test]
   fn access_format_absolute_golden() {
     let writer = MemWriter::default();
-    tracing::subscriber::with_default(tracing_subscriber::registry().with(new_format_layer(writer.clone())), || {
-      tracing::info!(name: log_event_names::ACCESS_LOG, "{}", GOLDEN_MESSAGES[0])
-    });
+    tracing::subscriber::with_default(
+      tracing_subscriber::registry().with(new_format_layer(writer.clone())),
+      || tracing::info!(name: log_event_names::ACCESS_LOG, "{}", GOLDEN_MESSAGES[0]),
+    );
     assert_eq!(
       writer.contents(),
       format!("2026-06-13T00:00:00.000000Z {}\n", GOLDEN_MESSAGES[0])

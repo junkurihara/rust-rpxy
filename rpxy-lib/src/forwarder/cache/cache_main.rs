@@ -61,7 +61,6 @@ pub(crate) struct RpxyCache {
 }
 
 impl RpxyCache {
-  #[allow(unused)]
   /// Generate cache storage
   pub(crate) async fn new(globals: &Globals) -> Option<Self> {
     if !globals.proxy_config.cache_enabled {
@@ -75,14 +74,14 @@ impl RpxyCache {
       }
     };
     let file_store = FileStore::new(&globals.runtime_handle).await;
-    let inner = LruCacheManager::new(globals.proxy_config.cache_max_entry);
+    let max_total_size = globals.proxy_config.cache_max_total_size;
+    let inner = LruCacheManager::new(globals.proxy_config.cache_max_entry, max_total_size);
 
-    let max_each_size = globals.proxy_config.cache_max_each_size;
-    let mut max_each_size_on_memory = globals.proxy_config.cache_max_each_size_on_memory;
-    if max_each_size < max_each_size_on_memory {
-      warn!("Maximum size of on-memory cache per entry must be smaller than or equal to the maximum of each file cache");
-      max_each_size_on_memory = max_each_size;
-    }
+    let (max_each_size, max_each_size_on_memory) = effective_per_entry_limits(
+      globals.proxy_config.cache_max_each_size,
+      globals.proxy_config.cache_max_each_size_on_memory,
+      max_total_size,
+    );
 
     if let Err(e) = fs::remove_dir_all(cache_dir).await {
       warn!("Failed to clean up the cache dir: {e}");
@@ -135,13 +134,14 @@ impl RpxyCache {
       // The channel is bounded: when the downstream consumer is slower than the upstream, the
       // relay (and hence the upstream read and the store) pauses instead of queueing frames in
       // memory without bound.
-      let Some((target, hash)) = spool_and_store(body, body_tx, max_each_size, max_each_size_on_memory, &cache_dir, &uri).await
+      let Some((target, hash, size)) =
+        spool_and_store(body, body_tx, max_each_size, max_each_size_on_memory, &cache_dir, &uri).await
       else {
         return;
       };
 
-      let cache_key = derive_cache_key_from_uri(&uri);
-      let cache_object = CacheObject::new(policy_clone, target, hash);
+      let cache_key = derive_cache_key_from_effective_uri(&uri);
+      let cache_object = CacheObject::new(policy_clone, target, hash, size);
       // The file (if any) is now fully written and renamed into place, so it is safe to publish
       // the metadata; this also accounts for the file count and evicts any displaced file.
       publish_cache_object(&cache_manager, &file_store, &cache_key, cache_object).await;
@@ -154,8 +154,12 @@ impl RpxyCache {
 
   /// Get cached response
   pub(crate) async fn get<R>(&self, req: &Request<R>) -> Option<Response<ResponseBody>> {
-    trace!("Current cache status: (total, on-memory, file) = {:?}", self.count().await);
-    let cache_key = derive_cache_key_from_uri(req.uri());
+    trace!(
+      "Current cache status: (total, on-memory, file) = {:?}, retained bytes = {}",
+      self.count().await,
+      self.inner.total_bytes()
+    );
+    let cache_key = derive_cache_key_from_effective_uri(req.uri());
 
     // First check cache chance
     let cached_object = self.inner.get(&cache_key).ok()??;
@@ -214,6 +218,31 @@ impl RpxyCache {
 }
 
 /* ---------------------------------------------- */
+/// Clamp the per-entry cache limits against the total-size ceiling and against each other,
+/// logging when a configured value is reduced. Returns `(max_each_size, max_each_size_on_memory)`.
+///
+/// The per-entry limit is clamped to the total ceiling FIRST, so an object that could never be
+/// retained is abandoned early in `spool_and_store` (bounded temp files) instead of being fully
+/// spooled and then refused at publish; the on-memory clamp then follows the already-clamped
+/// value transitively.
+fn effective_per_entry_limits(
+  mut max_each_size: usize,
+  mut max_each_size_on_memory: usize,
+  max_total_size: Option<usize>,
+) -> (usize, usize) {
+  if let Some(limit) = max_total_size
+    && max_each_size > limit
+  {
+    warn!("Maximum size of each cache object must be smaller than or equal to the total cache size ceiling");
+    max_each_size = limit;
+  }
+  if max_each_size < max_each_size_on_memory {
+    warn!("Maximum size of on-memory cache per entry must be smaller than or equal to the maximum of each file cache");
+    max_each_size_on_memory = max_each_size;
+  }
+  (max_each_size, max_each_size_on_memory)
+}
+
 /// Monotonic counter making temp/final cache file names process-unique (see `unique_cache_paths`).
 static CACHE_FILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -328,9 +357,10 @@ impl SpillFile {
 /// queueing frames in memory without bound. Pausing is not cutting - the send fails only when the
 /// receiver is dropped, exactly the case the relay has nothing left to forward to.
 ///
-/// Returns `Some((target, hash))` when the object was fully and successfully stored (on memory, or
-/// streamed to a committed file), `None` otherwise. `body_tx` is taken by value and dropped on
-/// return, so `body_rx` reaches a clean EOF as soon as streaming finishes.
+/// Returns `Some((target, hash, size))` when the object was fully and successfully stored (on
+/// memory, or streamed to a committed file); `size` is the object's data length in bytes, used
+/// for total-size accounting at publish. Returns `None` otherwise. `body_tx` is taken by value
+/// and dropped on return, so `body_rx` reaches a clean EOF as soon as streaming finishes.
 async fn spool_and_store<B, E>(
   mut body: B,
   mut body_tx: mpsc::Sender<Result<Frame<Bytes>, E>>,
@@ -338,7 +368,7 @@ async fn spool_and_store<B, E>(
   max_each_size_on_memory: usize,
   cache_dir: &Path,
   uri: &Uri,
-) -> Option<(CacheFileOrOnMemory, Bytes)>
+) -> Option<(CacheFileOrOnMemory, Bytes, usize)>
 where
   B: hyper::body::Body<Data = Bytes, Error = E> + Unpin,
 {
@@ -437,22 +467,24 @@ where
   match spill {
     // Phase F: commit the temp file to its final path.
     Some(s) => match s.commit().await {
-      Ok(final_path) => Some((CacheFileOrOnMemory::File(final_path), hash)),
+      Ok(final_path) => Some((CacheFileOrOnMemory::File(final_path), hash, size)),
       Err(_) => None, // commit failed and cleaned up its temp; nothing to publish
     },
     // Phase M: small enough to stay on memory.
-    None => Some((CacheFileOrOnMemory::OnMemory(buf.freeze()), hash)),
+    None => Some((CacheFileOrOnMemory::OnMemory(buf.freeze()), hash, size)),
   }
 }
 
 /// Publish a freshly stored cache object's metadata into the LRU, accounting for the file-store
-/// count and evicting any displaced entry's file.
+/// count and evicting every displaced entry's file.
 ///
 /// Ordering matters for correctness: a file is counted (`incr_count`) BEFORE its metadata is
 /// published, so a `File` entry visible in the LRU is always already counted and a concurrent
 /// eviction can never decrement a not-yet-counted file (the count and the LRU use separate locks).
-/// If `push()` fails (poisoned mutex), the just-counted file is rolled back (unlink + decrement) via
-/// `evict`. The displaced entry's file is evicted after a successful `push()`.
+/// If `push()` fails (poisoned mutex) or refuses the object (total-size preflight), the
+/// just-counted file is rolled back (unlink + decrement) via `evict`. Displaced entries' files
+/// (same-key replacement, total-size eviction, entry-count capacity eviction) are evicted after
+/// a successful `push()` — outside the LRU lock, which `push()` has already released.
 async fn publish_cache_object(
   cache_manager: &LruCacheManager,
   file_store: &FileStore,
@@ -483,15 +515,28 @@ async fn publish_cache_object(
         file_store.evict(path).await;
       }
     }
-    Ok(displaced) => {
-      // Evict the displaced entry's file (same-key update or capacity eviction), unless it is the
-      // very file just published (only possible without generation-unique paths).
-      if let Some((_, v)) = displaced
-        && let CacheFileOrOnMemory::File(old_path) = v.target
-        && Some(&old_path) != new_file_path.as_ref()
-      {
-        info!("Evicting displaced cache file");
-        file_store.evict(&old_path).await;
+    Ok(outcome) => {
+      if !outcome.stored {
+        // Refused: by the pre-mutation preflight (no-fit / unrepresentable counter — nothing
+        // was evicted or inserted), or because the byte accounting is invalid (any entries
+        // already popped are in `displaced` below). Roll back the new file exactly like the
+        // Err arm above. Not reachable in normal operation (the constructor clamps
+        // max_each_size to the ceiling and invalidation needs a corrupted counter).
+        warn!("Cache store refused by the total-size accounting; response served without caching");
+        if let Some(path) = &new_file_path {
+          file_store.evict(path).await;
+        }
+      }
+      // Evict every displaced entry's file (same-key update, total-size eviction, or capacity
+      // eviction), unless it is the very file just published (only possible without
+      // generation-unique paths).
+      for (_, v) in outcome.displaced {
+        if let CacheFileOrOnMemory::File(old_path) = v.target
+          && Some(&old_path) != new_file_path.as_ref()
+        {
+          debug!("Evicting displaced cache file");
+          file_store.evict(&old_path).await;
+        }
       }
     }
   }
@@ -514,7 +559,6 @@ struct FileStore {
 }
 
 impl FileStore {
-  #[allow(unused)]
   /// Build manager
   async fn new(runtime_handle: &tokio::runtime::Handle) -> Self {
     Self {
@@ -664,21 +708,47 @@ struct CacheObject {
   /// snapshot (e.g. a concurrent `get()`) pop the entry only if it is still the same generation,
   /// so it cannot delete a newer live entry that a concurrent re-store published under the same key.
   generation: u64,
+  /// Object data length in bytes (the on-memory `Bytes` length or the committed file length),
+  /// captured at store time and used for the total-size accounting in `LruCacheManager`.
+  size: usize,
 }
 
 impl CacheObject {
   /// Build a cache object, assigning it a fresh generation id.
-  fn new(policy: CachePolicy, target: CacheFileOrOnMemory, hash: Bytes) -> Self {
+  fn new(policy: CachePolicy, target: CacheFileOrOnMemory, hash: Bytes, size: usize) -> Self {
     Self {
       policy,
       target,
       hash,
       generation: CACHE_OBJECT_GEN.fetch_add(1, Ordering::Relaxed),
+      size,
     }
   }
 }
 
 /* ---------------------------------------------- */
+/// Recompute the byte total from the live entries with a checked fold. Called only when an
+/// arithmetic invariant violation has been detected (the counter and the live set disagree);
+/// a corrupted counter can be wrong in EITHER direction, so neither keeping it nor clamping
+/// it is safe — only a recount restores a trustworthy value. Returns `None` when even the
+/// recount overflows, i.e. the live set itself is no longer representable.
+fn recompute_total(lru: &LruCache<String, CacheObject>) -> Option<usize> {
+  lru.iter().try_fold(0usize, |acc, (_, v)| acc.checked_add(v.size))
+}
+
+/// Outcome of `LruCacheManager::push`: whether the new entry was stored, plus every entry
+/// displaced under the lock, whose files the caller evicts after the lock is released.
+struct PushOutcome {
+  /// `false` when the store was refused: by the preflight (no-fit or unrepresentable
+  /// counter, in which case `displaced` is empty), or because the byte accounting was
+  /// invalidated (possibly mid-operation, in which case `displaced` holds the entries that
+  /// were already popped and still need their files evicted).
+  stored: bool,
+  /// Entries removed under the lock: same-key replacement, total-size eviction, and
+  /// entry-count capacity eviction.
+  displaced: Vec<(String, CacheObject)>,
+}
+
 #[derive(Debug, Clone)]
 /// Lru cache manager that is responsible to handle `Mutex` as an outer of `LruCache`
 struct LruCacheManager {
@@ -688,23 +758,79 @@ struct LruCacheManager {
   inner: Arc<Mutex<LruCache<String, CacheObject>>>,
   /// Counter of current cached object (total)
   cnt: Arc<AtomicUsize>,
+  /// Sum of `CacheObject::size` over the entries currently in the LRU (the logical live set).
+  /// Every mutation happens while holding the LRU mutex, so the in-lock view is the single
+  /// authoritative state; lock-free reads are advisory snapshots for logging and tests.
+  total_bytes: Arc<AtomicUsize>,
+  /// Ceiling on `total_bytes` (`None` = unlimited). Bounds the logical live set only —
+  /// in-flight stores, committed-but-unpublished files, displaced files awaiting unlink, and
+  /// unlink failures live outside it (see the design doc and README).
+  max_total_size: Option<usize>,
+  /// Set when an arithmetic invariant violation could not be repaired by recounting the live
+  /// entries (`recompute_total` overflowed). Once set, `push` refuses every store up front —
+  /// the ceiling can no longer be enforced trustworthily — while reads and evictions keep
+  /// serving and cleaning up. Cleared only by rebuilding the cache (restart / config reload).
+  accounting_invalid: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl LruCacheManager {
-  #[allow(unused)]
   /// Build LruCache
-  fn new(cache_max_entry: usize) -> Self {
+  fn new(cache_max_entry: usize, max_total_size: Option<usize>) -> Self {
     Self {
       inner: Arc::new(Mutex::new(LruCache::new(
         std::num::NonZeroUsize::new(cache_max_entry).unwrap(),
       ))),
       cnt: Default::default(),
+      total_bytes: Default::default(),
+      max_total_size,
+      accounting_invalid: Default::default(),
+    }
+  }
+
+  /// Repair a detected accounting invariant violation: recount the live entries and restore
+  /// the exact total, or — if even the recount overflows — mark the accounting invalid so
+  /// every further store is refused (fail-closed). A corrupted counter can err in either
+  /// direction, so the previous value is never kept and never clamped (both can under-report
+  /// and let the live set breach the ceiling). Must be called with the LRU lock held.
+  /// Returns the recovered exact total, or `None` when the manager was invalidated.
+  fn recover_or_invalidate(&self, lru: &LruCache<String, CacheObject>, context: &str) -> Option<usize> {
+    match recompute_total(lru) {
+      Some(total) => {
+        error!(
+          "Cache byte accounting invariant violated while {context}; counter restored by recounting live entries ({total} bytes)"
+        );
+        self.total_bytes.store(total, Ordering::Relaxed);
+        Some(total)
+      }
+      None => {
+        error!(
+          "Cache byte accounting invariant violated while {context} and the live-set recount itself overflowed; \
+           refusing all further cache stores (fail-closed)"
+        );
+        self.accounting_invalid.store(true, Ordering::Relaxed);
+        None
+      }
+    }
+  }
+
+  /// Subtract an evicted entry's bytes from the running total. The entry has ALREADY been
+  /// popped, so on an impossible subtraction (invariant violation) the recount over the
+  /// remaining entries replaces the subtraction outright. `None` = accounting invalidated.
+  fn sub_or_recount(&self, lru: &LruCache<String, CacheObject>, total: usize, size: usize, context: &str) -> Option<usize> {
+    match total.checked_sub(size) {
+      Some(t) => Some(t),
+      None => self.recover_or_invalidate(lru, context),
     }
   }
 
   /// Count entries
   fn count(&self) -> usize {
     self.cnt.load(Ordering::Relaxed)
+  }
+
+  /// Advisory snapshot of the retained live-set bytes (authoritative only under the LRU lock).
+  fn total_bytes(&self) -> usize {
+    self.total_bytes.load(Ordering::Relaxed)
   }
 
   /// Evict the entry for `cache_key` only if it is still the `generation` the caller observed.
@@ -724,24 +850,212 @@ impl LruCacheManager {
     };
     // `peek` does not promote the entry; only pop when the generation still matches.
     if lock.peek(cache_key).map(|o| o.generation) != Some(generation) {
+      // Generation mismatch: nothing is popped, so the byte accounting stays untouched.
       return None;
     }
     let res = lock.pop_entry(cache_key);
+    if let Some((_, v)) = &res {
+      // Mutated under the held lock, keeping the counter authoritative (see field doc).
+      // An impossible subtraction is repaired by recounting (or invalidates the accounting).
+      let total = self.total_bytes.load(Ordering::Relaxed);
+      if let Some(t) = self.sub_or_recount(&lock, total, v.size, "evicting a stale entry") {
+        self.total_bytes.store(t, Ordering::Relaxed);
+      }
+    }
     // This may be inconsistent with the actual number of entries
     self.cnt.store(lock.len(), Ordering::Relaxed);
     res
   }
 
-  /// Push an entry into the LRU cache, returns error if mutex cannot be acquired
-  fn push(&self, cache_key: &str, cache_object: &CacheObject) -> CacheResult<Option<(String, CacheObject)>> {
+  /// Push an entry into the LRU cache, enforcing the total-size ceiling. Returns error if the
+  /// mutex cannot be acquired.
+  ///
+  /// Everything happens under ONE lock acquisition, in a strict order that (a) never evicts an
+  /// unrelated entry when replacing a same-key predecessor would already make the new object
+  /// fit, and (b) refuses fail-closed — without mutating anything — states the counter could
+  /// not represent:
+  /// 1. Preflight, branched by ceiling. Bounded: refuse only a no-fit object
+  ///    (`new_size > ceiling`; unreachable once the constructor clamps `max_each_size`) — the
+  ///    pre-eviction projected sum may legitimately overflow even though the object fits after
+  ///    step 3, so no addition is checked here; fit is guaranteed by the step-3 loop instead
+  ///    (post-loop `total <= ceiling - new_size`, so the step-5 addition cannot overflow).
+  ///    Unlimited: no eviction loop runs, so refuse when `(total - old_size) + new_size` is not
+  ///    representable (`checked_add`; reachable only at ~16 EiB retained on 64-bit targets).
+  ///    A `checked_sub` failure (`total < old_size`) is an invariant violation: the counter
+  ///    and the live set disagree, and a corrupted counter can err in EITHER direction (a
+  ///    too-small value under-reports and would let the live set breach the ceiling), so the
+  ///    counter is repaired by recounting the live entries before the preflight is retried.
+  ///    If even the recount overflows, the accounting is invalidated and every store —
+  ///    including this one — is refused up front (fail-closed); reads and evictions continue.
+  ///    The counter is never kept, clamped, or saturated on a violation.
+  /// 2. Same-key removal: pop this key's old entry and free its bytes first.
+  /// 3. Total-size eviction: pop LRU entries while the new object does not fit.
+  /// 4. Insert; at entry-count capacity this can displace one more entry, accounted the same.
+  /// 5. Add the new entry's size — checked; representable whenever the invariant holds.
+  ///
+  /// Violations detected mid-operation (steps 2-5) are repaired the same way: the failed
+  /// subtraction/addition is replaced by a recount of the live set as it stands (the popped
+  /// or inserted entry is already reflected in the map, so the recount IS the exact new
+  /// total). If invalidated mid-operation, the store is abandoned (`stored = false`) and the
+  /// entries popped so far are returned for file cleanup.
+  fn push(&self, cache_key: &str, cache_object: &CacheObject) -> CacheResult<PushOutcome> {
     let mut lock = self.inner.lock().map_err(|_| {
       error!("Failed to acquire mutex lock for writing cache entry");
       CacheError::FailedToAcquiredMutexLockForCache
     })?;
-    let res = Ok(lock.push(cache_key.to_string(), cache_object.clone()));
+
+    // Accounting already invalidated: the ceiling cannot be enforced trustworthily, so every
+    // store is refused before any mutation (the caller rolls back the new file).
+    if self.accounting_invalid.load(Ordering::Relaxed) {
+      return Ok(PushOutcome {
+        stored: false,
+        displaced: Vec::new(),
+      });
+    }
+
+    let new_size = cache_object.size;
+    let mut total = self.total_bytes.load(Ordering::Relaxed);
+
+    // Step 1: preflight, before any mutation (with one repair retry on a violation).
+    let old_size = lock.peek(cache_key).map(|o| o.size).unwrap_or(0);
+    let mut base = total.checked_sub(old_size);
+    if base.is_none() {
+      // The counter no longer covers a live entry: repair it by recounting, or invalidate.
+      let Some(recounted) = self.recover_or_invalidate(&lock, "preparing a store") else {
+        return Ok(PushOutcome {
+          stored: false,
+          displaced: Vec::new(),
+        });
+      };
+      total = recounted;
+      // The recount includes the live same-key entry, so this cannot fail again.
+      base = total.checked_sub(old_size);
+    }
+    let refused = match (base, self.max_total_size) {
+      (None, _) => true, // unreachable after the repair above; kept as the final guard
+      (Some(_), Some(limit)) => new_size > limit,
+      (Some(base), None) => base.checked_add(new_size).is_none(),
+    };
+    if refused {
+      return Ok(PushOutcome {
+        stored: false,
+        displaced: Vec::new(),
+      });
+    }
+
+    let mut displaced = Vec::new();
+
+    // Step 2: free the same-key predecessor's bytes before evicting anything unrelated.
+    // (Underflow here is pre-excluded by the step-1 preflight/repair.)
+    if let Some(old) = lock.pop_entry(cache_key) {
+      let size = old.1.size;
+      displaced.push(old);
+      let Some(t) = self.sub_or_recount(&lock, total, size, "replacing a same-key entry") else {
+        // Invalidated before the insert: nothing to remove; sync the advisory entry count
+        // to the pops that already happened and abandon the store.
+        self.cnt.store(lock.len(), Ordering::Relaxed);
+        return Ok(PushOutcome {
+          stored: false,
+          displaced,
+        });
+      };
+      total = t;
+    }
+
+    // Step 3: evict LRU entries until the new object fits under the ceiling. (The
+    // `saturating_sub` here is only the fit COMPARISON, not the authoritative counter.)
+    if let Some(limit) = self.max_total_size {
+      while new_size > limit.saturating_sub(total) {
+        let Some(lru) = lock.pop_lru() else {
+          // An empty LRU with the fit condition still true is impossible under the invariant
+          // (empty live set => total == 0 => new_size <= limit per the step-1 preflight), so
+          // reaching here proves the counter was corrupted in the OVER-reporting direction -
+          // the one corruption the subtraction path cannot detect (`checked_sub` keeps
+          // succeeding). Without repair the stale excess would be published into the counter
+          // and every later store would evict everything, permanently. Repair it here: the
+          // recount of an empty live set is exactly 0 (an empty fold cannot overflow, so the
+          // invalidation arm is unreachable and kept only for uniformity), after which the
+          // new object fits by the preflight guarantee.
+          match self.recover_or_invalidate(&lock, "size-evicting from an empty live set") {
+            Some(t) => {
+              total = t;
+              break;
+            }
+            None => {
+              self.cnt.store(lock.len(), Ordering::Relaxed);
+              return Ok(PushOutcome {
+                stored: false,
+                displaced,
+              });
+            }
+          }
+        };
+        let size = lru.1.size;
+        displaced.push(lru);
+        let Some(t) = self.sub_or_recount(&lock, total, size, "size-evicting an LRU entry") else {
+          // Invalidated before the insert: same as the step-2 arm above.
+          self.cnt.store(lock.len(), Ordering::Relaxed);
+          return Ok(PushOutcome {
+            stored: false,
+            displaced,
+          });
+        };
+        total = t;
+      }
+    }
+
+    // Step 4: insert; a full-by-entry-count LRU displaces one more entry here.
+    if let Some(cap_displaced) = lock.push(cache_key.to_string(), cache_object.clone()) {
+      let size = cap_displaced.1.size;
+      displaced.push(cap_displaced);
+      match total.checked_sub(size) {
+        Some(t) => total = t,
+        None => {
+          // Violation after the insert. On a successful recount (which already includes the
+          // new entry) it replaces BOTH this subtraction and the step-5 addition, and the
+          // store stands. On invalidation the store is abandoned per the contract above:
+          // remove the just-inserted metadata under the same lock (NOT added to `displaced`
+          // - the caller's stored=false arm owns the new file's rollback) and refuse.
+          match self.recover_or_invalidate(&lock, "capacity-evicting an LRU entry") {
+            Some(_) => {
+              self.cnt.store(lock.len(), Ordering::Relaxed);
+              return Ok(PushOutcome { stored: true, displaced });
+            }
+            None => {
+              let _ = lock.pop_entry(cache_key);
+              self.cnt.store(lock.len(), Ordering::Relaxed);
+              return Ok(PushOutcome {
+                stored: false,
+                displaced,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Step 5: account the new entry. Representable whenever the invariant holds (step-1
+    // preflight on the unlimited path, the step-3 loop on the bounded path). On a violation
+    // the recount — which already includes the inserted entry — replaces the addition; if
+    // even that fails, the store is abandoned like the step-4 arm (metadata removed, the
+    // caller rolls back the new file).
+    match total.checked_add(new_size) {
+      Some(t) => self.total_bytes.store(t, Ordering::Relaxed),
+      None => {
+        if self.recover_or_invalidate(&lock, "accounting a stored entry").is_none() {
+          let _ = lock.pop_entry(cache_key);
+          self.cnt.store(lock.len(), Ordering::Relaxed);
+          return Ok(PushOutcome {
+            stored: false,
+            displaced,
+          });
+        }
+        // On success the recounted total was stored by the helper; the store stands.
+      }
+    }
     // This may be inconsistent with the actual number of entries
     self.cnt.store(lock.len(), Ordering::Relaxed);
-    res
+    Ok(PushOutcome { stored: true, displaced })
   }
 
   /// Get an entry from the LRU cache, returns error if mutex cannot be acquired
@@ -787,7 +1101,11 @@ fn derive_filename_from_uri(uri: &hyper::Uri) -> String {
   general_purpose::URL_SAFE_NO_PAD.encode(digest)
 }
 
-fn derive_cache_key_from_uri(uri: &hyper::Uri) -> String {
+/// Derive the LRU cache key from the client-facing effective request URI. The caller MUST pass
+/// the effective URI (scheme + authority + path/query, as the client addressed it), NOT the
+/// upstream-rewritten request URI - otherwise distinct client-facing vhosts that rewrite to the
+/// same upstream target would collide on one key (cross-vhost cache poisoning).
+fn derive_cache_key_from_effective_uri(uri: &hyper::Uri) -> String {
   uri.to_string()
 }
 
@@ -850,7 +1168,7 @@ mod tests {
     let uri: Uri = "http://example.com/onmem".parse().unwrap();
     spool_and_store(body, body_tx, max_each_size, usize::MAX, &std::env::temp_dir(), &uri)
       .await
-      .map(|(target, _hash)| match target {
+      .map(|(target, _hash, _size)| match target {
         CacheFileOrOnMemory::OnMemory(bytes) => bytes,
         CacheFileOrOnMemory::File(_) => unreachable!("usize::MAX on-memory threshold never spills"),
       })
@@ -1031,7 +1349,7 @@ mod tests {
   #[tokio::test]
   async fn on_memory_hit_serves_object_without_rehash() {
     let cache = RpxyCache {
-      inner: LruCacheManager::new(10),
+      inner: LruCacheManager::new(10, None),
       file_store: FileStore {
         cnt: Arc::new(AtomicUsize::new(0)),
         runtime_handle: tokio::runtime::Handle::current(),
@@ -1060,8 +1378,9 @@ mod tests {
       CacheFileOrOnMemory::OnMemory(object.clone()),
       // Intentionally wrong: an on-memory hit must not consult this hash.
       Bytes::from_static(&[0u8; 32]),
+      object.len(),
     );
-    let cache_key = derive_cache_key_from_uri(&uri);
+    let cache_key = derive_cache_key_from_effective_uri(&uri);
     cache.inner.push(&cache_key, &cache_object).unwrap();
 
     let req = Request::builder().uri(uri.clone()).body(()).unwrap();
@@ -1089,13 +1408,14 @@ mod tests {
     let body = StreamBody::new(stream::iter(frames));
     let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CHANNEL_CAPACITY);
 
-    let (target, hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
+    let (target, hash, size) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
       .await
       .expect("a within-limit object must be cacheable");
     let CacheFileOrOnMemory::File(path) = target else {
       panic!("an over-threshold object must spill to a file target");
     };
     assert!(path.starts_with(&dir), "the committed file must live in cache_dir");
+    assert_eq!(size, 10000, "the accounted size is the full data length");
     assert_eq!(
       forwarded_len(rx.collect::<Vec<_>>().await),
       10000,
@@ -1123,13 +1443,14 @@ mod tests {
     let (tx, _rx) = mpsc::channel::<Result<Frame<Bytes>, hyper::Error>>(TEST_CHANNEL_CAPACITY);
     let body = body_from(vec![data_frame(b"tiny")]);
 
-    let (target, _hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
+    let (target, _hash, size) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
       .await
       .expect("cacheable");
     assert!(
       matches!(target, CacheFileOrOnMemory::OnMemory(ref b) if b.as_ref() == b"tiny"),
       "a sub-threshold object must stay on memory"
     );
+    assert_eq!(size, 4, "the accounted size is the data length");
     let mut entries = fs::read_dir(&dir).await.unwrap();
     assert!(
       entries.next_entry().await.unwrap().is_none(),
@@ -1150,7 +1471,7 @@ mod tests {
     let body = StreamBody::new(stream::iter(frames));
     let (tx, rx) = mpsc::channel::<Result<Frame<Bytes>, TestBodyError>>(TEST_CHANNEL_CAPACITY);
 
-    let (target, hash) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
+    let (target, hash, _size) = spool_and_store(body, tx, 1_000_000, 4096, &dir, &uri)
       .await
       .expect("cacheable");
     let CacheFileOrOnMemory::File(path) = target else {
@@ -1248,10 +1569,10 @@ mod tests {
   #[tokio::test]
   async fn publish_same_key_file_update_evicts_old_file() {
     let dir = temp_cache_dir("pub-ff").await;
-    let manager = LruCacheManager::new(10);
+    let manager = LruCacheManager::new(10, None);
     let file_store = test_file_store();
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_uri(&uri);
+    let key = derive_cache_key_from_effective_uri(&uri);
 
     let path_a = dir.join("file-a");
     fs::write(&path_a, b"AAAA").await.unwrap();
@@ -1259,6 +1580,7 @@ mod tests {
       fresh_policy(&uri),
       CacheFileOrOnMemory::File(path_a.clone()),
       Bytes::from_static(&[1u8; 32]),
+      4,
     );
     publish_cache_object(&manager, &file_store, &key, obj_a).await;
     assert_eq!(file_store.count().await, 1);
@@ -1269,6 +1591,7 @@ mod tests {
       fresh_policy(&uri),
       CacheFileOrOnMemory::File(path_b.clone()),
       Bytes::from_static(&[2u8; 32]),
+      4,
     );
     publish_cache_object(&manager, &file_store, &key, obj_b).await;
 
@@ -1286,10 +1609,10 @@ mod tests {
   #[tokio::test]
   async fn publish_file_then_on_memory_evicts_old_file() {
     let dir = temp_cache_dir("pub-fm").await;
-    let manager = LruCacheManager::new(10);
+    let manager = LruCacheManager::new(10, None);
     let file_store = test_file_store();
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_uri(&uri);
+    let key = derive_cache_key_from_effective_uri(&uri);
 
     let path_a = dir.join("file-a");
     fs::write(&path_a, b"AAAA").await.unwrap();
@@ -1297,6 +1620,7 @@ mod tests {
       fresh_policy(&uri),
       CacheFileOrOnMemory::File(path_a.clone()),
       Bytes::from_static(&[1u8; 32]),
+      4,
     );
     publish_cache_object(&manager, &file_store, &key, obj_a).await;
     assert_eq!(file_store.count().await, 1);
@@ -1305,6 +1629,7 @@ mod tests {
       fresh_policy(&uri),
       CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"small")),
       Bytes::from_static(&[2u8; 32]),
+      5,
     );
     publish_cache_object(&manager, &file_store, &key, obj_b).await;
 
@@ -1318,7 +1643,7 @@ mod tests {
   #[tokio::test]
   async fn publish_capacity_eviction_removes_displaced_file() {
     let dir = temp_cache_dir("pub-cap").await;
-    let manager = LruCacheManager::new(1); // capacity 1: the second push evicts the first
+    let manager = LruCacheManager::new(1, None); // capacity 1: the second push evicts the first
     let file_store = test_file_store();
 
     let uri_x: Uri = "http://example.com/x".parse().unwrap();
@@ -1328,8 +1653,9 @@ mod tests {
       fresh_policy(&uri_x),
       CacheFileOrOnMemory::File(path_a.clone()),
       Bytes::from_static(&[1u8; 32]),
+      4,
     );
-    publish_cache_object(&manager, &file_store, &derive_cache_key_from_uri(&uri_x), obj_a).await;
+    publish_cache_object(&manager, &file_store, &derive_cache_key_from_effective_uri(&uri_x), obj_a).await;
     assert_eq!(file_store.count().await, 1);
 
     let uri_y: Uri = "http://example.com/y".parse().unwrap();
@@ -1337,8 +1663,9 @@ mod tests {
       fresh_policy(&uri_y),
       CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"small")),
       Bytes::from_static(&[2u8; 32]),
+      5,
     );
-    publish_cache_object(&manager, &file_store, &derive_cache_key_from_uri(&uri_y), obj_b).await;
+    publish_cache_object(&manager, &file_store, &derive_cache_key_from_effective_uri(&uri_y), obj_b).await;
 
     assert!(
       fs::metadata(&path_a).await.is_err(),
@@ -1346,6 +1673,639 @@ mod tests {
     );
     assert_eq!(file_store.count().await, 0, "no committed files remain");
     let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// On-memory `CacheObject` with an explicit accounted `size` (the actual payload stays tiny),
+  /// for total-size accounting tests - including near-`usize::MAX` sizes - without allocating
+  /// real data.
+  fn sized_object(uri: &Uri, size: usize) -> CacheObject {
+    CacheObject::new(
+      fresh_policy(uri),
+      CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"x")),
+      Bytes::from_static(&[0u8; 32]),
+      size,
+    )
+  }
+
+  /// Parse a URI and derive its cache key (shorthand for the ceiling tests).
+  fn key_of(uri: &str) -> (Uri, String) {
+    let uri: Uri = uri.parse().unwrap();
+    let key = derive_cache_key_from_effective_uri(&uri);
+    (uri, key)
+  }
+
+  /// The per-entry limits are clamped to the total ceiling first, then transitively to each
+  /// other; without a ceiling the pre-existing behavior is unchanged.
+  #[test]
+  fn per_entry_limits_clamp_to_total_ceiling_transitively() {
+    // Ceiling below both per-entry limits: both clamp down to it.
+    assert_eq!(effective_per_entry_limits(65_535, 65_535, Some(100)), (100, 100));
+    // Ceiling above the per-entry limit: untouched.
+    assert_eq!(effective_per_entry_limits(100, 50, Some(1000)), (100, 50));
+    // No ceiling: only the pre-existing on-memory clamp applies.
+    assert_eq!(effective_per_entry_limits(100, 200, None), (100, 100));
+    assert_eq!(effective_per_entry_limits(65_535, 4_096, None), (65_535, 4_096));
+  }
+
+  /// Publishing beyond the ceiling pops LRU entries until the new object fits; the popped
+  /// file-backed entry's file is removed and the byte accounting converges. (design test 3)
+  #[tokio::test]
+  async fn ceiling_eviction_pops_lru_until_new_fits() {
+    let dir = temp_cache_dir("ceil-basic").await;
+    let manager = LruCacheManager::new(10, Some(100));
+    let file_store = test_file_store();
+
+    let (uri_a, key_a) = key_of("http://example.com/a");
+    let path_a = dir.join("file-a");
+    fs::write(&path_a, vec![0u8; 60]).await.unwrap();
+    let obj_a = CacheObject::new(
+      fresh_policy(&uri_a),
+      CacheFileOrOnMemory::File(path_a.clone()),
+      Bytes::from_static(&[1u8; 32]),
+      60,
+    );
+    publish_cache_object(&manager, &file_store, &key_a, obj_a).await;
+    assert_eq!(manager.total_bytes(), 60);
+
+    // 60 + 50 > 100: publishing B must size-evict A.
+    let (uri_b, key_b) = key_of("http://example.com/b");
+    publish_cache_object(&manager, &file_store, &key_b, sized_object(&uri_b, 50)).await;
+
+    assert!(fs::metadata(&path_a).await.is_err(), "the size-evicted file must be removed");
+    assert_eq!(file_store.count().await, 0);
+    assert_eq!(manager.total_bytes(), 50, "only the new entry remains accounted");
+    assert!(manager.get(&key_a).unwrap().is_none(), "the evicted entry is gone");
+    assert!(manager.get(&key_b).unwrap().is_some(), "the new entry is stored");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// One publish can displace several small entries (the `Vec` displaced path). (design test 4)
+  #[tokio::test]
+  async fn ceiling_multi_displacement_pops_several_entries() {
+    let manager = LruCacheManager::new(10, Some(100));
+    for (uri_str, size) in [
+      ("http://example.com/a", 30usize),
+      ("http://example.com/b", 30),
+      ("http://example.com/c", 30),
+    ] {
+      let (uri, key) = key_of(uri_str);
+      let outcome = manager.push(&key, &sized_object(&uri, size)).unwrap();
+      assert!(outcome.stored);
+    }
+    assert_eq!(manager.total_bytes(), 90);
+
+    let (uri_d, key_d) = key_of("http://example.com/d");
+    let outcome = manager.push(&key_d, &sized_object(&uri_d, 95)).unwrap();
+    assert!(outcome.stored);
+    assert_eq!(outcome.displaced.len(), 3, "one publish displaces all three small entries");
+    assert_eq!(manager.total_bytes(), 95);
+    assert_eq!(manager.count(), 1);
+  }
+
+  /// A same-key replacement frees its predecessor's bytes BEFORE any unrelated entry is
+  /// considered: with ceiling=100, A=10 (older) and K=80, replacing K with K'=90 must evict
+  /// nothing but old K - A survives. (design test 5, codex round-1 blocker 1)
+  #[tokio::test]
+  async fn same_key_replacement_evicts_only_predecessor() {
+    let dir = temp_cache_dir("ceil-samekey").await;
+    let manager = LruCacheManager::new(10, Some(100));
+    let file_store = test_file_store();
+
+    let (uri_a, key_a) = key_of("http://example.com/a");
+    publish_cache_object(&manager, &file_store, &key_a, sized_object(&uri_a, 10)).await;
+
+    let (uri_k, key_k) = key_of("http://example.com/k");
+    let path_k = dir.join("file-k");
+    fs::write(&path_k, vec![0u8; 80]).await.unwrap();
+    let obj_k = CacheObject::new(
+      fresh_policy(&uri_k),
+      CacheFileOrOnMemory::File(path_k.clone()),
+      Bytes::from_static(&[2u8; 32]),
+      80,
+    );
+    publish_cache_object(&manager, &file_store, &key_k, obj_k).await;
+    assert_eq!(manager.total_bytes(), 90);
+
+    // Replace K with K'=90: old K's 80 bytes free first, so A (LRU-oldest) must survive.
+    publish_cache_object(&manager, &file_store, &key_k, sized_object(&uri_k, 90)).await;
+
+    assert!(
+      manager.get(&key_a).unwrap().is_some(),
+      "the unrelated LRU-oldest entry must survive a same-key replacement"
+    );
+    assert!(
+      fs::metadata(&path_k).await.is_err(),
+      "the replaced predecessor's file is evicted"
+    );
+    assert_eq!(file_store.count().await, 0);
+    assert_eq!(manager.total_bytes(), 100, "A(10) + K'(90) exactly fill the ceiling");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// A same-key replacement subtracts the old size and adds the new one. (design test 6)
+  #[tokio::test]
+  async fn same_key_replacement_adjusts_total_bytes() {
+    let manager = LruCacheManager::new(10, None);
+    let (uri, key) = key_of("http://example.com/x");
+    assert!(manager.push(&key, &sized_object(&uri, 40)).unwrap().stored);
+    assert_eq!(manager.total_bytes(), 40);
+
+    let outcome = manager.push(&key, &sized_object(&uri, 15)).unwrap();
+    assert!(outcome.stored);
+    assert_eq!(outcome.displaced.len(), 1, "the predecessor is displaced");
+    assert_eq!(manager.total_bytes(), 15, "old size subtracted, new size added");
+    assert_eq!(manager.count(), 1);
+  }
+
+  /// An entry displaced by the LRU's entry-count capacity (not by size) is byte-accounted the
+  /// same way: final total = old_total - displaced_size + new_size. (design test 7)
+  #[tokio::test]
+  async fn capacity_displacement_is_size_accounted() {
+    let manager = LruCacheManager::new(2, Some(1000));
+    let (uri_a, key_a) = key_of("http://example.com/a");
+    let (uri_b, key_b) = key_of("http://example.com/b");
+    assert!(manager.push(&key_a, &sized_object(&uri_a, 10)).unwrap().stored);
+    assert!(manager.push(&key_b, &sized_object(&uri_b, 20)).unwrap().stored);
+    let old_total = manager.total_bytes();
+    assert_eq!(old_total, 30);
+
+    // Total is far below the ceiling; the displacement is purely by entry-count capacity (2).
+    let (uri_c, key_c) = key_of("http://example.com/c");
+    let outcome = manager.push(&key_c, &sized_object(&uri_c, 40)).unwrap();
+    assert!(outcome.stored);
+    assert_eq!(outcome.displaced.len(), 1, "the LRU entry is displaced by capacity");
+    assert_eq!(
+      manager.total_bytes(),
+      old_total - 10 + 40,
+      "final total must equal old_total - displaced_size + new_size"
+    );
+    assert_eq!(manager.count(), 2);
+  }
+
+  /// `evict_if_generation` subtracts the entry's bytes on a generation match only; a stale
+  /// generation pops nothing and subtracts nothing. (design test 8)
+  #[tokio::test]
+  async fn evict_if_generation_subtracts_only_on_match() {
+    let manager = LruCacheManager::new(10, None);
+    let (uri, key) = key_of("http://example.com/x");
+    let obj_a = sized_object(&uri, 25);
+    let gen_a = obj_a.generation;
+    assert!(manager.push(&key, &obj_a).unwrap().stored);
+    let obj_b = sized_object(&uri, 35);
+    let gen_b = obj_b.generation;
+    assert!(manager.push(&key, &obj_b).unwrap().stored);
+    assert_eq!(manager.total_bytes(), 35);
+
+    assert!(manager.evict_if_generation(&key, gen_a).is_none());
+    assert_eq!(manager.total_bytes(), 35, "a generation mismatch must subtract nothing");
+
+    assert!(manager.evict_if_generation(&key, gen_b).is_some());
+    assert_eq!(manager.total_bytes(), 0, "a generation match subtracts the entry's bytes");
+  }
+
+  /// After a hash-mismatch unlink (uncounted by design), the LRU entry keeps accounting the
+  /// bytes; the next access converges the entry count, the file count, and the byte total
+  /// exactly once. Driven end-to-end through `RpxyCache::get` — the first hit drains the
+  /// corrupted file to EOF (mismatch unlink), the SECOND hit takes get()'s read-failure
+  /// branch (open failure -> generation-matched eviction + counted removal) and returns
+  /// `None` — so this fails if get() ever stops performing the convergence itself.
+  /// (design test 9, codex impl-review round-1 item 1)
+  #[tokio::test]
+  async fn hash_mismatch_accounting_converges_exactly_once() {
+    let dir = temp_cache_dir("ceil-mismatch").await;
+    let cache = RpxyCache {
+      inner: LruCacheManager::new(10, None),
+      file_store: test_file_store(),
+      runtime_handle: tokio::runtime::Handle::current(),
+      max_each_size: 65_535,
+      max_each_size_on_memory: 4_096,
+      cache_dir: dir.clone(),
+    };
+
+    // Unrelated entry: a double subtraction would drive the total below its size.
+    let (uri_o, key_o) = key_of("http://example.com/other");
+    publish_cache_object(&cache.inner, &cache.file_store, &key_o, sized_object(&uri_o, 7)).await;
+
+    // File-backed entry whose recorded hash does not match its on-disk content.
+    let (uri, key) = key_of("http://example.com/corrupt");
+    let path = dir.join("file-corrupt");
+    fs::write(&path, vec![9u8; 20]).await.unwrap();
+    let obj = CacheObject::new(
+      fresh_policy(&uri),
+      CacheFileOrOnMemory::File(path.clone()),
+      Bytes::from_static(&[0u8; 32]), // wrong hash: the first hit must detect the mismatch
+      20,
+    );
+    publish_cache_object(&cache.inner, &cache.file_store, &key, obj).await;
+    assert_eq!(cache.file_store.count().await, 1);
+    assert_eq!(cache.inner.total_bytes(), 27);
+
+    // First hit: served from the file; the integrity check at EOF unlinks the file WITHOUT
+    // touching any counter (the producer task holds the channel open until the unlink is
+    // done, so draining to EOF is sufficient synchronization).
+    let req = Request::builder().uri(uri.clone()).body(()).unwrap();
+    let response = cache.get(&req).await.expect("the first hit serves the (corrupt) file");
+    let _ = BodyExt::collect(response.into_body()).await;
+    assert!(fs::metadata(&path).await.is_err(), "the corrupted file is unlinked");
+    assert_eq!(
+      cache.file_store.count().await,
+      1,
+      "the uncounted unlink must not touch the file count"
+    );
+    assert_eq!(cache.inner.total_bytes(), 27, "the live LRU entry still accounts its bytes");
+    assert_eq!(cache.inner.count(), 2);
+
+    // Second hit: the file cannot be opened; get() itself must evict the metadata
+    // (generation-matched) and the counted file, converging all three exactly once.
+    assert!(cache.get(&req).await.is_none(), "the second hit must fail closed");
+    assert_eq!(cache.file_store.count().await, 0);
+    assert_eq!(
+      cache.inner.total_bytes(),
+      7,
+      "exactly one subtraction; the unrelated entry remains accounted"
+    );
+    assert_eq!(cache.inner.count(), 1);
+
+    // Third hit is a plain miss: no double subtraction, and the unrelated entry still serves.
+    assert!(cache.get(&req).await.is_none());
+    assert_eq!(cache.inner.total_bytes(), 7);
+    let req_o = Request::builder().uri(uri_o.clone()).body(()).unwrap();
+    assert!(cache.get(&req_o).await.is_some(), "the unrelated entry is untouched");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// codex round-2 counterexample: a corrupted (under-reporting) counter must not let the
+  /// live set breach the ceiling. ceiling=200, live A=100 + B=100, counter corrupted to 50;
+  /// evicting A hits the impossible subtraction and RECOUNTS the live entries (keeping or
+  /// clamping the old value would under-report B and let a 150-byte push skip B's eviction,
+  /// ending with a 250-byte live set). After the recount, pushing C=150 must evict B.
+  /// (codex impl-review round-2 item 1)
+  #[tokio::test]
+  async fn corrupted_counter_recovers_by_recount_and_keeps_ceiling() {
+    let manager = LruCacheManager::new(10, Some(200));
+    let (uri_a, key_a) = key_of("http://example.com/a");
+    let obj_a = sized_object(&uri_a, 100);
+    let gen_a = obj_a.generation;
+    assert!(manager.push(&key_a, &obj_a).unwrap().stored);
+    let (uri_b, key_b) = key_of("http://example.com/b");
+    assert!(manager.push(&key_b, &sized_object(&uri_b, 100)).unwrap().stored);
+    assert_eq!(manager.total_bytes(), 200);
+
+    // Simulate corruption: the counter under-reports the live set.
+    manager.total_bytes.store(50, Ordering::Relaxed);
+
+    // Evicting A cannot subtract 100 from 50; the recount restores the exact remainder (B).
+    assert!(manager.evict_if_generation(&key_a, gen_a).is_some());
+    assert_eq!(manager.total_bytes(), 100, "the recount restores the exact live total");
+
+    // With the repaired counter, C=150 must displace B to fit under the 200-byte ceiling.
+    let (uri_c, key_c) = key_of("http://example.com/c");
+    let outcome = manager.push(&key_c, &sized_object(&uri_c, 150)).unwrap();
+    assert!(outcome.stored);
+    assert_eq!(outcome.displaced.len(), 1, "B is size-evicted");
+    assert!(manager.get(&key_b).unwrap().is_none(), "B must not survive");
+    assert_eq!(manager.total_bytes(), 150, "the live set stays under the ceiling");
+  }
+
+  /// A violation detected by the same-key preflight is repaired by recounting BEFORE any
+  /// mutation, and the push then proceeds with exact accounting.
+  /// (codex impl-review round-2 item 1)
+  #[tokio::test]
+  async fn preflight_violation_repairs_by_recount_and_proceeds() {
+    let manager = LruCacheManager::new(10, None);
+    let (uri, key) = key_of("http://example.com/x");
+    assert!(manager.push(&key, &sized_object(&uri, 100)).unwrap().stored);
+
+    // Corrupt the counter below the live entry's size: checked_sub(50 - 100) fails.
+    manager.total_bytes.store(50, Ordering::Relaxed);
+
+    // The preflight repairs the counter (recount = 100), then the replacement proceeds.
+    let outcome = manager.push(&key, &sized_object(&uri, 10)).unwrap();
+    assert!(outcome.stored, "the repaired push must proceed");
+    assert_eq!(outcome.displaced.len(), 1, "the predecessor is displaced normally");
+    assert_eq!(manager.total_bytes(), 10, "exact accounting after the repair");
+  }
+
+  /// A store whose capacity displacement triggers an UNRECOVERABLE violation (the recount
+  /// overflows) must be abandoned: the just-inserted metadata is removed under the lock,
+  /// `stored = false` makes publish roll back the new file, the displaced entry's file is
+  /// still cleaned up, the advisory entry count converges, and every later store is refused
+  /// pre-mutation. (codex impl-review round-3 item 1)
+  #[tokio::test]
+  async fn midoperation_invalidation_abandons_the_inserted_store() {
+    let dir = temp_cache_dir("ceil-midinval").await;
+    let manager = LruCacheManager::new(2, None); // entry-count capacity 2
+    let file_store = test_file_store();
+
+    // e1: file-backed, fabricated huge size (content is tiny; size is metadata).
+    let (uri_1, key_1) = key_of("http://example.com/e1");
+    let path_1 = dir.join("file-e1");
+    fs::write(&path_1, b"E1").await.unwrap();
+    let obj_1 = CacheObject::new(
+      fresh_policy(&uri_1),
+      CacheFileOrOnMemory::File(path_1.clone()),
+      Bytes::from_static(&[1u8; 32]),
+      usize::MAX - 4,
+    );
+    publish_cache_object(&manager, &file_store, &key_1, obj_1).await;
+    manager.total_bytes.store(0, Ordering::Relaxed); // corruption between pushes
+
+    let (uri_2, key_2) = key_of("http://example.com/e2");
+    publish_cache_object(&manager, &file_store, &key_2, sized_object(&uri_2, 100)).await;
+    manager.total_bytes.store(0, Ordering::Relaxed); // corruption again
+
+    // The new file-backed store: capacity 2 is full, so the insert displaces e1 (LRU-oldest,
+    // size MAX-4); the impossible subtraction recounts {e2=100, new=MAX-4} which overflows
+    // -> invalidation -> the store must be abandoned and rolled back.
+    let (uri_n, key_n) = key_of("http://example.com/new");
+    let path_n = dir.join("file-new");
+    fs::write(&path_n, b"NEW").await.unwrap();
+    let obj_n = CacheObject::new(
+      fresh_policy(&uri_n),
+      CacheFileOrOnMemory::File(path_n.clone()),
+      Bytes::from_static(&[2u8; 32]),
+      usize::MAX - 4,
+    );
+    publish_cache_object(&manager, &file_store, &key_n, obj_n).await;
+
+    assert!(
+      manager.get(&key_n).unwrap().is_none(),
+      "the abandoned store must not leave its metadata behind"
+    );
+    assert!(fs::metadata(&path_n).await.is_err(), "the new file is rolled back");
+    assert!(fs::metadata(&path_1).await.is_err(), "the displaced file is still cleaned up");
+    assert_eq!(file_store.count().await, 0, "both file rollbacks restore the count");
+    assert!(manager.get(&key_2).unwrap().is_some(), "the surviving entry keeps serving");
+    assert_eq!(manager.count(), 1, "the advisory entry count converges to the LRU length");
+
+    // Every later store is refused before any mutation.
+    let (uri_x, key_x) = key_of("http://example.com/x");
+    let outcome = manager.push(&key_x, &sized_object(&uri_x, 1)).unwrap();
+    assert!(!outcome.stored, "stores after invalidation are refused up front");
+    assert!(outcome.displaced.is_empty());
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// A size-eviction (step 3) invalidation early-return also keeps the advisory entry count
+  /// in sync with the LRU length. The corrupted state is assembled by direct map insertion
+  /// (bypassing push) so the eviction subtraction fails while the recount overflows.
+  /// (codex impl-review round-3 item 2)
+  #[tokio::test]
+  async fn size_eviction_invalidation_early_return_syncs_entry_count() {
+    let manager = LruCacheManager::new(10, Some(300));
+    let (uri_a, key_a) = key_of("http://example.com/a");
+    let (uri_b, key_b) = key_of("http://example.com/b");
+    let (uri_c, key_c) = key_of("http://example.com/c");
+    {
+      // Direct insertion bypasses push: the counter and the advisory count stay stale on
+      // purpose (a is LRU-oldest).
+      let mut lock = manager.inner.lock().unwrap();
+      lock.push(key_a.clone(), sized_object(&uri_a, 100));
+      lock.push(key_b.clone(), sized_object(&uri_b, usize::MAX - 4));
+      lock.push(key_c.clone(), sized_object(&uri_c, 100));
+    }
+    manager.total_bytes.store(50, Ordering::Relaxed); // cannot cover a=100
+    assert_eq!(manager.count(), 0, "the advisory count is stale before the push");
+
+    // 280 > 300 - 50 forces size eviction; popping a=100 from total=50 fails; the recount
+    // over {b=MAX-4, c=100} overflows -> invalidation mid-step-3.
+    let (uri_d, key_d) = key_of("http://example.com/d");
+    let outcome = manager.push(&key_d, &sized_object(&uri_d, 280)).unwrap();
+    assert!(!outcome.stored, "the store is abandoned on mid-eviction invalidation");
+    assert_eq!(outcome.displaced.len(), 1, "the popped entry is handed back for cleanup");
+    assert!(manager.get(&key_d).unwrap().is_none(), "nothing was inserted");
+    assert_eq!(
+      manager.count(),
+      2,
+      "the early return must sync the advisory count to the LRU length"
+    );
+  }
+
+  /// An OVER-reporting corrupted counter is the one corruption the subtraction path cannot
+  /// detect (`checked_sub` keeps succeeding). It surfaces as "the LRU is empty but the fit
+  /// condition still holds" in the step-3 loop, which must repair the counter by recounting
+  /// (empty live set = exactly 0) instead of silently publishing the stale excess - which
+  /// would leave every later store evicting everything, permanently.
+  /// (PR #643 Copilot review finding)
+  #[tokio::test]
+  async fn overreporting_corruption_repairs_when_eviction_empties_the_lru() {
+    let manager = LruCacheManager::new(10, Some(200));
+    let (uri_a, key_a) = key_of("http://example.com/a");
+    assert!(manager.push(&key_a, &sized_object(&uri_a, 10)).unwrap().stored);
+
+    // Corrupt the counter ABOVE the true total: subtractions keep succeeding, so only the
+    // empty-LRU repair point can catch this.
+    manager.total_bytes.store(500, Ordering::Relaxed);
+
+    // 100 > 200 - 500 (saturated to 0) forces eviction; A is popped (500 - 10 = 490 still
+    // "succeeds"), the LRU empties with the condition still true -> recount to 0 -> store.
+    let (uri_c, key_c) = key_of("http://example.com/c");
+    let outcome = manager.push(&key_c, &sized_object(&uri_c, 100)).unwrap();
+    assert!(outcome.stored, "the store proceeds after the repair");
+    assert_eq!(outcome.displaced.len(), 1, "A was evicted while the counter looked full");
+    assert_eq!(
+      manager.total_bytes(),
+      100,
+      "the counter must be repaired to the exact live total, not stale excess + new size"
+    );
+
+    // Self-healed: the next store behaves normally instead of evicting everything again.
+    let (uri_d, key_d) = key_of("http://example.com/d");
+    let outcome = manager.push(&key_d, &sized_object(&uri_d, 50)).unwrap();
+    assert!(outcome.stored);
+    assert!(outcome.displaced.is_empty(), "100 + 50 fits under 200; nothing is evicted");
+    assert_eq!(manager.total_bytes(), 150);
+    assert_eq!(manager.count(), 2);
+  }
+
+  /// When even the recount overflows, the accounting is invalidated: every further store is
+  /// refused up front (fail-closed), while reads and evictions keep working.
+  /// (codex impl-review round-2 item 1)
+  #[tokio::test]
+  async fn unrecoverable_accounting_invalidates_and_refuses_stores() {
+    let manager = LruCacheManager::new(10, None);
+    // Assemble a live set whose true sum overflows usize, by corrupting the counter between
+    // pushes so each individual preflight passes (sizes are metadata only - no allocation).
+    let (uri_1, key_1) = key_of("http://example.com/e1");
+    assert!(manager.push(&key_1, &sized_object(&uri_1, usize::MAX - 4)).unwrap().stored);
+    manager.total_bytes.store(0, Ordering::Relaxed);
+    let (uri_2, key_2) = key_of("http://example.com/e2");
+    assert!(manager.push(&key_2, &sized_object(&uri_2, 100)).unwrap().stored);
+    manager.total_bytes.store(0, Ordering::Relaxed);
+    let (uri_3, key_3) = key_of("http://example.com/e3");
+    let obj_3 = sized_object(&uri_3, 50);
+    let gen_3 = obj_3.generation;
+    assert!(manager.push(&key_3, &obj_3).unwrap().stored);
+
+    // Trigger a violation whose recount ((MAX-4) + 100) itself overflows -> invalidation.
+    manager.total_bytes.store(10, Ordering::Relaxed);
+    assert!(
+      manager.evict_if_generation(&key_3, gen_3).is_some(),
+      "the eviction itself still completes"
+    );
+
+    // Every further store is refused before any mutation; the live entries are untouched.
+    let (uri_4, key_4) = key_of("http://example.com/e4");
+    let outcome = manager.push(&key_4, &sized_object(&uri_4, 1)).unwrap();
+    assert!(!outcome.stored, "an invalidated accounting must refuse all stores");
+    assert!(outcome.displaced.is_empty(), "the refusal must not evict anything");
+    assert!(manager.get(&key_4).unwrap().is_none());
+
+    // Reads keep serving and evictions keep cleaning up.
+    assert!(manager.get(&key_2).unwrap().is_some(), "reads continue after invalidation");
+    let gen_2 = manager.get(&key_2).unwrap().unwrap().generation;
+    assert!(
+      manager.evict_if_generation(&key_2, gen_2).is_some(),
+      "evictions continue after invalidation"
+    );
+  }
+
+  /// Without a ceiling nothing is ever size-evicted; the counter simply tracks the sum.
+  /// (design test 10)
+  #[tokio::test]
+  async fn unlimited_ceiling_never_evicts_by_size() {
+    let manager = LruCacheManager::new(10, None);
+    for i in 0..5 {
+      let (uri, key) = key_of(&format!("http://example.com/{i}"));
+      let outcome = manager.push(&key, &sized_object(&uri, 1000)).unwrap();
+      assert!(outcome.stored);
+      assert!(outcome.displaced.is_empty(), "no size eviction without a ceiling");
+    }
+    assert_eq!(manager.count(), 5);
+    assert_eq!(manager.total_bytes(), 5000);
+  }
+
+  /// Preflight refusal, no-fit arm: an object larger than the ceiling (bypassing the
+  /// constructor clamp by direct construction) is refused without evicting anything, and the
+  /// file-backed publish path rolls back the already-counted file. (design test 12a)
+  #[tokio::test]
+  async fn nofit_refusal_rolls_back_file_and_evicts_nothing() {
+    let dir = temp_cache_dir("ceil-nofit").await;
+    let manager = LruCacheManager::new(10, Some(50));
+    let file_store = test_file_store();
+
+    let (uri_o, key_o) = key_of("http://example.com/other");
+    publish_cache_object(&manager, &file_store, &key_o, sized_object(&uri_o, 10)).await;
+    assert_eq!(manager.total_bytes(), 10);
+
+    let (uri_big, key_big) = key_of("http://example.com/big");
+    let path_big = dir.join("file-big");
+    fs::write(&path_big, vec![1u8; 60]).await.unwrap();
+    let obj_big = CacheObject::new(
+      fresh_policy(&uri_big),
+      CacheFileOrOnMemory::File(path_big.clone()),
+      Bytes::from_static(&[3u8; 32]),
+      60, // > ceiling 50: only reachable when the constructor clamp is bypassed
+    );
+    publish_cache_object(&manager, &file_store, &key_big, obj_big).await;
+
+    assert!(
+      fs::metadata(&path_big).await.is_err(),
+      "the refused object's file is rolled back"
+    );
+    assert_eq!(file_store.count().await, 0, "the rollback also restores the file count");
+    assert!(manager.get(&key_big).unwrap().is_none(), "no metadata is published");
+    assert!(manager.get(&key_o).unwrap().is_some(), "nothing was evicted by the refusal");
+    assert_eq!(manager.total_bytes(), 10, "the byte accounting is untouched");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// Preflight refusal, unrepresentable arm (unlimited path): a push whose projected total
+  /// overflows `usize` is refused without mutating anything; a same-key replacement whose
+  /// freed predecessor makes the total representable proceeds. (design test 12b)
+  #[tokio::test]
+  async fn unrepresentable_total_is_refused_without_mutation() {
+    let manager = LruCacheManager::new(10, None);
+    let (uri_huge, key_huge) = key_of("http://example.com/huge");
+    assert!(
+      manager
+        .push(&key_huge, &sized_object(&uri_huge, usize::MAX - 4))
+        .unwrap()
+        .stored
+    );
+    assert_eq!(manager.total_bytes(), usize::MAX - 4);
+
+    // (MAX - 4) + 10 is not representable: refuse, evict nothing, insert nothing.
+    let (uri_b, key_b) = key_of("http://example.com/b");
+    let outcome = manager.push(&key_b, &sized_object(&uri_b, 10)).unwrap();
+    assert!(!outcome.stored, "an unrepresentable projected total must be refused");
+    assert!(outcome.displaced.is_empty(), "the refusal must not evict anything");
+    assert_eq!(manager.total_bytes(), usize::MAX - 4);
+    assert!(manager.get(&key_huge).unwrap().is_some());
+    assert!(manager.get(&key_b).unwrap().is_none());
+
+    // Positive arm: replacing the huge entry itself subtracts its size first - representable.
+    let outcome = manager.push(&key_huge, &sized_object(&uri_huge, 10)).unwrap();
+    assert!(outcome.stored, "a same-key replacement freeing the predecessor must proceed");
+    assert_eq!(manager.total_bytes(), 10);
+  }
+
+  /// Bounded near-`usize::MAX`: the PRE-eviction projected sum would overflow, but the object
+  /// fits after the size-eviction loop - it must be stored, not false-rejected.
+  /// (design test 12c, codex round-4)
+  #[tokio::test]
+  async fn bounded_near_max_evicts_and_stores_without_false_rejection() {
+    let manager = LruCacheManager::new(10, Some(usize::MAX));
+    let (uri_a, key_a) = key_of("http://example.com/a");
+    assert!(manager.push(&key_a, &sized_object(&uri_a, usize::MAX - 5)).unwrap().stored);
+
+    // (MAX - 5) + 10 overflows, but evicting A makes it fit: 10 <= MAX.
+    let (uri_b, key_b) = key_of("http://example.com/b");
+    let outcome = manager.push(&key_b, &sized_object(&uri_b, 10)).unwrap();
+    assert!(outcome.stored, "the bounded path must not false-reject on the projected sum");
+    assert_eq!(outcome.displaced.len(), 1, "A is size-evicted to make room");
+    assert_eq!(manager.total_bytes(), 10);
+    assert!(manager.get(&key_a).unwrap().is_none());
+    assert!(manager.get(&key_b).unwrap().is_some());
+  }
+
+  /// On-memory and file-backed objects count toward the same total. (design test 13)
+  #[tokio::test]
+  async fn mixed_tiers_share_one_total() {
+    let dir = temp_cache_dir("ceil-mixed").await;
+    let manager = LruCacheManager::new(10, None);
+    let file_store = test_file_store();
+
+    let (uri_f, key_f) = key_of("http://example.com/file");
+    let path_f = dir.join("file-f");
+    fs::write(&path_f, b"AAAA").await.unwrap();
+    let obj_f = CacheObject::new(
+      fresh_policy(&uri_f),
+      CacheFileOrOnMemory::File(path_f.clone()),
+      Bytes::from_static(&[1u8; 32]),
+      4,
+    );
+    publish_cache_object(&manager, &file_store, &key_f, obj_f).await;
+
+    let (uri_m, key_m) = key_of("http://example.com/mem");
+    publish_cache_object(&manager, &file_store, &key_m, sized_object(&uri_m, 5)).await;
+
+    assert_eq!(manager.total_bytes(), 9, "both tiers share one byte total");
+    let _ = fs::remove_dir_all(&dir).await;
+  }
+
+  /// Concurrency smoke: pushes racing from many tasks never leave the retained total above the
+  /// ceiling once quiescent (every push holds the one LRU lock for its whole check-evict-insert
+  /// sequence). (design test 14)
+  #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+  async fn concurrent_publish_storm_respects_ceiling_after_quiescence() {
+    const N: usize = 32;
+    let manager = LruCacheManager::new(64, Some(500));
+    let handles: Vec<_> = (0..N)
+      .map(|i| {
+        let m = manager.clone();
+        tokio::spawn(async move {
+          let (uri, key) = key_of(&format!("http://example.com/{i}"));
+          m.push(&key, &sized_object(&uri, 100)).unwrap();
+        })
+      })
+      .collect();
+    for h in handles {
+      h.await.unwrap();
+    }
+    // Steady state with equal sizes: exactly ceiling/size entries remain.
+    assert_eq!(manager.total_bytes(), 500, "the retained total converges to the ceiling");
+    assert_eq!(manager.count(), 5);
   }
 
   /// Removing a file when the count is already zero must saturate, not underflow/panic. This
@@ -1395,14 +2355,15 @@ mod tests {
   /// evict B.
   #[tokio::test]
   async fn evict_if_generation_spares_newer_entry() {
-    let manager = LruCacheManager::new(10);
+    let manager = LruCacheManager::new(10, None);
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_uri(&uri);
+    let key = derive_cache_key_from_effective_uri(&uri);
 
     let obj_a = CacheObject::new(
       fresh_policy(&uri),
       CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"A")),
       Bytes::from_static(&[1u8; 32]),
+      1,
     );
     let gen_a = obj_a.generation;
     manager.push(&key, &obj_a).unwrap();
@@ -1412,6 +2373,7 @@ mod tests {
       fresh_policy(&uri),
       CacheFileOrOnMemory::OnMemory(Bytes::from_static(b"B")),
       Bytes::from_static(&[2u8; 32]),
+      1,
     );
     let gen_b = obj_b.generation;
     manager.push(&key, &obj_b).unwrap();
@@ -1498,7 +2460,7 @@ mod tests {
     assert_eq!(forwarded_len(rx.collect::<Vec<_>>().await), TOTAL_FRAMES * 1024);
     let stored = spool.await.unwrap();
     assert!(
-      matches!(stored, Some((CacheFileOrOnMemory::OnMemory(ref b), _)) if b.len() == TOTAL_FRAMES * 1024),
+      matches!(stored, Some((CacheFileOrOnMemory::OnMemory(ref b), _, _)) if b.len() == TOTAL_FRAMES * 1024),
       "the drained object must be cached in full"
     );
   }

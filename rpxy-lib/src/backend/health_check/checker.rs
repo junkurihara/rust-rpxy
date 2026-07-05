@@ -55,9 +55,7 @@ pub(crate) fn spawn_health_checkers(
         return None;
       }
 
-      let Some(ref config) = candidates.health_check_config else {
-        return None;
-      };
+      let config = candidates.health_check_config.as_ref()?;
 
       let path_str: String = path.try_into().unwrap_or_else(|_| "<none>".to_string());
       let num_upstreams = health_upstreams.len();

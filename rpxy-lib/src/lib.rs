@@ -111,11 +111,11 @@ pub async fn entrypoint(
   } else {
     info!("Listen IPv4")
   }
-  if proxy_config.http_port.is_some() {
-    info!("Listen port: {}", proxy_config.http_port.unwrap());
+  if let Some(http_port) = proxy_config.http_port {
+    info!("Listen port: {}", http_port);
   }
-  if proxy_config.https_port.is_some() {
-    info!("Listen port: {} (for TLS)", proxy_config.https_port.unwrap());
+  if let Some(https_port) = proxy_config.https_port {
+    info!("Listen port: {} (for TLS)", https_port);
   }
   if proxy_config.connection_handling_timeout.is_some() {
     info!(
@@ -128,7 +128,9 @@ pub async fn entrypoint(
     info!("Experimental HTTP/3.0 is enabled. Note it is still very unstable.");
   }
   if !proxy_config.sni_consistency {
-    info!("Ignore consistency between TLS SNI and Host header (or Request line). Note it violates RFC.");
+    info!(
+      "Ignore consistency between TLS SNI and Host header (or Request line), except for client-auth (mTLS) protected hosts. Note it violates RFC."
+    );
   }
   if !proxy_config.trusted_forwarded_proxies.is_empty() {
     info!(
@@ -168,13 +170,10 @@ pub async fn entrypoint(
     None
   };
 
-  #[cfg(not(feature = "post-quantum"))]
   // Install aws_lc_rs as default crypto provider for rustls
   let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
   #[cfg(feature = "post-quantum")]
-  let _ = CryptoProvider::install_default(rustls_post_quantum::provider());
-  #[cfg(feature = "post-quantum")]
-  info!("Post-quantum crypto provider is installed");
+  info!("Post-quantum key exchange (X25519MLKEM768) is preferred");
 
   // 1. build backends, and make it contained in Arc
   let app_manager = Arc::new(backend::BackendAppManager::try_from(app_config_list)?);
@@ -285,7 +284,7 @@ pub async fn entrypoint(
     .collect();
 
   #[cfg(feature = "health-check")]
-  let handles = health_checker_handles.into_iter().chain(proxy_handles.into_iter());
+  let handles = health_checker_handles.into_iter().chain(proxy_handles);
   #[cfg(not(feature = "health-check"))]
   let handles = proxy_handles.into_iter();
 

@@ -3,9 +3,8 @@ mod dir_cache;
 mod error;
 mod manager;
 
-#[allow(unused_imports)]
 mod log {
-  pub(super) use tracing::{debug, error, info, warn};
+  pub(super) use tracing::{debug, error, info};
 }
 
 pub use constants::{ACME_DIR_URL, ACME_REGISTRY_PATH};

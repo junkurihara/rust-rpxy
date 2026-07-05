@@ -31,16 +31,21 @@ rustls-backend = ["hyper-rustls"]
 webpki-roots = ["rustls-backend", "hyper-rustls/webpki-tokio"]
 acme = ["rpxy-acme"]
 post-quantum = [
-  "rustls-post-quantum",
+  "rustls/prefer-post-quantum",
+  # s2n-quic-rustls is the forked submodule; its QUIC/HTTP3 post-quantum key
+  # exchange is gated on its own `post-quantum` feature (cipher_suite.rs selects
+  # rustls_post_quantum::provider() via builder_with_provider()), not on
+  # rustls/prefer-post-quantum. Keep it in the chain so X25519MLKEM768 stays
+  # offered on the QUIC path. See #602 review.
+  "s2n-quic-rustls/post-quantum",
   "rpxy-acme/post-quantum",
   "rpxy-certs/post-quantum",
-  "s2n-quic-rustls/post-quantum",
 ]
 
 [dependencies]
-rand = "0.10.1"
+rand = "0.10.2"
 ahash = "0.8.12"
-bytes = "1.11.1"
+bytes = "1.12.0"
 itoa = "1.0.18"
 derive_builder = "0.20.2"
 futures = { version = "0.3.32", features = ["alloc", "async-await"] }
@@ -57,7 +62,7 @@ pin-project-lite = "0.2.17"
 async-trait = "0.1.89"
 
 # Error handling
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 thiserror = "2.0.18"
 
 # http for both server and client
@@ -83,8 +88,7 @@ hyper-rustls = { version = "0.27.9", default-features = false, features = [
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.3.6"
-rustls = { version = "0.23.40", default-features = false }
-rustls-post-quantum = { version = "0.2.4", optional = true }
+rustls = { version = "0.23.41", default-features = false }
 tokio-rustls = { version = "0.26.4", features = ["early-data"] }
 
 # acme
@@ -94,14 +98,14 @@ rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true 
 tracing = { version = "0.1.44" }
 
 # http/3
-quinn = { version = "0.11.9", optional = true }
+quinn = { version = "0.11.11", optional = true }
 h3 = { version = "0.0.8", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-s2n-quic = { version = "1.82.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+s2n-quic = { version = "1.83.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.82.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.82.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.83.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.83.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
@@ -127,7 +131,7 @@ chrono = { version = "0.4.45", default-features = false, features = [
 base64 = { version = "0.22.1", optional = true }
 # Intentional RC pin: this code targets the 0.11 AEAD nonce-generation API.
 # Re-evaluate this dependency, or vendor/pin a final release, before the release freeze.
-aes-gcm = { version = "0.11.0-rc.4", optional = true, features = ["rand_core"] }
+aes-gcm = { version = "0.11.0", optional = true, features = ["rand_core"] }
 secrecy = { version = "0.10.3", optional = true }
 
 

@@ -31,6 +31,7 @@ macro_rules! ready {
 type BodySender = mpsc::Sender<Result<Bytes, RpxyError>>;
 type TrailersSender = oneshot::Sender<HeaderMap>;
 
+#[cfg(test)]
 const MAX_LEN: u64 = u64::MAX - 2;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DecodedLength(u64);
@@ -39,7 +40,8 @@ impl DecodedLength {
   pub(crate) const CHUNKED: DecodedLength = DecodedLength(u64::MAX - 1);
   pub(crate) const ZERO: DecodedLength = DecodedLength(0);
 
-  #[allow(dead_code)]
+  /// Test-only constructor: production code builds lengths via the named constants.
+  #[cfg(test)]
   pub(crate) fn new(len: u64) -> Self {
     debug_assert!(len <= MAX_LEN);
     DecodedLength(len)
@@ -75,7 +77,6 @@ impl IncomingLike {
   ///
   /// Useful when wanting to stream chunks from another thread.
   #[inline]
-  #[allow(unused)]
   pub(crate) fn channel() -> (Sender, IncomingLike) {
     Self::new_channel(DecodedLength::CHUNKED, /*wanter =*/ false)
   }
@@ -113,11 +114,11 @@ impl Body for IncomingLike {
   fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
     self.want_tx.send(WANT_READY);
 
-    if !self.data_rx.is_terminated() {
-      if let Some(chunk) = ready!(Pin::new(&mut self.data_rx).poll_next(cx)?) {
-        self.content_length.sub_if(chunk.len() as u64);
-        return Poll::Ready(Some(Ok(Frame::data(chunk))));
-      }
+    if !self.data_rx.is_terminated()
+      && let Some(chunk) = ready!(Pin::new(&mut self.data_rx).poll_next(cx)?)
+    {
+      self.content_length.sub_if(chunk.len() as u64);
+      return Poll::Ready(Some(Ok(Frame::data(chunk))));
     }
 
     // check trailers after data is terminated
@@ -170,7 +171,6 @@ impl Sender {
   }
 
   /// Send data on data channel when it is ready.
-  #[allow(unused)]
   pub(crate) async fn send_data(&mut self, chunk: Bytes) -> RpxyResult<()> {
     self.ready().await?;
     self
@@ -180,7 +180,6 @@ impl Sender {
   }
 
   /// Send trailers on trailers channel.
-  #[allow(unused)]
   pub(crate) async fn send_trailers(&mut self, trailers: HeaderMap) -> RpxyResult<()> {
     let tx = match self.trailers_tx.take() {
       Some(tx) => tx,
@@ -201,7 +200,8 @@ impl Sender {
   /// This is mostly useful for when trying to send from some other thread
   /// that doesn't have an async context. If in an async context, prefer
   /// `send_data()` instead.
-  #[allow(unused)]
+  /// Test-only utility: the h3 path uses the awaiting `send_data()`.
+  #[cfg(test)]
   pub(crate) fn try_send_data(&mut self, chunk: Bytes) -> Result<(), Bytes> {
     self
       .data_tx
@@ -209,7 +209,6 @@ impl Sender {
       .map_err(|err| err.into_inner().expect("just sent Ok"))
   }
 
-  #[allow(unused)]
   pub(crate) fn abort(mut self) {
     self.send_error(RpxyError::HyperNewBodyWriteAborted);
   }
@@ -316,6 +315,36 @@ mod tests {
     assert!(rx.frame().await.is_none());
   }
 
+  /// Round-trip through the async sender half used by the h3 body-forwarding task:
+  /// `send_data` delivers a data frame, `send_trailers` delivers a trailers frame, and
+  /// the stream then reaches a clean EOF. (Also keeps these h3-path methods exercised
+  /// in test-only builds, where no h3 feature compiles their production caller.)
+  #[tokio::test]
+  async fn channel_sends_data_and_trailers() {
+    let (mut tx, mut rx) = IncomingLike::channel();
+
+    let send = async move {
+      tx.send_data("chunk".into()).await.expect("send data");
+      let mut trailers = http::HeaderMap::new();
+      trailers.insert("grpc-status", "0".parse().unwrap());
+      tx.send_trailers(trailers).await.expect("send trailers");
+    };
+    let recv = async {
+      let chunk = rx.frame().await.expect("data item").expect("data frame").into_data().unwrap();
+      assert_eq!(chunk, "chunk");
+      let trailers = rx
+        .frame()
+        .await
+        .expect("trailers item")
+        .expect("trailers frame")
+        .into_trailers()
+        .unwrap();
+      assert_eq!(trailers.get("grpc-status").unwrap(), "0");
+      assert!(rx.frame().await.is_none(), "clean EOF after trailers");
+    };
+    tokio::join!(send, recv);
+  }
+
   #[test]
   fn channel_ready() {
     let (mut tx, _rx) = IncomingLike::new_channel(DecodedLength::CHUNKED, /*wanter = */ false);
@@ -355,6 +384,32 @@ mod tests {
     match tx_ready.poll() {
       Poll::Ready(Err(RpxyError::HyperIncomingLikeNewClosed)) => (),
       unexpected => panic!("tx poll ready unexpected: {:?}", unexpected),
+    }
+  }
+
+  #[tokio::test]
+  async fn dropped_sender_is_clean_eof_but_abort_is_error() {
+    // Regression guard for the HTTP/3 oversize-body fix in `proxy/proxy_h3.rs`.
+    //
+    // The h3 body-forwarding task feeds the upstream-facing request body through this
+    // channel. On a `request_max_body_size` overrun it must `abort()` the sender so the
+    // consumer (the upstream forwarder) observes an error and aborts the upstream
+    // request. If the sender were merely dropped (as the pre-fix code did by returning
+    // early), the consumer would observe a clean end-of-stream and forward a silently
+    // truncated body upstream as if it were complete. This test pins the exact
+    // distinction the fix relies on.
+
+    // Plain drop -> clean EOF (the old, buggy termination).
+    let (tx, mut rx) = IncomingLike::channel();
+    drop(tx);
+    assert!(rx.frame().await.is_none(), "dropping the sender must surface a clean EOF");
+
+    // abort() -> error terminating the stream (the fix).
+    let (tx, mut rx) = IncomingLike::channel();
+    tx.abort();
+    match rx.frame().await {
+      Some(Err(RpxyError::HyperNewBodyWriteAborted)) => {}
+      other => panic!("abort() must surface an error, got {:?}", other),
     }
   }
 }

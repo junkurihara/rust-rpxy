@@ -206,16 +206,6 @@ impl StickyCookieConfig {
   pub fn name_prefix(&self) -> &str {
     &self.name_prefix
   }
-
-  /// Cookie domain (lowercased server name).
-  pub fn domain(&self) -> &str {
-    &self.domain
-  }
-
-  /// Cookie path (verbatim; route matching is case-sensitive).
-  pub fn path(&self) -> &str {
-    &self.path
-  }
 }
 
 impl<'a> StickyCookieConfig {

@@ -37,7 +37,7 @@ The supported features are summarized as follows:
 
 [^acme]: `rpxy` supports the automatic issuance and renewal of certificates via [TLS-ALPN-01 (RFC8737)](https://www.rfc-editor.org/rfc/rfc8737) of [ACME protocol (RFC8555)](https://www.rfc-editor.org/rfc/rfc8555) thanks to [`rustls-acme`](https://github.com/FlorianUekermann/rustls-acme).
 
-[^kyber]: `rpxy` supports the hybridized post-quantum key exchange [`X25519MLKEM768`](https://www.ietf.org/archive/id/draft-kwiatkowski-tls-ecdhe-mlkem-02.html)[^kyber] for TLS/QUIC incoming and outgoing initiation thanks to [`rustls-post-quantum`](https://docs.rs/rustls-post-quantum/latest/rustls_post_quantum/). This is already a default feature.  Also note that `X25519MLKEM768` is still a draft version yet this is widely used on the Internet.
+[^kyber]: `rpxy` supports the hybridized post-quantum key exchange [`X25519MLKEM768`](https://www.ietf.org/archive/id/draft-kwiatkowski-tls-ecdhe-mlkem-02.html) for TLS/QUIC incoming and outgoing initiation thanks to rustls's `aws-lc-rs` crypto provider with the `prefer-post-quantum` feature. This is already a default feature. Also note that `X25519MLKEM768` is still a draft version yet this is widely used on the Internet.
 
 [^sanitization]: By default, `rpxy` provides *TLS connection sanitization* by correctly binding a certificate used to establish a secure channel with the backend application. Specifically, it always maintains consistency between the given SNI (server name indication) in `ClientHello` of the underlying TLS and the domain name given by the overlaid HTTP HOST header (or URL in Request line). We should note that NGINX doesn't guarantee such consistency by default. To achieve this, you have to add an `if` statement in the NGINX configuration file.
 
@@ -380,6 +380,8 @@ tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_p
 
 However, currently we have a limitation on HTTP/3 support for applications that enable client authentication. If an application is configured with client authentication, HTTP/3 doesn't work for that application.
 
+Client authentication is enforced per server name during the TLS handshake, so a request reaching a client-authentication application over a TLS session established for a different server name is always rejected. The `ignore_sni_consistency` relaxation never applies to such applications.
+
 ### Hybrid Caching Feature with Temporary File and On-Memory Cache
 
 If `[experimental.cache]` is specified in `config.toml`, you can leverage the local caching feature using temporary files and on-memory objects. An example configuration is as follows.
@@ -391,9 +393,14 @@ cache_dir = './cache'                # optional. default is "./cache" relative t
 max_cache_entry = 1000               # optional. default is 1k
 max_cache_each_size = 65535          # optional. default is 64k
 max_cache_each_size_on_memory = 65535 # optional. default is 64k, same as max_cache_each_size (cacheable objects are served from memory by default; the file tier engages when max_cache_each_size is raised beyond this). if 0, it is always file cache. Worst-case memory use is max_cache_entry x this value.
+max_cache_total_size = "1g"          # optional. default is 1 GiB. ceiling on the total bytes retained by the cache across both tiers; accepts an integer (bytes) or a string with a binary suffix ("256m", "1g"). set "unlimited" to disable (0 also works, but note that 0 means "always file cache" for max_cache_each_size_on_memory above, so the string form is recommended here).
 ```
 
 A *storable* (in the context of an HTTP message) response is stored if its size is less than or equal to `max_cache_each_size` in bytes. If it is also less than or equal to `max_cache_each_size_on_memory`, it is stored as an in-memory object. Otherwise, it is stored as a temporary file. Note that `max_cache_each_size` must be greater than or equal to `max_cache_each_size_on_memory`. Also note that once `rpxy` restarts or the config is updated, the cache is completely eliminated not only from the in-memory table but also from the file system.
+
+The total bytes retained by the cache are additionally capped by `max_cache_total_size` (default 1 GiB): when storing a new response would exceed it, the least recently used entries are evicted until the new response fits. The ceiling bounds the data referenced by live cache entries; transient extra disk usage can briefly appear while responses are being stored or evicted files are being deleted.
+
+Cache entries are keyed on the scheme, host, and path/query the client requested, so different virtual hosts never share cached responses even when they proxy to the same backend.
 
 ### Automated Certificate Issuance and Renewal via TLS-ALPN-01 ACME Protocol
 

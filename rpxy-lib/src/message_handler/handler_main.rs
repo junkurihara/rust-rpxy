@@ -6,9 +6,11 @@ use super::{
   synthetic_response::{secure_redirection_response, synthetic_error_response, synthetic_error_response_with_close},
 };
 #[cfg(feature = "sticky-cookie")]
+use crate::backend::LoadBalanceContext;
+#[cfg(feature = "sticky-cookie")]
 use crate::backend::StickyCookieConfig;
 use crate::{
-  backend::{BackendAppManager, LoadBalanceContext},
+  backend::BackendAppManager,
   error::*,
   forwarder::{ForwardRequest, Forwarder},
   globals::Globals,
@@ -22,10 +24,10 @@ use hyper_util::{client::legacy::connect::Connect, rt::TokioIo};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::io::copy_bidirectional;
 
-#[allow(dead_code)]
 #[derive(Debug)]
 /// Context object to handle sticky cookies at HTTP message handler
 pub(super) struct HandlerContext {
+  #[cfg(feature = "sticky-cookie")]
   pub(super) context_lb: Option<LoadBalanceContext>,
   /// Client-visible request scheme captured from the inbound side (before
   /// `add_forwarding_header()` overwrites X-Forwarded-Proto). True when the request
@@ -130,11 +132,8 @@ where
       .map_err(|_e| HttpError::InvalidHostInRequestHeader)?;
 
     // check consistency of between TLS SNI and HOST/Request URI Line.
-    #[allow(clippy::collapsible_if)]
-    if tls_enabled && self.globals.proxy_config.sni_consistency {
-      if server_name != tls_server_name.unwrap_or_default() {
-        return Err(HttpError::SniHostInconsistency);
-      }
+    if tls_enabled && self.globals.proxy_config.sni_consistency && !sni_matches(&server_name, tls_server_name.as_ref()) {
+      return Err(HttpError::SniHostInconsistency);
     }
 
     // Pre-flight Content-Length check: reject oversize requests with 413 before any
@@ -163,6 +162,14 @@ where
       }
       None => return Err(HttpError::NoMatchingBackendApp),
     };
+
+    // Client authentication (mTLS) is enforced per-vhost at TLS-handshake time by the
+    // ServerConfig the SNI selected, so a session whose SNI differs from the resolved Host
+    // has NOT passed this vhost's client authentication. The SNI-consistency relaxation
+    // must therefore never apply to mTLS-protected destinations (fail-closed; a missing
+    // SNI counts as a mismatch). This cannot fire at the default settings: the early check
+    // above already enforced SNI == Host whenever the relaxation is disabled.
+    check_mutual_tls_sni_consistency(tls_enabled, backend_app.mutual_tls, &server_name, tls_server_name.as_ref())?;
 
     // Redirect to https if !tls_enabled and redirect_to_https is true
     if !tls_enabled && backend_app.https_redirection.unwrap_or(false) {
@@ -329,6 +336,35 @@ fn check_content_length_limit<B>(req: &Request<B>, limit: Option<usize>) -> Http
   Ok(())
 }
 
+/// SNI == Host comparison shared by the early consistency check and the mTLS guard in
+/// `handle_request_inner`. `None` (no SNI available on the session) never matches
+/// (fail-closed).
+fn sni_matches(server_name: &ServerName, tls_server_name: Option<&ServerName>) -> bool {
+  tls_server_name == Some(server_name)
+}
+
+/// Guard closing the mutual-TLS bypass of the SNI-consistency relaxation.
+///
+/// Client authentication is enforced per-vhost at TLS-handshake time by the `ServerConfig`
+/// selected via SNI, so a TLS session whose SNI does not equal the resolved Host has not
+/// passed the resolved vhost's client authentication. Requests resolved into an
+/// mTLS-required vhost (`backend_mutual_tls == Some(true)`) over such a session are
+/// rejected regardless of the `sni_consistency` setting. Vhosts without client auth
+/// (`Some(false)`) and apps without a TLS config (`None`) are unaffected — the relaxation
+/// keeps working for them — and plaintext requests (`tls_enabled == false`) are out of
+/// scope here (tracked as a separate follow-up item).
+fn check_mutual_tls_sni_consistency(
+  tls_enabled: bool,
+  backend_mutual_tls: Option<bool>,
+  server_name: &ServerName,
+  tls_server_name: Option<&ServerName>,
+) -> HttpResult<()> {
+  if tls_enabled && backend_mutual_tls == Some(true) && !sni_matches(server_name, tls_server_name) {
+    return Err(HttpError::MutualTlsHostInconsistency);
+  }
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -417,5 +453,311 @@ mod tests {
     // the streaming body adapter (consistent with the existing malformed-header test).
     let req = req_with_cl("99999999999999999999999999");
     assert!(check_content_length_limit(&req, Some(256 * 1024 * 1024)).is_ok());
+  }
+
+  // --- mTLS SNI-consistency guard (helper level) ---
+
+  fn sn(host: &str) -> ServerName {
+    ServerName::from(host)
+  }
+
+  /// mTLS vhost + SNI == Host -> allowed (input representing a valid mTLS session; the
+  /// helper itself performs no handshake).
+  #[test]
+  fn mtls_guard_allows_matching_sni() {
+    let host = sn("mtls.example.com");
+    assert!(check_mutual_tls_sni_consistency(true, Some(true), &host, Some(&host)).is_ok());
+  }
+
+  /// mTLS vhost + SNI != Host -> rejected: the session's handshake belonged to another
+  /// vhost, so the resolved vhost's client authentication never happened (the bypass the
+  /// relaxation would otherwise open).
+  #[test]
+  fn mtls_guard_rejects_mismatching_sni() {
+    let err =
+      check_mutual_tls_sni_consistency(true, Some(true), &sn("mtls.example.com"), Some(&sn("plain.example.com"))).unwrap_err();
+    assert!(matches!(err, HttpError::MutualTlsHostInconsistency));
+  }
+
+  /// mTLS vhost + no SNI on the session -> rejected (fail-closed).
+  #[test]
+  fn mtls_guard_rejects_missing_sni() {
+    let err = check_mutual_tls_sni_consistency(true, Some(true), &sn("mtls.example.com"), None).unwrap_err();
+    assert!(matches!(err, HttpError::MutualTlsHostInconsistency));
+  }
+
+  /// TLS vhost WITHOUT client auth + mismatch -> allowed: the relaxation keeps working
+  /// for its documented purpose.
+  #[test]
+  fn mtls_guard_ignores_non_mtls_tls_vhost() {
+    assert!(check_mutual_tls_sni_consistency(true, Some(false), &sn("a.example.com"), Some(&sn("b.example.com"))).is_ok());
+  }
+
+  /// Target app without any TLS config (`None`) + mismatch -> allowed.
+  #[test]
+  fn mtls_guard_ignores_app_without_tls_config() {
+    assert!(check_mutual_tls_sni_consistency(true, None, &sn("a.example.com"), Some(&sn("b.example.com"))).is_ok());
+  }
+
+  /// Plaintext request (`tls_enabled == false`) -> out of scope for this guard even for
+  /// an mTLS vhost; the plaintext exposure is tracked as a separate follow-up item.
+  #[test]
+  fn mtls_guard_out_of_scope_for_plaintext() {
+    assert!(check_mutual_tls_sni_consistency(false, Some(true), &sn("mtls.example.com"), None).is_ok());
+  }
+
+  /// `sni_matches` triple pinning the borrowing rewrite of the early consistency check:
+  /// match / mismatch / no-SNI (never matches, fail-closed).
+  #[test]
+  fn sni_matches_match_mismatch_and_none() {
+    let host = sn("example.com");
+    assert!(sni_matches(&host, Some(&sn("example.com"))));
+    assert!(!sni_matches(&host, Some(&sn("other.example.com"))));
+    assert!(!sni_matches(&host, None));
+  }
+
+  // --- mTLS SNI-consistency guard (handler-path wiring; design D2b, tests 9-11) ---
+
+  use crate::backend::BackendApp;
+  use crate::{
+    count::{PerIpConnectionCount, RequestCount},
+    globals::{AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
+    hyper_ext::body::IncomingLike,
+  };
+
+  /// Globals for handler-instance tests. `sni_consistency = false` models the operator
+  /// relaxation (`experimental.ignore_sni_consistency = true`).
+  ///
+  /// Installing the default CryptoProvider mirrors the production entrypoint (lib.rs),
+  /// which does so before building the forwarder; without it the rustls-backend
+  /// `Forwarder::try_new` panics on the missing process-level provider (idempotent,
+  /// same pattern as the rpxy-certs tests).
+  fn test_globals(sni_consistency: bool) -> Arc<Globals> {
+    let _ = rustls::crypto::CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+    let mut proxy_config = ProxyConfig::default();
+    proxy_config.sni_consistency = sni_consistency;
+    Arc::new(Globals {
+      proxy_config,
+      request_count: RequestCount::default(),
+      per_ip_connection_count: PerIpConnectionCount::new(0),
+      runtime_handle: tokio::runtime::Handle::current(),
+      cert_reloader_rx: None,
+      unsafe_debug_headers: false,
+      access_log_enabled: false,
+      #[cfg(feature = "sticky-cookie")]
+      sticky_cookie_cipher: None,
+      #[cfg(feature = "acme")]
+      server_configs_acme_challenge: Default::default(),
+    })
+  }
+
+  /// One TLS-configured app routing to `upstream`.
+  fn test_app_config(server_name: &str, mutual_tls: bool, upstream: &str) -> AppConfig {
+    AppConfig {
+      app_name: server_name.to_string(),
+      server_name: server_name.to_string(),
+      reverse_proxy: vec![ReverseProxyConfig {
+        path: None,
+        replace_path: None,
+        upstream: vec![UpstreamUri {
+          inner: upstream.parse().unwrap(),
+        }],
+        upstream_options: None,
+        load_balance: None,
+        #[cfg(feature = "health-check")]
+        health_check: None,
+      }],
+      tls: Some(TlsConfig {
+        mutual_tls,
+        https_redirection: true,
+        #[cfg(feature = "acme")]
+        acme: false,
+      }),
+    }
+  }
+
+  /// `plain.example.com` (TLS, no client auth) + `mtls.example.com` (client auth), both
+  /// routing to `upstream`.
+  fn test_app_manager(upstream: &str) -> Arc<BackendAppManager> {
+    let mut manager = BackendAppManager::default();
+    for (name, mutual_tls) in [("plain.example.com", false), ("mtls.example.com", true)] {
+      let config = test_app_config(name, mutual_tls, upstream);
+      let app = BackendApp::try_from(&config).unwrap();
+      manager.apps.insert(sn(name), app);
+    }
+    Arc::new(manager)
+  }
+
+  /// A GET request carrying `authority` as its host, with an inert streaming body.
+  fn test_request(authority: &str) -> Request<RequestBody> {
+    let (_tx, body) = IncomingLike::channel();
+    Request::builder()
+      .method("GET")
+      .uri(format!("https://{authority}/"))
+      .body(RequestBody::IncomingLike(body))
+      .unwrap()
+  }
+
+  /// Design test 9 (wiring + direct no-contact proof): with the relaxation enabled, a
+  /// request over a TLS session whose SNI belongs to a non-mTLS vhost but whose Host
+  /// resolves to an mTLS vhost is rejected by the guard INSIDE `handle_request_inner`
+  /// with ZERO upstream contact. Order matters for the proof: the guarded request runs
+  /// FIRST, against an empty connection pool — any forwarding would then require a
+  /// fresh TCP accept (the counter counts connections, not HTTP requests, so a pooled
+  /// connection from an earlier request could mask contact). The positive control runs
+  /// AFTER and must bump the counter, proving this setup can observe contact at all.
+  #[tokio::test]
+  async fn handler_rejects_mtls_host_over_foreign_sni_when_relaxed() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    // Counting upstream stand-in with a minimal HTTP/1.1 responder.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}/", listener.local_addr().unwrap());
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let accepted_in_task = accepted.clone();
+    let accept_task = tokio::spawn(async move {
+      loop {
+        let Ok((mut stream, _)) = listener.accept().await else { break };
+        accepted_in_task.fetch_add(1, Ordering::SeqCst);
+        tokio::spawn(async move {
+          let mut buf = [0u8; 1024];
+          let _ = stream.read(&mut buf).await;
+          let _ = stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n").await;
+        });
+      }
+    });
+
+    let globals = test_globals(false); // relaxation enabled
+    let forwarder = Arc::new(Forwarder::try_new(&globals).await.unwrap());
+    let handler = HttpMessageHandler {
+      forwarder,
+      globals,
+      app_manager: test_app_manager(&upstream),
+    };
+
+    // The guarded request, first, against an EMPTY pool: exact guard variant AND zero
+    // TCP accepts = direct no-contact proof.
+    let result = handler
+      .handle_request_inner(
+        &mut None,
+        test_request("mtls.example.com"),
+        "192.0.2.1:12345".parse().unwrap(),
+        "127.0.0.1:8443".parse().unwrap(),
+        true,
+        Some(sn("plain.example.com")),
+      )
+      .await;
+    let Err(err) = result else {
+      panic!("an mTLS vhost addressed over a foreign-SNI session must be rejected");
+    };
+    assert!(
+      matches!(err, HttpError::MutualTlsHostInconsistency),
+      "expected the mTLS guard, got: {err}"
+    );
+    let code: StatusCode = err.into();
+    assert_eq!(code.as_u16(), 421);
+    assert_eq!(
+      accepted.load(Ordering::SeqCst),
+      0,
+      "the guarded request must never contact the upstream"
+    );
+
+    // Positive control, after: not covered by the guard (non-mTLS vhost, matching SNI)
+    // -> forwarded, answered, and observed by the same counter.
+    let control = handler
+      .handle_request_inner(
+        &mut None,
+        test_request("plain.example.com"),
+        "192.0.2.1:12345".parse().unwrap(),
+        "127.0.0.1:8443".parse().unwrap(),
+        true,
+        Some(sn("plain.example.com")),
+      )
+      .await;
+    assert!(control.is_ok(), "the control request must be forwarded and answered");
+    assert_eq!(
+      accepted.load(Ordering::SeqCst),
+      1,
+      "the control request must have contacted the upstream"
+    );
+
+    accept_task.abort();
+  }
+
+  /// Design test 10 (D3b precedence): when the same relaxed-mode mTLS mismatch also
+  /// carries an oversize Content-Length, the pre-flight 413 wins because it runs before
+  /// backend resolution; the request still never reaches any upstream.
+  #[tokio::test]
+  async fn handler_prefers_413_over_mtls_guard_when_both_apply() {
+    let globals = test_globals(false); // relaxation enabled
+    let limit = globals.proxy_config.request_max_body_size.expect("default limit is bounded");
+    let forwarder = Arc::new(Forwarder::try_new(&globals).await.unwrap());
+    let handler = HttpMessageHandler {
+      forwarder,
+      globals,
+      app_manager: test_app_manager("http://127.0.0.1:1/"),
+    };
+
+    let mut req = test_request("mtls.example.com");
+    req
+      .headers_mut()
+      .insert(http::header::CONTENT_LENGTH, (limit as u64 + 1).to_string().parse().unwrap());
+    let result = handler
+      .handle_request_inner(
+        &mut None,
+        req,
+        "192.0.2.1:12345".parse().unwrap(),
+        "127.0.0.1:8443".parse().unwrap(),
+        true,
+        Some(sn("plain.example.com")),
+      )
+      .await;
+    let Err(err) = result else {
+      panic!("an oversize mismatching request must be rejected");
+    };
+    assert!(
+      matches!(err, HttpError::PayloadTooLarge),
+      "the pre-flight 413 precedes the mTLS guard, got: {err}"
+    );
+    let code: StatusCode = err.into();
+    assert_eq!(code.as_u16(), 413);
+  }
+
+  /// Design test 11 (default behavior): with the relaxation DISABLED (internal
+  /// `sni_consistency = true`, the default), a mismatch is rejected by the EARLY check —
+  /// pinning that the borrowing rewrite did not change default-config behavior. Uses the
+  /// same REGISTERED name pair as test 9 (a real TLS acceptor refuses unknown SNIs
+  /// before the handler, so an unregistered SNI would not model a reachable state); the
+  /// early-check variant, not the mTLS-guard variant, must win at default settings.
+  #[tokio::test]
+  async fn handler_default_flag_rejects_mismatch_via_early_check() {
+    let globals = test_globals(true); // default: consistency enforced
+    let forwarder = Arc::new(Forwarder::try_new(&globals).await.unwrap());
+    let handler = HttpMessageHandler {
+      forwarder,
+      globals,
+      app_manager: test_app_manager("http://127.0.0.1:1/"),
+    };
+
+    let result = handler
+      .handle_request_inner(
+        &mut None,
+        test_request("mtls.example.com"),
+        "192.0.2.1:12345".parse().unwrap(),
+        "127.0.0.1:8443".parse().unwrap(),
+        true,
+        Some(sn("plain.example.com")),
+      )
+      .await;
+    let Err(err) = result else {
+      panic!("a mismatching request must be rejected at default settings");
+    };
+    assert!(
+      matches!(err, HttpError::SniHostInconsistency),
+      "expected the early consistency check, got: {err}"
+    );
+    let code: StatusCode = err.into();
+    assert_eq!(code.as_u16(), 421);
   }
 }

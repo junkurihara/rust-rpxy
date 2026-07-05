@@ -1,7 +1,11 @@
+#[cfg(any(feature = "http3-quinn", feature = "http3-s2n", test))]
 use super::body::IncomingLike;
 use crate::{error::RpxyError, log::*};
+#[cfg(feature = "cache")]
 use futures::channel::mpsc::Receiver;
-use http_body_util::{BodyExt, Empty, Full, StreamBody, combinators};
+use http_body_util::{BodyExt, Empty, combinators};
+#[cfg(feature = "cache")]
+use http_body_util::{Full, StreamBody};
 use hyper::body::{Body, Bytes, Frame, Incoming};
 use std::{
   pin::Pin,
@@ -17,6 +21,7 @@ pub(crate) fn empty() -> BoxBody {
 }
 
 /// helper function to build a full body
+#[cfg(feature = "cache")]
 pub(crate) fn full(body: Bytes) -> BoxBody {
   Full::new(body).map_err(|never| match never {}).boxed()
 }
@@ -116,7 +121,6 @@ where
 /// Concrete request-body wrapper used by the h1/h2 listener.
 pub type LimitedIncoming = LimitedBody<Incoming>;
 
-#[allow(unused)]
 /* ------------------------------------ */
 /// Request body used in this project
 /// - Incoming: client-facing inbound body (h1/h2). Wrapped in `LimitedIncoming` so the
@@ -126,6 +130,9 @@ pub type LimitedIncoming = LimitedBody<Incoming>;
 ///   forwarder enforces the limit before the channel is fed)
 pub enum RequestBody {
   Incoming(LimitedIncoming),
+  // The channel-backed variant exists exactly where its module is compiled: the h3
+  // body-forwarding path, and unit tests building handler-level requests.
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n", test))]
   IncomingLike(IncomingLike),
 }
 
@@ -139,6 +146,7 @@ impl Body for RequestBody {
   ) -> std::task::Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
     match self.get_mut() {
       RequestBody::Incoming(limited) => Pin::new(limited).poll_frame(cx),
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n", test))]
       RequestBody::IncomingLike(incoming_like) => Pin::new(incoming_like).poll_frame(cx),
     }
   }
@@ -147,10 +155,10 @@ impl Body for RequestBody {
 /* ------------------------------------ */
 /// Body streamed over a bounded mpsc channel. The producer side awaits when the channel is full,
 /// so a slow consumer applies backpressure to the producer instead of letting frames queue in
-/// memory without bound.
+/// memory without bound. Cache is the only producer of streamed bodies.
+#[cfg(feature = "cache")]
 pub type BoundedStreamBody = StreamBody<Receiver<Result<Frame<bytes::Bytes>, hyper::Error>>>;
 
-#[allow(unused)]
 /// Response body use in this project
 /// - Incoming: just a type that only forwards the upstream response body to downstream.
 /// - Boxed: a type that is generated from cache or synthetic response body, e.g.,, small byte object.
@@ -158,6 +166,7 @@ pub type BoundedStreamBody = StreamBody<Receiver<Result<Frame<bytes::Bytes>, hyp
 pub enum ResponseBody {
   Incoming(Incoming),
   Boxed(BoxBody),
+  #[cfg(feature = "cache")]
   Streamed(BoundedStreamBody),
 }
 
@@ -172,6 +181,7 @@ impl Body for ResponseBody {
     match self.get_mut() {
       ResponseBody::Incoming(incoming) => Pin::new(incoming).poll_frame(cx),
       ResponseBody::Boxed(boxed) => Pin::new(boxed).poll_frame(cx),
+      #[cfg(feature = "cache")]
       ResponseBody::Streamed(streamed) => Pin::new(streamed).poll_frame(cx),
     }
     .map_err(RpxyError::HyperBodyError)

@@ -4,10 +4,11 @@ use crate::{
   log::warn,
 };
 use ahash::HashMap;
-use rpxy_lib::{
-  AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri,
-  reexports::{IpNet, Uri},
-};
+use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri, reexports::Uri};
+// `IpNet` parses proxy-protocol trusted-proxy CIDRs (proxy-protocol only) and is also exercised
+// feature-independently by the unit tests, which reach it through `use super::*`.
+#[cfg(any(feature = "proxy-protocol", test))]
+use rpxy_lib::reexports::IpNet;
 use rpxy_trusted_proxies::resolve_trusted_proxy_entries;
 use serde::Deserialize;
 use std::{
@@ -285,6 +286,11 @@ pub struct CacheOption {
   pub max_cache_entry: Option<usize>,
   pub max_cache_each_size: Option<usize>,
   pub max_cache_each_size_on_memory: Option<usize>,
+  /// Ceiling on the total bytes retained by the cache (both tiers). Accepts an integer
+  /// (bytes) or a string with a binary suffix (`"256m"`, `"1g"`); `"unlimited"` (or `0`)
+  /// disables the ceiling. Note the different `0` semantics of the sibling
+  /// `max_cache_each_size_on_memory`, where `0` means "always file cache".
+  pub max_cache_total_size: Option<BodySizeValue>,
 }
 
 #[cfg(feature = "acme")]
@@ -402,11 +408,10 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       proxy_config.http_port.is_some() || proxy_config.https_port.is_some(),
       anyhow!("Either/Both of http_port or https_port must be specified")
     );
-    if proxy_config.http_port.is_some() && proxy_config.https_port.is_some() {
-      ensure!(
-        proxy_config.http_port.unwrap() != proxy_config.https_port.unwrap(),
-        anyhow!("http_port and https_port must be different")
-      );
+    if let Some(http_port) = proxy_config.http_port
+      && let Some(https_port) = proxy_config.https_port
+    {
+      ensure!(http_port != https_port, anyhow!("http_port and https_port must be different"));
     }
     if self.public_https_port.is_some() {
       ensure!(
@@ -522,6 +527,15 @@ impl TryInto<ProxyConfig> for &ConfigToml {
         }
         if let Some(num) = cache_option.max_cache_each_size_on_memory {
           proxy_config.cache_max_each_size_on_memory = num;
+        }
+        if let Some(v) = cache_option.max_cache_total_size.clone() {
+          proxy_config.cache_max_total_size = parse_body_size(v, "max_cache_total_size")?;
+          if proxy_config.cache_max_total_size.is_none() {
+            warn!(
+              "max_cache_total_size disables the total cache size ceiling; \
+               retained cache bytes are then bounded only by max_cache_entry x max_cache_each_size."
+            );
+          }
         }
       }
 
@@ -675,9 +689,7 @@ impl Application {
       .try_for_each(|rpc| validate_lb_health_check(server_name_string, rpc.load_balance.as_deref(), &rpc.health_check))?;
 
     // tls settings
-    let tls_config = if self.tls.is_some() {
-      let tls = self.tls.as_ref().unwrap();
-
+    let tls_config = if let Some(tls) = self.tls.as_ref() {
       #[cfg(not(feature = "acme"))]
       ensure!(tls.tls_cert_key_path.is_some() && tls.tls_cert_path.is_some());
 
@@ -690,11 +702,8 @@ impl Application {
         }
       }
 
-      let https_redirection = if tls.https_redirection.is_none() {
-        true // Default true
-      } else {
-        tls.https_redirection.unwrap()
-      };
+      // Default to true when unspecified.
+      let https_redirection = tls.https_redirection.unwrap_or(true);
 
       Some(TlsConfig {
         mutual_tls: tls.client_ca_cert_path.is_some(),
@@ -738,7 +747,7 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
       let health_check = rpo
         .health_check
         .as_ref()
-        .map(|hc| build_health_check_config(hc, &_server_name_string))
+        .map(|hc| build_health_check_config(hc, _server_name_string))
         .transpose()?
         .flatten();
 
@@ -1564,6 +1573,87 @@ mod tests {
       proxy_config.h3_request_max_body_size.or(proxy_config.request_max_body_size),
       Some(65_536)
     );
+  }
+
+  // --- max_cache_total_size config tests ---
+
+  /// `max_cache_total_size` accepts an integer (bytes) and flows into `ProxyConfig`.
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_integer_populates_proxy_config() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.cache]
+      max_cache_total_size = 100000
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.cache_max_total_size, Some(100_000));
+  }
+
+  /// `max_cache_total_size` accepts binary-suffix strings via the shared body-size parser.
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_suffix_string_populates_proxy_config() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.cache]
+      max_cache_total_size = "256m"
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.cache_max_total_size, Some(256 * 1024 * 1024));
+  }
+
+  /// `0` and `"unlimited"` both disable the ceiling (`None`).
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_zero_and_unlimited_disable_ceiling() {
+    for value in ["max_cache_total_size = 0", r#"max_cache_total_size = "unlimited""#] {
+      let toml_str = format!(
+        r#"
+        listen_port = 8080
+        [experimental.cache]
+        {value}
+      "#
+      );
+      let config: ConfigToml = toml::from_str(&toml_str).unwrap();
+      let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+      assert_eq!(proxy_config.cache_max_total_size, None, "for {value}");
+    }
+  }
+
+  /// Unset key falls back to the bounded default supplied by `ProxyConfig::default()`.
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_default_when_unset() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.cache]
+      max_cache_entry = 10
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    // Assert against ProxyConfig::default() so the test tracks the rpxy-lib constant.
+    assert!(ProxyConfig::default().cache_max_total_size.is_some());
+    assert_eq!(proxy_config.cache_max_total_size, ProxyConfig::default().cache_max_total_size);
+  }
+
+  /// The two different `0` semantics do not cross-contaminate: `max_cache_total_size = 0`
+  /// means unlimited total, while `max_cache_each_size_on_memory = 0` means always-file.
+  #[cfg(feature = "cache")]
+  #[test]
+  fn max_cache_total_size_zero_with_on_memory_zero_keeps_both_semantics() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.cache]
+      max_cache_total_size = 0
+      max_cache_each_size_on_memory = 0
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
+    assert_eq!(proxy_config.cache_max_total_size, None);
+    assert_eq!(proxy_config.cache_max_each_size_on_memory, 0);
   }
 
   // --- parse_body_size unit tests ---

@@ -835,20 +835,56 @@ fn push_forwarded_port(out: &mut String, port: &ForwardedPort) {
 }
 
 /* -------------------------------------------------------------------------------------------------- */
-/* Client-visible scheme detection (used by sticky-cookie Secure attribute                            */
+/* Client-visible scheme detection (sticky-cookie Secure attribute + cache effective-URI key)                            */
 /* -------------------------------------------------------------------------------------------------- */
 
-/// Decide whether the request's client-visible scheme is HTTPS, for the purpose of
-/// setting the `Secure` attribute on response Set-Cookie values.
+/// Decide the request's client-visible scheme (`"https"` or `"http"`).
 ///
-/// 1. If the rpxy listener is TLS-terminating, return true.
+/// Shared by the sticky-cookie `Secure` attribute and the cache key (client-facing effective
+/// URI). The decision is fail-closed and bounded by the trusted-forwarded-proxy boundary:
+///
+/// 1. If the rpxy listener is TLS-terminating, return `"https"`.
 /// 2. Otherwise, only honor forwarding-derived scheme when the immediate peer is in
-///    `trusted_forwarded_proxies` (same trust boundary as the forwarding-header policy).
+///    `trusted_forwarded_proxies` (same trust boundary as the forwarding-header policy); an
+///    untrusted peer is always `"http"` regardless of inbound forwarding headers.
 /// 3. Header priority: `X-Forwarded-Proto` first comma-element wins; fall back to the
 ///    `proto=` parameter of the first `Forwarded` entry.
-/// 4. Any parse failure fails closed to false (debug-logged, not warn-logged) and does
-///    NOT fall through to the lower-priority source — a malformed `X-Forwarded-Proto`
-///    short-circuits without consulting `Forwarded`.
+/// 4. Only a `https` value (case-insensitive) maps to `"https"`; every other value, an absent
+///    value, or any parse failure maps to `"http"`. A parse failure does NOT fall through to
+///    the lower-priority source — a malformed `X-Forwarded-Proto` short-circuits without
+///    consulting `Forwarded`.
+#[cfg(any(feature = "cache", feature = "sticky-cookie"))]
+pub(in crate::message_handler) fn client_visible_scheme(
+  tls_enabled: bool,
+  client_addr: &SocketAddr,
+  headers: &HeaderMap,
+  trusted_forwarded_proxies: &[IpNet],
+) -> &'static str {
+  if tls_enabled {
+    return "https";
+  }
+  let peer_ip = canonicalize_ip(client_addr.to_canonical().ip());
+  if !is_trusted_proxy(&peer_ip, trusted_forwarded_proxies) {
+    return "http";
+  }
+  let scheme = match xforwarded_proto_first(headers) {
+    Err(()) => return "http", // XFP parse failure: fail closed, do NOT fall through
+    Ok(Some(s)) => Some(s),
+    Ok(None) => match forwarded_first_proto(headers) {
+      Err(()) => return "http", // Forwarded parse failure: fail closed
+      Ok(s) => s,
+    },
+  };
+  if scheme.is_some_and(|s| s.eq_ignore_ascii_case("https")) {
+    "https"
+  } else {
+    "http"
+  }
+}
+
+/// Whether the request's client-visible scheme is HTTPS, for the sticky-cookie `Secure`
+/// attribute. Thin wrapper over [`client_visible_scheme`]; `Secure` is set iff the scheme is
+/// `https`.
 #[cfg(feature = "sticky-cookie")]
 pub(in crate::message_handler) fn client_visible_secure(
   tls_enabled: bool,
@@ -856,22 +892,7 @@ pub(in crate::message_handler) fn client_visible_secure(
   headers: &HeaderMap,
   trusted_forwarded_proxies: &[IpNet],
 ) -> bool {
-  if tls_enabled {
-    return true;
-  }
-  let peer_ip = canonicalize_ip(client_addr.to_canonical().ip());
-  if !is_trusted_proxy(&peer_ip, trusted_forwarded_proxies) {
-    return false;
-  }
-  let scheme = match xforwarded_proto_first(headers) {
-    Err(()) => return false, // XFP parse failure: fail closed, do NOT fall through
-    Ok(Some(s)) => Some(s),
-    Ok(None) => match forwarded_first_proto(headers) {
-      Err(()) => return false, // Forwarded parse failure: fail closed
-      Ok(s) => s,
-    },
-  };
-  scheme.is_some_and(|s| s.eq_ignore_ascii_case("https"))
+  client_visible_scheme(tls_enabled, client_addr, headers, trusted_forwarded_proxies) == "https"
 }
 
 /// Read the first comma-separated element of `X-Forwarded-Proto`.
@@ -883,7 +904,7 @@ pub(in crate::message_handler) fn client_visible_secure(
 /// - `Err(())` when the header is present but unreadable (non-UTF-8 etc.). Caller MUST
 ///   NOT fall back; doing so would let a malformed XFP enable a low-priority `Forwarded:
 ///   proto=https` to elevate `Secure`.
-#[cfg(feature = "sticky-cookie")]
+#[cfg(any(feature = "cache", feature = "sticky-cookie"))]
 fn xforwarded_proto_first(headers: &HeaderMap) -> Result<Option<String>, ()> {
   let raw = match join_header_values(headers, X_FORWARDED_PROTO) {
     Ok(Some(v)) => v,
@@ -911,7 +932,7 @@ fn xforwarded_proto_first(headers: &HeaderMap) -> Result<Option<String>, ()> {
 /// - `Ok(None)` when the header is absent, the first entry has no `proto=`, or the value
 ///   is empty.
 /// - `Err(())` on header value / quoted-string parse failure (fail-closed signal).
-#[cfg(feature = "sticky-cookie")]
+#[cfg(any(feature = "cache", feature = "sticky-cookie"))]
 fn forwarded_first_proto(headers: &HeaderMap) -> Result<Option<String>, ()> {
   let raw = match join_header_values(headers, header::FORWARDED) {
     Ok(Some(v)) => v,
@@ -944,6 +965,31 @@ fn forwarded_first_proto(headers: &HeaderMap) -> Result<Option<String>, ()> {
     };
   }
   Ok(None)
+}
+
+/// Build the client-facing effective request URI used as the cache key input:
+/// `scheme://authority/path?query`. Returns `None` when no safe authority is available, so the
+/// caller bypasses the cache rather than keying on the upstream-rewritten URI (fail closed).
+///
+/// - `scheme`: the client-visible scheme from [`client_visible_scheme`] (`"http"`/`"https"`).
+/// - `authority`: the original authoritative host (`host[:port]`) captured before the upstream
+///   rewrite; `None` (no Host and no URI authority) yields `None`.
+/// - `original_uri`: the request URI as received from the client; its path-and-query is used,
+///   defaulting to `/` when absent.
+#[cfg(feature = "cache")]
+pub(in crate::message_handler) fn build_client_facing_effective_uri(
+  scheme: &str,
+  authority: Option<&str>,
+  original_uri: &Uri,
+) -> Option<Uri> {
+  let authority = authority?;
+  let path_and_query = original_uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+  Uri::builder()
+    .scheme(scheme)
+    .authority(authority)
+    .path_and_query(path_and_query)
+    .build()
+    .ok()
 }
 
 #[cfg(test)]
@@ -1881,21 +1927,149 @@ mod tests {
     assert_eq!(headers.get(PROXY).unwrap(), "");
   }
 
-  /* ---------------------- client_visible_secure ---------------------- */
+  /* ---------------------- client_visible_secure / client_visible_scheme ---------------------- */
 
-  #[cfg(feature = "sticky-cookie")]
+  // Shared by the sticky-cookie wrapper tests and the cache scheme/effective-URI tests; the
+  // scheme boundary is shared by both features.
+  #[cfg(any(feature = "cache", feature = "sticky-cookie"))]
   fn untrusted_addr() -> SocketAddr {
     "203.0.113.10:4321".parse().unwrap()
   }
 
-  #[cfg(feature = "sticky-cookie")]
+  #[cfg(any(feature = "cache", feature = "sticky-cookie"))]
   fn trusted_addr() -> SocketAddr {
     "10.1.2.3:1234".parse().unwrap()
   }
 
-  #[cfg(feature = "sticky-cookie")]
+  #[cfg(any(feature = "cache", feature = "sticky-cookie"))]
   fn cidr_10() -> Vec<IpNet> {
     trusted(&["10.0.0.0/8"])
+  }
+
+  /* -------- client_visible_scheme (cache effective-URI scheme source) -------- */
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn cvscheme_tls_listener_is_https_regardless_of_headers() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("http"));
+    assert_eq!(client_visible_scheme(true, &untrusted_addr(), &headers, &[]), "https");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn cvscheme_untrusted_plaintext_peer_is_http_even_with_xfp_https() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
+    assert_eq!(client_visible_scheme(false, &untrusted_addr(), &headers, &cidr_10()), "http");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn cvscheme_trusted_plaintext_peer_honors_xfp_https() {
+    let mut headers = HeaderMap::new();
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
+    assert_eq!(client_visible_scheme(false, &trusted_addr(), &headers, &cidr_10()), "https");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn cvscheme_trusted_plaintext_peer_falls_back_to_forwarded_proto() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
+    assert_eq!(client_visible_scheme(false, &trusted_addr(), &headers, &cidr_10()), "https");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn cvscheme_malformed_xfp_fails_closed_to_http() {
+    // Non-UTF-8 X-Forwarded-Proto must short-circuit to http even with a valid lower-priority
+    // Forwarded: proto=https present.
+    let mut headers = HeaderMap::new();
+    headers.insert(
+      X_FORWARDED_PROTO,
+      HeaderValue::from_bytes(b"\xffhttps").expect("HeaderValue accepts non-UTF-8 bytes"),
+    );
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
+    assert_eq!(client_visible_scheme(false, &trusted_addr(), &headers, &cidr_10()), "http");
+  }
+
+  /* -------- build_client_facing_effective_uri -------- */
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn effuri_origin_form_http() {
+    let original = Uri::from_static("/path?q=1");
+    let uri = build_client_facing_effective_uri("http", Some("app.example"), &original).unwrap();
+    assert_eq!(uri.to_string(), "http://app.example/path?q=1");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn effuri_origin_form_https() {
+    let original = Uri::from_static("/path?q=1");
+    let uri = build_client_facing_effective_uri("https", Some("app.example"), &original).unwrap();
+    assert_eq!(uri.to_string(), "https://app.example/path?q=1");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn effuri_authority_with_port_is_preserved() {
+    let original = Uri::from_static("/p");
+    let uri = build_client_facing_effective_uri("https", Some("app.example:8443"), &original).unwrap();
+    assert_eq!(uri.to_string(), "https://app.example:8443/p");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn effuri_missing_path_defaults_to_slash() {
+    // Authority-form original URI (no path component, e.g. CONNECT) -> path defaults to "/".
+    let mut parts = http::uri::Parts::default();
+    parts.authority = Some("host.example".parse().unwrap());
+    let original = Uri::from_parts(parts).unwrap();
+    assert!(original.path_and_query().is_none(), "test precondition: no path_and_query");
+    let uri = build_client_facing_effective_uri("http", Some("app.example"), &original).unwrap();
+    assert_eq!(uri.to_string(), "http://app.example/");
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn effuri_absent_authority_returns_none_for_cache_bypass() {
+    let original = Uri::from_static("/p");
+    assert!(build_client_facing_effective_uri("http", None, &original).is_none());
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn effuri_authority_param_wins_over_original_uri_authority() {
+    // Absolute-form original URI carries its own authority, but the effective URI must use the
+    // authoritative-host argument (the client-facing authority), not the URI's authority.
+    let original = Uri::from_static("http://upstream.internal:9000/p?q=2");
+    let uri = build_client_facing_effective_uri("https", Some("vhost.example"), &original).unwrap();
+    assert_eq!(uri.to_string(), "https://vhost.example/p?q=2");
+  }
+
+  /* -------- cache-key partitioning (regression intent for cross-vhost cache poisoning) -------- */
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn effuri_distinct_authority_yields_distinct_uri() {
+    // Two client-facing vhosts that may rewrite to the same upstream must produce distinct
+    // effective URIs (hence distinct cache keys): this is the cross-vhost-poisoning guard.
+    let original = Uri::from_static("/shared/path");
+    let a = build_client_facing_effective_uri("https", Some("a.example"), &original).unwrap();
+    let b = build_client_facing_effective_uri("https", Some("b.example"), &original).unwrap();
+    assert_ne!(a.to_string(), b.to_string());
+  }
+
+  #[cfg(feature = "cache")]
+  #[test]
+  fn effuri_distinct_scheme_yields_distinct_uri() {
+    // http and https variants of the same vhost+path must not collide on one cache key.
+    let original = Uri::from_static("/p");
+    let http = build_client_facing_effective_uri("http", Some("app.example"), &original).unwrap();
+    let https = build_client_facing_effective_uri("https", Some("app.example"), &original).unwrap();
+    assert_ne!(http.to_string(), https.to_string());
   }
 
   #[cfg(feature = "sticky-cookie")]
