@@ -14,7 +14,7 @@ use hyper_util::client::legacy::{
 use std::sync::Arc;
 
 #[cfg(feature = "cache")]
-use super::cache::{ClientFacingEffectiveUri, RpxyCache, get_policy_if_cacheable};
+use super::cache::{RpxyCache, get_policy_if_cacheable};
 
 #[async_trait]
 /// Definition of the forwarder that simply forward requests from downstream client to upstream app servers.
@@ -44,36 +44,29 @@ where
   async fn request(&self, req: Request<B1>) -> Result<Response<ResponseBody>, Self::Error> {
     #[cfg(feature = "cache")]
     {
-      let mut synth_req = None;
-      if let Some(cache) = self.cache.as_ref() {
-        // The cache is keyed on the client-facing effective URI captured by the handler before
-        // the upstream rewrite and carried in request extensions. When it is absent we fail
-        // closed: bypass the cache entirely rather than keying on the upstream-rewritten request
-        // URI (which would collide across client-facing vhosts sharing one upstream target).
-        if let Some(effective_uri) = cache_effective_uri(&req) {
-          // Synthetic request copy used just for caching (cannot clone request object...)
-          let sreq = build_synth_req_for_cache(&req, &effective_uri);
-          // try reading from cache
-          if let Some(cached_response) = cache.get(&sreq).await {
-            // if found, return it as response.
-            info!("Cache hit - Return from cache");
-            return Ok(cached_response);
-          };
-          synth_req = Some(sreq);
-        }
+      // No cache configured: forward directly and return the upstream response uncached.
+      let Some(cache) = self.cache.as_ref() else {
+        return self
+          .request_directly(req)
+          .await
+          .map(|inner| inner.map(ResponseBody::Incoming));
+      };
+
+      // The cache is keyed on the request URI seen here, i.e. the upstream-facing URI after the
+      // handler's rewrite. Host and `Vary` matching are delegated to `http-cache-semantics`.
+      // try reading from cache
+      if let Some(cached_response) = cache.get(&req).await {
+        // if found, return it as response.
+        info!("Cache hit - Return from cache");
+        return Ok(cached_response);
       }
+
+      // Synthetic request copy used just for caching (cannot clone request object...); built only
+      // on the miss path, before the live request is moved into the upstream client below.
+      let synth_req = build_synth_req_for_cache(&req);
       let res = self.request_directly(req).await;
 
-      // No cache configured: return the upstream response uncached.
-      let Some(cache) = self.cache.as_ref() else {
-        return res.map(|inner| inner.map(ResponseBody::Incoming));
-      };
-
-      // check cacheability and store it if cacheable. `synth_req` is None when the cache was
-      // bypassed above (no client-facing effective URI); skip the store in that case too.
-      let Some(synth_req) = synth_req else {
-        return res.map(|inner| inner.map(ResponseBody::Incoming));
-      };
+      // check cacheability and store it if cacheable
       let Ok(Some(cache_policy)) = get_policy_if_cacheable(Some(&synth_req), res.as_ref().ok()) else {
         return res.map(|inner| inner.map(ResponseBody::Incoming));
       };
@@ -249,23 +242,11 @@ where
 }
 
 #[cfg(feature = "cache")]
-/// Read the client-facing effective URI the handler placed in request extensions, if any.
-/// `None` means the forwarder must bypass the cache for this request (fail closed); the cache is
-/// never keyed on the upstream-rewritten request URI.
-fn cache_effective_uri<B>(req: &Request<B>) -> Option<http::Uri> {
-  req.extensions().get::<ClientFacingEffectiveUri>().map(|e| e.0.clone())
-}
-
-#[cfg(feature = "cache")]
-/// Build synthetic request to cache, keyed on the client-facing effective URI (not the
-/// upstream-rewritten request URI). Method, version, and headers are copied from the live
-/// request; only the URI is overridden with the client-facing effective URI so the cache key
-/// and `CachePolicy` partition per client-facing vhost and scheme.
-fn build_synth_req_for_cache<T>(req: &Request<T>, effective_uri: &http::Uri) -> Request<()> {
-  let mut builder = Request::builder()
-    .method(req.method())
-    .uri(effective_uri.clone())
-    .version(req.version());
+/// Build synthetic request to cache (cannot clone request object). The live request is moved
+/// into the upstream client on the miss path, so this copy carries the URI, method, version,
+/// and headers the cache layer needs for the `CachePolicy` and the store.
+fn build_synth_req_for_cache<T>(req: &Request<T>) -> Request<()> {
+  let mut builder = Request::builder().method(req.method()).uri(req.uri()).version(req.version());
   // TODO: Include request extensions only if a future cache policy needs them.
   for (header_key, header_value) in req.headers() {
     builder = builder.header(header_key, header_value);
@@ -279,39 +260,24 @@ mod tests {
   use http::{HeaderValue, Method, Uri, header};
 
   #[test]
-  fn synth_req_uses_effective_uri_not_request_uri() {
-    // The live request carries the post-rewrite upstream URI; the synthetic cache request must
-    // be keyed on the client-facing effective URI instead, while copying method and headers. A
-    // failure here guards against the cache reverting to the upstream-rewritten request URI.
+  fn synth_req_copies_live_request_uri_method_version_and_headers() {
+    // The synthetic cache request must mirror the live request (URI included): the cache is
+    // keyed on the request URI seen by the forwarder, not on any separately carried URI.
     let mut req = Request::builder()
       .method(Method::POST)
       .uri(Uri::from_static("http://upstream.internal:9000/u"))
+      .version(http::Version::HTTP_2)
       .body(())
       .unwrap();
     req
       .headers_mut()
       .insert(header::ACCEPT_ENCODING, HeaderValue::from_static("gzip"));
 
-    let effective = Uri::from_static("https://vhost.example/u");
-    let synth = build_synth_req_for_cache(&req, &effective);
+    let synth = build_synth_req_for_cache(&req);
 
-    assert_eq!(synth.uri().to_string(), "https://vhost.example/u");
+    assert_eq!(synth.uri(), &Uri::from_static("http://upstream.internal:9000/u"));
     assert_eq!(synth.method(), Method::POST);
+    assert_eq!(synth.version(), http::Version::HTTP_2);
     assert_eq!(synth.headers().get(header::ACCEPT_ENCODING).unwrap(), "gzip");
-  }
-
-  #[test]
-  fn cache_effective_uri_reads_inserted_extension_else_none() {
-    // Pins the forwarder side of the wiring: it reads back exactly the `ClientFacingEffectiveUri`
-    // type the handler inserts (type contract), and an absent extension yields None (bypass).
-    let mut req = Request::builder()
-      .uri(Uri::from_static("http://upstream.internal:9000/u"))
-      .body(())
-      .unwrap();
-    assert!(cache_effective_uri(&req).is_none(), "no extension must bypass the cache");
-    req
-      .extensions_mut()
-      .insert(ClientFacingEffectiveUri(Uri::from_static("https://vhost.example/u")));
-    assert_eq!(cache_effective_uri(&req).unwrap().to_string(), "https://vhost.example/u");
   }
 }
