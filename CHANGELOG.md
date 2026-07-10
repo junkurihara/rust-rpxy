@@ -2,6 +2,10 @@
 
 ## 0.13.4 or 0.14.0 (Unreleased)
 
+### Important Changes
+
+- **The per-virtual-host cache partitioning introduced in 0.13.3 has been withdrawn.** With the `cache` feature compiled in, every request paid for the partitioning (capturing the client-visible scheme and building the client-facing URI) even when no cache was configured, and every cache hit built an extra synthetic request - a cost on the request-forwarding hot path that this proxy layer should not carry. Cache entries are again keyed on the request URI forwarded upstream (after the rewrite to the upstream target), as in releases before 0.13.3, so the partitioning by client-facing effective request URI described in the 0.13.3 notes is no longer current behavior. Correctness for cached responses that vary on forwarded attributes now relies on the origin declaring the variation, per the standard HTTP shared-cache contract: a backend that serves different content depending on the original (client-facing) host, scheme, or URI - notably when several virtual hosts are flattened onto one upstream via `set_upstream_host` or the `default_app` fallback - must emit an appropriate `Vary` header on such responses or mark them non-cacheable.
+
 ## 0.13.3
 
 ### Important Changes

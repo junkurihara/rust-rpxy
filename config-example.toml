@@ -229,6 +229,7 @@ max_cache_entry = 1000               # optional. default is 1k
 max_cache_each_size = 65535          # optional. default is 64k
 max_cache_each_size_on_memory = 65535 # optional. default is 64k, same as max_cache_each_size (cacheable objects are served from memory by default; the file tier engages when max_cache_each_size is raised beyond this). if 0, it is always file cache. Worst-case memory use is max_cache_entry x this value.
 max_cache_total_size = "1g"          # optional. default is 1 GiB. ceiling on the total bytes retained by the cache across both tiers; accepts an integer (bytes) or a string with a binary suffix ("256m", "1g"). set "unlimited" to disable (0 also works, but note that 0 means "always file cache" for max_cache_each_size_on_memory above, so the string form is recommended here).
+# Note: cached responses are keyed on the request URI forwarded upstream. A backend that varies content by the original (client-facing) host, scheme, or URI - e.g. multiple virtual hosts flattened onto one upstream via set_upstream_host or default_app - must emit an appropriate `Vary` header on cacheable responses or mark them non-cacheable.
 
 # ACME settings. Unless specified, ACME is disabled.
 [experimental.acme]

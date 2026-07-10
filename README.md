@@ -400,7 +400,7 @@ A *storable* (in the context of an HTTP message) response is stored if its size 
 
 The total bytes retained by the cache are additionally capped by `max_cache_total_size` (default 1 GiB): when storing a new response would exceed it, the least recently used entries are evicted until the new response fits. The ceiling bounds the data referenced by live cache entries; transient extra disk usage can briefly appear while responses are being stored or evicted files are being deleted.
 
-Cache entries are keyed on the scheme, host, and path/query the client requested, so different virtual hosts never share cached responses even when they proxy to the same backend.
+Cache entries are keyed on the request URI forwarded upstream, and response variation is governed by the standard HTTP caching contract: if a backend serves different content depending on forwarded attributes such as the original host, scheme, or URI — in particular when multiple virtual hosts are flattened onto one upstream via `set_upstream_host` or the `default_app` fallback — it must declare an appropriate `Vary` header on such responses (or make them non-cacheable).
 
 ### Automated Certificate Issuance and Renewal via TLS-ALPN-01 ACME Protocol
 
