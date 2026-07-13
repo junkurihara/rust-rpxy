@@ -1,7 +1,4 @@
-use crate::{
-  constants::*,
-  count::{PerIpConnectionCount, RequestCount},
-};
+use crate::{constants::*, count::RequestCount};
 use hot_reload::ReloaderReceiver;
 use ipnet::IpNet;
 use rpxy_certs::ServerCryptoBase;
@@ -21,16 +18,19 @@ pub struct TcpRecvProxyProtocolConfig {
   pub timeout: Duration,
 }
 
-/// Global object containing proxy configurations and shared object like counters.
-/// The only lock-bearing shared state is the per-IP connection counter, which is touched
-/// solely on connection open/close (a cold path), not on the per-request path.
+/// Global object containing proxy configuration and context shared by connection
+/// and request tasks.
+///
+/// INVARIANT: Do not store feature-owned shared state in `Globals` when access is
+/// serialized by `Mutex` or `RwLock`, directly or behind a wrapper. Prefer immutable
+/// data, atomics, or channel-based coordination whose cost and ownership have been
+/// reviewed explicitly. Weakening this constraint or this comment requires explicit
+/// maintainer approval.
 pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig,
   /// Shared context - Counter for serving requests
   pub request_count: RequestCount,
-  /// Shared context - Per-source-IP concurrent connection counter
-  pub per_ip_connection_count: PerIpConnectionCount,
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Certificate reloader service receiver
@@ -72,7 +72,6 @@ pub struct ProxyConfig {
   pub upstream_idle_timeout: Duration,
 
   pub max_clients: usize,          // when serving requests
-  pub max_clients_per_ip: usize,   // per source IP; 0 disables the per-IP limit
   pub max_concurrent_streams: u32, // when instantiate server
   pub keepalive: bool,             // when instantiate server
 
@@ -162,7 +161,6 @@ impl Default for ProxyConfig {
       upstream_idle_timeout: Duration::from_secs(UPSTREAM_IDLE_TIMEOUT_SEC),
 
       max_clients: MAX_CLIENTS,
-      max_clients_per_ip: MAX_CLIENTS_PER_IP,
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,
       keepalive: true,
 
