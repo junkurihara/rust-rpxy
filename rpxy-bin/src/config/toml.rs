@@ -127,7 +127,7 @@ fn parse_body_size_string(s: &str, key_name: &str) -> Result<Option<usize>, anyh
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
 /// - `max_clients`: Optional max client connections.
-/// - `max_clients_per_ip`: Optional max concurrent connections per source IP (0 disables it).
+/// - `max_clients_per_ip`: Removed-key tombstone; any configured value is rejected.
 /// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
 /// - `redact_query_in_access_log`: Optional. Redact query-string values in the access log (default: false).
 /// - `request_max_body_size`: Optional maximum inbound request body size (h1/h2/h3 by default). Defaults to 256 MiB. Accepts an integer (bytes) or a string with a suffix (`"256k"`, `"10m"`, `"1g"`); set `0` or `"unlimited"` for no limit.
@@ -147,6 +147,8 @@ pub struct ConfigToml {
   pub tcp_listen_backlog: Option<u32>,
   pub max_concurrent_streams: Option<u32>,
   pub max_clients: Option<u32>,
+  /// Removed in 0.14.0. Keep this tombstone through the 0.14.x line so old configs
+  /// fail with migration guidance instead of being accepted as ignored unknown fields.
   pub max_clients_per_ip: Option<u32>,
   #[cfg(feature = "sticky-cookie")]
   pub sticky_cookie_secret: Option<String>,
@@ -396,6 +398,10 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       self.https_redirection_port.is_none(),
       "`https_redirection_port` was renamed to `public_https_port` in 0.13; update your config"
     );
+    ensure!(
+      self.max_clients_per_ip.is_none(),
+      "`max_clients_per_ip` was removed in 0.14.0; remove the key from the configuration and enforce source-IP admission at the network/L4 edge if required. The global `max_clients` setting is unchanged."
+    );
 
     let mut proxy_config = ProxyConfig {
       // listen port and socket
@@ -438,9 +444,6 @@ impl TryInto<ProxyConfig> for &ConfigToml {
     // max values
     if let Some(c) = self.max_clients {
       proxy_config.max_clients = c as usize;
-    }
-    if let Some(c) = self.max_clients_per_ip {
-      proxy_config.max_clients_per_ip = c as usize;
     }
     if let Some(c) = self.max_concurrent_streams {
       proxy_config.max_concurrent_streams = c;
@@ -1117,24 +1120,51 @@ mod tests {
   }
 
   #[test]
-  fn max_clients_per_ip_defaults_to_zero() {
+  fn max_clients_per_ip_absent_keeps_max_clients_behavior() {
     let toml_str = r#"
       listen_port = 8080
+      max_clients = 16
     "#;
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
     let proxy_config: ProxyConfig = (&config).try_into().unwrap();
-    assert_eq!(proxy_config.max_clients_per_ip, 0);
+    assert_eq!(proxy_config.max_clients, 16);
   }
 
   #[test]
-  fn max_clients_per_ip_is_applied() {
+  fn max_clients_per_ip_zero_is_rejected_as_removed() {
+    let toml_str = r#"
+      listen_port = 8080
+      max_clients_per_ip = 0
+    "#;
+    let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let result: Result<ProxyConfig, _> = (&config).try_into();
+    let error = result.err().expect("removed key must be rejected").to_string();
+    assert!(error.contains("max_clients_per_ip"));
+    assert!(error.contains("removed in 0.14.0"));
+    assert!(error.contains("remove the key"));
+  }
+
+  #[test]
+  fn max_clients_per_ip_positive_value_is_rejected_as_removed() {
     let toml_str = r#"
       listen_port = 8080
       max_clients_per_ip = 16
     "#;
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
-    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
-    assert_eq!(proxy_config.max_clients_per_ip, 16);
+    let result: Result<ProxyConfig, _> = (&config).try_into();
+    let error = result.err().expect("removed key must be rejected").to_string();
+    assert!(error.contains("max_clients_per_ip"));
+    assert!(error.contains("network/L4 edge"));
+  }
+
+  #[test]
+  fn max_clients_per_ip_wrong_type_fails_toml_parsing() {
+    let toml_str = r#"
+      listen_port = 8080
+      max_clients_per_ip = "16"
+    "#;
+    let error = toml::from_str::<ConfigToml>(toml_str).unwrap_err().to_string();
+    assert!(error.contains("max_clients_per_ip"));
   }
 
   #[test]

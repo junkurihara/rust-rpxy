@@ -520,7 +520,7 @@ mod tests {
 
   use crate::backend::BackendApp;
   use crate::{
-    count::{PerIpConnectionCount, RequestCount},
+    count::RequestCount,
     globals::{AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
     hyper_ext::body::IncomingLike,
   };
@@ -539,7 +539,6 @@ mod tests {
     Arc::new(Globals {
       proxy_config,
       request_count: RequestCount::default(),
-      per_ip_connection_count: PerIpConnectionCount::new(0),
       runtime_handle: tokio::runtime::Handle::current(),
       cert_reloader_rx: None,
       unsafe_debug_headers: false,
