@@ -67,7 +67,7 @@ thiserror = "2.0.18"
 
 # http for both server and client
 http = "1.4.2"
-http-body-util = "0.1.3"
+http-body-util = "0.1.4"
 hyper = { version = "1.10.1", default-features = false }
 hyper-util = { version = "0.1.20", features = ["full"] }
 futures-util = { version = "0.3.32", default-features = false }
@@ -111,7 +111,7 @@ s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
 ], optional = true }
 ##########
 # for UDP socket with SO_REUSEADDR and set_only_v6 for socket binding
-socket2 = { version = "0.6.4", features = ["all"] }
+socket2 = { version = "0.6.5", features = ["all"] }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
