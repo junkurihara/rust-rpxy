@@ -1,3 +1,4 @@
+mod connection_admission;
 mod proxy_main;
 #[cfg(feature = "proxy-protocol")]
 mod proxy_protocol;
@@ -22,6 +23,7 @@ use std::sync::Arc;
 /// SNI to per-SNI server crypto map type (carries the config and whether the vhost enforces mTLS)
 pub type SniServerCryptoMap = std::collections::HashMap<ServerName, ServerCryptoForSni, ahash::RandomState>;
 
+pub(crate) use connection_admission::ConnectionAdmission;
 pub use proxy_main::{ListenerKind, ListenerSpecBuilder, ListenerSpecBuilderError, ProxyBuilder, ProxyBuilderError};
 
 /// build connection builder shared with proxy instances

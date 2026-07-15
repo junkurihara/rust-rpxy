@@ -519,8 +519,9 @@ mod tests {
   // --- mTLS SNI-consistency guard (handler-path wiring; design D2b, tests 9-11) ---
 
   use crate::backend::BackendApp;
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  use crate::count::RequestCount;
   use crate::{
-    count::RequestCount,
     globals::{AppConfig, ProxyConfig, ReverseProxyConfig, TlsConfig, UpstreamUri},
     hyper_ext::body::IncomingLike,
   };
@@ -538,6 +539,7 @@ mod tests {
     proxy_config.sni_consistency = sni_consistency;
     Arc::new(Globals {
       proxy_config,
+      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       request_count: RequestCount::default(),
       runtime_handle: tokio::runtime::Handle::current(),
       cert_reloader_rx: None,

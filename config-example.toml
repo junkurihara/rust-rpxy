@@ -43,7 +43,9 @@ tcp_listen_backlog = 1024
 # Optional for h2
 max_concurrent_streams = 100
 
-# Optional. Counted in total for http1.1, 2, 3
+# Optional. Shared cap for accepted HTTP/1.1 and HTTP/2 TCP connections, including
+# PROXY protocol parsing and TLS handshakes. 0 rejects all HTTP/1.1 and HTTP/2 connections.
+# HTTP/3 currently applies this value separately to concurrent request streams.
 max_clients = 512
 
 # Enforce source-IP admission at the network/L4 edge when required; rpxy does not provide a per-IP limit.
