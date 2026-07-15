@@ -1,4 +1,4 @@
-use super::{proxy_main::Proxy, socket::bind_udp_socket};
+use super::{ConnectionAdmission, proxy_main::Proxy, socket::bind_udp_socket};
 use crate::{error::*, log::*, name_exp::ByteName};
 use hyper_util::client::legacy::connect::Connect;
 use quinn::{
@@ -8,6 +8,12 @@ use quinn::{
 use rpxy_certs::ServerCrypto;
 use rustls::ServerConfig;
 use std::sync::Arc;
+
+fn quinn_server_config(crypto: QuicServerConfig, transport: Arc<TransportConfig>, max_incoming: usize) -> quinn::ServerConfig {
+  let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(crypto));
+  server_config.transport_config(transport).max_incoming(max_incoming);
+  server_config
+}
 
 impl<T> Proxy<T>
 where
@@ -40,9 +46,14 @@ where
           .map(|v| quinn::IdleTimeout::try_from(v).unwrap()),
       );
 
-    let mut server_config_h3 = quinn::ServerConfig::with_crypto(Arc::new(quinn_server_config_crypto));
-    server_config_h3.transport = Arc::new(transport_config_quic);
-    server_config_h3.max_incoming(self.globals.proxy_config.h3_max_concurrent_connections as usize);
+    let transport_config_quic = Arc::new(transport_config_quic);
+    let h3_connection_limit = self.globals.proxy_config.h3_max_concurrent_connections as usize;
+    let server_config_h3 = quinn_server_config(
+      quinn_server_config_crypto,
+      Arc::clone(&transport_config_quic),
+      h3_connection_limit,
+    );
+    let h3_connection_admission = ConnectionAdmission::new(h3_connection_limit);
 
     // To reuse address
     let udp_socket = bind_udp_socket(&self.listener_spec.listening_on)?;
@@ -53,34 +64,43 @@ where
     loop {
       tokio::select! {
         new_conn = endpoint.accept() => {
-          if server_crypto.is_none() || new_conn.is_none() {
+          let Some(incoming) = new_conn else {
+            continue;
+          };
+          if server_crypto.is_none() {
+            incoming.refuse();
             continue;
           }
-          let Ok(mut incoming) = new_conn.unwrap().accept() else {
-            continue
-          };
-          let Ok(hsd) = incoming.handshake_data().await else {
-            continue
-          };
-
-          let Ok(hsd_downcast) = hsd.downcast::<HandshakeData>() else {
-            continue
-          };
-          let Some(new_server_name) = hsd_downcast.server_name else {
-            warn!("HTTP/3 no SNI is given");
+          let Some(connection_permit) = h3_connection_admission.try_acquire() else {
+            incoming.refuse();
             continue;
           };
-          debug!(
-            "HTTP/3 connection incoming (SNI {:?})",
-            new_server_name
-          );
-          // TODO: Avoid passing server_name through deeper call layers; consider attaching
-          // it after the connection is established.
-          // TODO: Unify TLS and QUIC server-name handling behind a shared representation.
+          let Ok(mut connecting) = incoming.accept() else {
+            continue;
+          };
+
           let self_clone = self.clone();
           self.globals.runtime_handle.spawn(async move {
-            let client_addr = incoming.remote_address();
-            let quic_connection = match incoming.await {
+            let _connection_permit = connection_permit;
+            let client_addr = connecting.remote_address();
+            let Ok(hsd) = connecting.handshake_data().await else {
+              return Ok(());
+            };
+            let Ok(hsd_downcast) = hsd.downcast::<HandshakeData>() else {
+              return Ok(());
+            };
+            let Some(new_server_name) = hsd_downcast.server_name else {
+              warn!("HTTP/3 no SNI is given");
+              return Ok(());
+            };
+            debug!(
+              "HTTP/3 connection incoming (SNI {:?})",
+              new_server_name
+            );
+            // TODO: Avoid passing server_name through deeper call layers; consider attaching
+            // it after the connection is established.
+            // TODO: Unify TLS and QUIC server-name handling behind a shared representation.
+            let quic_connection = match connecting.await {
               Ok(new_conn) => {
                 trace!("New connection established");
                 h3_quinn::Connection::new(new_conn)
@@ -114,7 +134,11 @@ where
             error!("Failed to update server crypto for h3");
             break;
           };
-          endpoint.set_server_config(Some(quinn::ServerConfig::with_crypto(Arc::new(quinn_server_config_crypto))));
+          endpoint.set_server_config(Some(quinn_server_config(
+            quinn_server_config_crypto,
+            Arc::clone(&transport_config_quic),
+            h3_connection_limit,
+          )));
         }
         else => break
       }

@@ -22,7 +22,7 @@ pub mod DEFAULTS {
 #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
 pub mod H3 {
   pub const ALT_SVC_MAX_AGE: u32 = 3600;
-  pub const MAX_CONCURRENT_CONNECTIONS: u32 = 4096;
+  pub const MAX_CONCURRENT_CONNECTIONS: u32 = 512;
   pub const MAX_CONCURRENT_BIDISTREAM: u32 = 64;
   pub const MAX_CONCURRENT_UNISTREAM: u32 = 64;
   pub const MAX_IDLE_TIMEOUT: u64 = 10; // secs

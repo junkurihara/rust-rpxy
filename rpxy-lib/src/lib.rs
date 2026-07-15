@@ -1,7 +1,5 @@
 mod backend;
 mod constants;
-#[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-mod count;
 mod error;
 mod forwarder;
 mod globals;
@@ -182,8 +180,6 @@ pub async fn entrypoint(
   // 2. build global shared context
   let globals = Arc::new(Globals {
     proxy_config: proxy_config.clone(),
-    #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-    request_count: Default::default(),
     runtime_handle: runtime_handle.clone(),
     cert_reloader_rx: cert_rx.clone(),
     unsafe_debug_headers: *unsafe_debug_headers,

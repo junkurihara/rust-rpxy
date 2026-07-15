@@ -1,6 +1,4 @@
 use crate::constants::*;
-#[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-use crate::count::RequestCount;
 use hot_reload::ReloaderReceiver;
 use ipnet::IpNet;
 use rpxy_certs::ServerCryptoBase;
@@ -31,9 +29,6 @@ pub struct TcpRecvProxyProtocolConfig {
 pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig,
-  /// Shared context - Counter for serving requests
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-  pub request_count: RequestCount,
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Certificate reloader service receiver
@@ -74,7 +69,7 @@ pub struct ProxyConfig {
   /// Idle timeout as an HTTP client, used as the keep alive interval for upstream connections
   pub upstream_idle_timeout: Duration,
 
-  pub max_clients: usize,          // H1/H2 TCP cap; temporary separate H3 request-stream budget
+  pub max_clients: usize,          // process-wide H1/H2 TCP connection cap
   pub max_concurrent_streams: u32, // when instantiate server
   pub keepalive: bool,             // when instantiate server
 
@@ -144,6 +139,7 @@ pub struct ProxyConfig {
   pub h3_max_concurrent_bidistream: u32,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_concurrent_unistream: u32,
+  /// Maximum H3 connections admitted independently by each endpoint/listener.
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_concurrent_connections: u32,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
