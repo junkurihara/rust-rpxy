@@ -45,7 +45,7 @@ max_concurrent_streams = 100
 
 # Optional. Shared cap for accepted HTTP/1.1 and HTTP/2 TCP connections, including
 # PROXY protocol parsing and TLS handshakes. 0 rejects all HTTP/1.1 and HTTP/2 connections.
-# HTTP/3 currently applies this value separately to concurrent request streams.
+# HTTP/3 uses the independent per-endpoint connection cap under [experimental.h3].
 max_clients = 512
 
 # Enforce source-IP admission at the network/L4 edge when required; rpxy does not provide a per-IP limit.
@@ -198,7 +198,8 @@ ignore_sni_consistency = false
 # A non-zero value is recommended in production unless long-lived connections (e.g. WebSocket) are required.
 connection_handling_timeout = 0 # sec
 
-# If this specified, h3 is enabled
+# If this is specified, h3 is enabled. The H3 connection limit is independent
+# from max_clients and applies separately to each H3 endpoint/listener.
 [experimental.h3]
 alt_svc_max_age = 3600             # sec
 # DEPRECATED in 0.13.2; will be removed in 0.14.0. Use the top-level `request_max_body_size`
@@ -209,9 +210,11 @@ alt_svc_max_age = 3600             # sec
 # reject-non-empty-body behavior. Suffixes ("256k") and the "unlimited"
 # string are only supported by the top-level key.
 # request_max_body_size = 65536    # bytes
-max_concurrent_connections = 10000
-max_concurrent_bidistream = 100
-max_concurrent_unistream = 100
+# At 0, Quinn silently drops new attempts while s2n closes them explicitly;
+# both enforce reject-all.
+max_concurrent_connections = 512   # H3 connections per endpoint/listener. Default: 512.
+max_concurrent_bidistream = 100    # bidirectional streams per H3 connection
+max_concurrent_unistream = 100     # unidirectional streams per H3 connection
 max_idle_timeout = 10              # secs. 0 represents an infinite timeout.
 # WARNING: If a peer or its network path malfunctions or acts maliciously, an infinite idle timeout can result in permanently hung futures!
 

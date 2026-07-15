@@ -126,7 +126,7 @@ fn parse_body_size_string(s: &str, key_name: &str) -> Result<Option<usize>, anyh
 /// - `public_https_port`: Optional client-visible HTTPS/H3 port used for redirects and Alt-Svc.
 /// - `tcp_listen_backlog`: Optional TCP backlog size.
 /// - `max_concurrent_streams`: Optional max concurrent streams.
-/// - `max_clients`: Optional shared H1/H2 connection cap and temporary separate H3 request-stream budget.
+/// - `max_clients`: Optional process-wide shared H1/H2 connection cap.
 /// - `max_clients_per_ip`: Removed-key tombstone; any configured value is rejected.
 /// - `trusted_forwarded_proxies`: Optional CIDR(s) or built-in alias names whose incoming forwarding headers are trusted.
 /// - `redact_query_in_access_log`: Optional. Redact query-string values in the access log (default: false).
@@ -268,7 +268,7 @@ impl ConfigTomlExt for ConfigToml {
 /// # Fields
 /// - `alt_svc_max_age`: Optional max age for Alt-Svc header.
 /// - `request_max_body_size`: Optional maximum request body size.
-/// - `max_concurrent_connections`: Optional maximum concurrent connections.
+/// - `max_concurrent_connections`: Optional maximum H3 connections per endpoint/listener.
 /// - `max_concurrent_bidistream`: Optional maximum concurrent bidirectional streams.
 /// - `max_concurrent_unistream`: Optional maximum concurrent unidirectional streams.
 /// - `max_idle_timeout`: Optional maximum idle timeout in milliseconds.
@@ -400,7 +400,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
     );
     ensure!(
       self.max_clients_per_ip.is_none(),
-      "`max_clients_per_ip` was removed in 0.14.0; remove the key from the configuration and enforce source-IP admission at the network/L4 edge if required. `max_clients` remains global; see the 0.14.0 migration notes for its revised H1/H2 connection-lifetime semantics."
+      "`max_clients_per_ip` was removed in 0.14.0; remove the key from the configuration and enforce source-IP admission at the network/L4 edge if required. `max_clients` is now the process-wide H1/H2 connection cap; see the 0.14.0 migration notes."
     );
 
     let mut proxy_config = ProxyConfig {

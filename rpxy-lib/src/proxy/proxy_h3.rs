@@ -56,15 +56,7 @@ where
               continue;
             }
           };
-          // We consider the connection count separately from the stream count.
-          // Max clients for h1/h2 = max 'stream' for h3.
-          let request_count = self.globals.request_count.clone();
-          if request_count.increment() >= self.globals.proxy_config.max_clients {
-            request_count.decrement();
-            h3_conn.shutdown(0).await?;
-            break;
-          }
-          trace!("Request incoming: current # {}", request_count.current());
+          trace!("HTTP/3 request stream incoming");
 
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
@@ -77,8 +69,7 @@ where
             } else if let Err(e) = fut.await {
               warn!("HTTP/3 error on serve stream: {}", e);
             }
-            request_count.decrement();
-            trace!("Request processed: current # {}", request_count.current());
+            trace!("HTTP/3 request stream processed");
           });
         }
       }

@@ -348,11 +348,21 @@ The [`./bench`](./bench/) directory contains a very simple example of `rpxy` con
 ```toml
 [experimental.h3]
 alt_svc_max_age = 3600
-max_concurrent_connections = 10000
+max_concurrent_connections = 512
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100
 max_idle_timeout = 10
 ```
+
+`max_concurrent_connections` limits established and handshaking HTTP/3
+connections independently for each configured HTTP/3 endpoint/listener. It
+defaults to 512; `0` rejects every HTTP/3 connection attempt. This limit is
+separate from the process-wide `max_clients` cap for HTTP/1.1 and HTTP/2.
+At `0`, Quinn silently drops new attempts at its pending-attempt buffer, while
+s2n explicitly closes them; both enforce the same reject-all resource policy.
+`max_concurrent_bidistream` and `max_concurrent_unistream` remain per-connection
+stream limits, so they do not replace the connection limit. Multiple HTTP/3
+listeners each receive their own `max_concurrent_connections` capacity.
 
 The request body size limit is no longer HTTP/3-specific. Configure it via the **top-level** `request_max_body_size` key, which applies to HTTP/1.1, HTTP/2, and to HTTP/3 by default (the deprecated h3 streaming override below can still replace the h3 streaming limit during the deprecation window):
 
