@@ -65,7 +65,7 @@ where
       tokio::select! {
         new_conn = endpoint.accept() => {
           let Some(incoming) = new_conn else {
-            continue;
+            break;
           };
           if server_crypto.is_none() {
             incoming.refuse();
@@ -118,11 +118,10 @@ where
           });
         }
         _ = server_crypto_rx.changed() => {
-          if server_crypto_rx.borrow().is_none() {
+          let Some(cert_keys_map) = server_crypto_rx.get() else {
             error!("Reloader is broken");
             break;
-          }
-          let cert_keys_map = server_crypto_rx.get().unwrap();
+          };
 
           server_crypto = (&cert_keys_map).try_into().ok();
           let Some(inner) = server_crypto.clone() else {
