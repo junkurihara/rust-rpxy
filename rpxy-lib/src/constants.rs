@@ -2,7 +2,8 @@ pub const RESPONSE_HEADER_SERVER: &str = "rpxy";
 pub const TCP_LISTEN_BACKLOG: u32 = 1024;
 pub const PROXY_IDLE_TIMEOUT_SEC: u64 = 20;
 pub const UPSTREAM_IDLE_TIMEOUT_SEC: u64 = 20;
-pub const TLS_HANDSHAKE_TIMEOUT_SEC: u64 = 15; // default as with firefox browser
+/// Maximum time an accepted TCP connection may retain admission while completing TLS.
+pub const TLS_HANDSHAKE_TIMEOUT_SEC: u64 = 5;
 pub const MAX_CLIENTS: usize = 512;
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 

@@ -1,4 +1,7 @@
-use super::socket::bind_tcp_socket;
+use super::{
+  connection_admission::{ConnectionAdmission, ConnectionPermit},
+  socket::bind_tcp_socket,
+};
 use crate::{
   constants::TLS_HANDSHAKE_TIMEOUT_SEC,
   error::*,
@@ -266,6 +269,8 @@ where
 {
   /// global context shared among async tasks
   pub(crate) globals: Arc<Globals>,
+  /// generation-scoped admission handle shared by all HTTP/1.1 and HTTP/2 listeners
+  pub(crate) h1h2_connection_admission: ConnectionAdmission,
   /// hyper connection builder serving http request
   pub(crate) connection_builder: Arc<ConnectionBuilder<E>>,
   /// message handler serving incoming http request
@@ -279,17 +284,15 @@ where
   T: Send + Sync + Connect + Clone + 'static,
 {
   /// Serves requests from clients.
-  fn serve_connection<I>(&self, stream: I, peer_addr: SocketAddr, tls_server_name: Option<ServerName>)
-  where
+  fn serve_connection<I>(
+    &self,
+    stream: I,
+    peer_addr: SocketAddr,
+    tls_server_name: Option<ServerName>,
+    connection_permit: ConnectionPermit,
+  ) where
     I: Read + Write + Send + Unpin + 'static,
   {
-    let request_count = self.globals.request_count.clone();
-    if request_count.increment() >= self.globals.proxy_config.max_clients {
-      request_count.decrement();
-      return;
-    }
-    trace!("Request incoming: current # {}", request_count.current());
-
     let server_clone = self.connection_builder.clone();
     let message_handler_clone = self.message_handler.clone();
     let tls_enabled = self.listener_spec.tls_enabled();
@@ -298,6 +301,7 @@ where
     let request_max_body_size = self.globals.proxy_config.request_max_body_size;
 
     self.globals.runtime_handle.clone().spawn(async move {
+      let _connection_permit = connection_permit;
       let fut = server_clone.serve_connection_with_upgrades(
         stream,
         service_fn(move |req: Request<Incoming>| {
@@ -318,9 +322,6 @@ where
       } else {
         fut.await.ok();
       }
-
-      request_count.decrement();
-      trace!("Request processed: current # {}", request_count.current());
     });
   }
 
@@ -333,29 +334,27 @@ where
       #[cfg(not(feature = "proxy-protocol"))]
       while let Ok((stream, client_addr)) = tcp_listener.accept().await {
         trace!("Accepted TCP connection from {client_addr}");
+        let Some(connection_permit) = self.h1h2_connection_admission.try_acquire() else {
+          debug!("HTTP/1.1 or HTTP/2 connection limit reached, dropping connection from {client_addr}");
+          continue;
+        };
         set_tcp_nodelay(&stream, client_addr);
-        self.serve_connection(TokioIo::new(stream), client_addr, None);
+        self.serve_connection(TokioIo::new(stream), client_addr, None, connection_permit);
       }
       #[cfg(feature = "proxy-protocol")]
       {
-        // Semaphore to bound concurrent PROXY parsing tasks (reuses max_clients as the limit)
-        let pp_semaphore = Arc::new(tokio::sync::Semaphore::new(self.globals.proxy_config.max_clients));
         while let Ok((mut stream, client_addr)) = tcp_listener.accept().await {
           trace!("Accepted TCP connection from {client_addr}");
+          let Some(connection_permit) = self.h1h2_connection_admission.try_acquire() else {
+            debug!("HTTP/1.1 or HTTP/2 connection limit reached, dropping connection from {client_addr}");
+            continue;
+          };
           set_tcp_nodelay(&stream, client_addr);
           // [PROXY-PROTOCOL] Parse PROXY header before serving connection
           if self.globals.proxy_config.tcp_recv_proxy_protocol.is_some() {
-            let permit = match pp_semaphore.clone().try_acquire_owned() {
-              Ok(permit) => permit,
-              Err(_) => {
-                debug!("PROXY parsing task limit reached, dropping connection from {client_addr}");
-                continue;
-              }
-            };
             let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone().unwrap();
             let self_inner = self.clone();
             self.globals.runtime_handle.spawn(async move {
-              let _permit = permit; // held until task completes
               let parse_result = extract_parse_result_from_proxy_protocol_header(&mut stream, client_addr, &pp_config).await;
               let real_addr = match parse_result {
                 Ok(addr) => addr,
@@ -364,12 +363,12 @@ where
                   return;
                 }
               };
-              self_inner.serve_connection(TokioIo::new(stream), real_addr, None);
+              self_inner.serve_connection(TokioIo::new(stream), real_addr, None, connection_permit);
             });
             continue;
           }
           // If inbound PROXY protocol is not enabled, serve connection directly with peer address from TCP accept
-          self.serve_connection(TokioIo::new(stream), client_addr, None);
+          self.serve_connection(TokioIo::new(stream), client_addr, None, connection_permit);
         }
       }
 
@@ -438,14 +437,11 @@ where
     info!("Start TCP proxy serving with HTTPS request for configured host names");
 
     let mut server_crypto_map: Option<Arc<super::SniServerCryptoMap>> = None;
-    // Semaphore to bound concurrent PROXY parsing tasks in TLS path (reuses max_clients as the limit)
-    #[cfg(feature = "proxy-protocol")]
-    let pp_semaphore = Arc::new(tokio::sync::Semaphore::new(self.globals.proxy_config.max_clients));
     loop {
       select! {
         // Accept incoming TCP connections for TLS handshake and then serve the connection
         tcp_cnx = tcp_listener.accept().fuse() => {
-          self.serve_tls_tcp_connection(tcp_cnx, &server_crypto_map, #[cfg(feature = "proxy-protocol")] &pp_semaphore);
+          self.serve_tls_tcp_connection(tcp_cnx, &server_crypto_map);
         }
         // Listen for certificate updates from the reloader, and update the in-memory server crypto map for TLS handshake accordingly
         _ = server_crypto_rx.changed().fuse() => {
@@ -476,47 +472,34 @@ where
     &self,
     tcp_cnx: Result<(TcpStream, SocketAddr), std::io::Error>,
     server_crypto_map: &Option<Arc<super::SniServerCryptoMap>>,
-    #[cfg(feature = "proxy-protocol")] pp_semaphore: &Arc<tokio::sync::Semaphore>,
   ) {
-    if tcp_cnx.is_err() || server_crypto_map.is_none() {
+    let Ok((raw_stream, client_addr)) = tcp_cnx else {
       return;
-    }
+    };
+    trace!("Accepted TCP connection from {client_addr} at TLS listener");
+
+    let Some(connection_permit) = self.h1h2_connection_admission.try_acquire() else {
+      debug!("HTTP/1.1 or HTTP/2 connection limit reached, dropping connection from {client_addr} at TLS listener");
+      return;
+    };
+
+    let Some(server_crypto_map) = server_crypto_map.clone() else {
+      return;
+    };
 
     #[cfg(feature = "proxy-protocol")]
-    let (mut raw_stream, client_addr) = tcp_cnx.unwrap();
-    #[cfg(not(feature = "proxy-protocol"))]
-    let (raw_stream, client_addr) = tcp_cnx.unwrap();
-    trace!("Accepted TCP connection from {client_addr} at TLS listener");
+    let mut raw_stream = raw_stream;
     set_tcp_nodelay(&raw_stream, client_addr);
 
     #[cfg(feature = "proxy-protocol")]
     let pp_config = self.globals.proxy_config.tcp_recv_proxy_protocol.clone();
 
-    #[cfg(feature = "proxy-protocol")]
-    let pp_permit = if pp_config.is_some() {
-      match pp_semaphore.clone().try_acquire_owned() {
-        Ok(permit) => Some(permit),
-        Err(_) => {
-          debug!("PROXY parsing task limit reached, dropping connection from {client_addr} (TLS)");
-          return;
-        }
-      }
-    } else {
-      None
-    };
-
-    // Clone necessary variables for async task, server_crypto_map was confirmed to be `Some` above, so unwrap is safe here.
-    let server_crypto_map = server_crypto_map.clone().unwrap();
     let self_inner = self.clone();
     #[cfg(feature = "acme")]
     let server_configs_acme_challenge = self.globals.server_configs_acme_challenge.clone();
 
     // spawns async TLS handshake to avoid blocking thread by sequential handshake.
     self.globals.runtime_handle.spawn(async move {
-      // Hold the semaphore permit for the PROXY-parse + TLS-handshake task; active connections are bounded separately (e.g. via `request_count`)
-      #[cfg(feature = "proxy-protocol")]
-      let _permit = pp_permit;
-
       #[cfg(feature = "proxy-protocol")]
       // [PROXY-PROTOCOL] Parse PROXY header before TLS handshake, and obtain the real client address
       let client_addr = {
@@ -559,7 +542,7 @@ where
               stream.inner_mut().shutdown().await.ok();
               return;
             }
-            self_inner.serve_connection(stream, client_addr, Some(server_name));
+            self_inner.serve_connection(stream, client_addr, Some(server_name), connection_permit);
           }
           Err(_) => {
             // The structured handshake-failure audit record is already emitted inside serve_tls_handshake.
@@ -571,7 +554,7 @@ where
       {
         match tls_handshake_result {
           Ok(TlsHandshakeResult { stream, server_name }) => {
-            self_inner.serve_connection(stream, client_addr, Some(server_name));
+            self_inner.serve_connection(stream, client_addr, Some(server_name), connection_permit);
           }
           Err(_) => {
             // The structured handshake-failure audit record is already emitted inside serve_tls_handshake.

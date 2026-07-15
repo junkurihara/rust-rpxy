@@ -1,4 +1,6 @@
-use crate::{constants::*, count::RequestCount};
+use crate::constants::*;
+#[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+use crate::count::RequestCount;
 use hot_reload::ReloaderReceiver;
 use ipnet::IpNet;
 use rpxy_certs::ServerCryptoBase;
@@ -30,6 +32,7 @@ pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig,
   /// Shared context - Counter for serving requests
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub request_count: RequestCount,
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
@@ -71,7 +74,7 @@ pub struct ProxyConfig {
   /// Idle timeout as an HTTP client, used as the keep alive interval for upstream connections
   pub upstream_idle_timeout: Duration,
 
-  pub max_clients: usize,          // when serving requests
+  pub max_clients: usize,          // H1/H2 TCP cap; temporary separate H3 request-stream budget
   pub max_concurrent_streams: u32, // when instantiate server
   pub keepalive: bool,             // when instantiate server
 
