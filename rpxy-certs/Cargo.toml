@@ -33,7 +33,7 @@ rustls-webpki = { version = "0.103.13", default-features = false, features = [
 x509-parser = { version = "0.18.1" }
 
 [dev-dependencies]
-tokio = { version = "1.52.3", default-features = false, features = [
+tokio = { version = "1.53.0", default-features = false, features = [
   "rt-multi-thread",
   "macros",
 ] }

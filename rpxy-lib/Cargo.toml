@@ -48,8 +48,8 @@ ahash = "0.8.12"
 bytes = "1.12.1"
 itoa = "1.0.18"
 derive_builder = "0.20.2"
-futures = { version = "0.3.32", features = ["alloc", "async-await"] }
-tokio = { version = "1.52.3", default-features = false, features = [
+futures = { version = "0.3.33", features = ["alloc", "async-await"] }
+tokio = { version = "1.53.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -70,8 +70,8 @@ http = "1.4.2"
 http-body-util = "0.1.4"
 hyper = { version = "1.10.1", default-features = false }
 hyper-util = { version = "0.1.20", features = ["full"] }
-futures-util = { version = "0.3.32", default-features = false }
-futures-channel = { version = "0.3.32", default-features = false }
+futures-util = { version = "0.3.33", default-features = false }
+futures-channel = { version = "0.3.33", default-features = false }
 
 # http client for upstream
 hyper-tls = { version = "0.6.0", features = [
