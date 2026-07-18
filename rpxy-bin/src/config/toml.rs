@@ -735,11 +735,11 @@ impl TryInto<Vec<ReverseProxyConfig>> for &Application {
 
     for rpo in rp_settings.iter() {
       if rpo.upstream.is_empty() {
-        return Err(anyhow!("[{}] At least one upstream must be specified", &_server_name_string));
+        return Err(anyhow!("[{}] At least one upstream must be specified", _server_name_string));
       }
       let upstream_res: Vec<Option<UpstreamUri>> = rpo.upstream.iter().map(|v| v.try_into().ok()).collect();
       if !upstream_res.iter().all(|v| v.is_some()) {
-        return Err(anyhow!("[{}] Upstream uri is invalid", &_server_name_string));
+        return Err(anyhow!("[{}] Upstream uri is invalid", _server_name_string));
       }
       let upstream = upstream_res.into_iter().map(|v| v.unwrap()).collect();
 
