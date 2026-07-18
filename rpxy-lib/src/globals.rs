@@ -96,10 +96,8 @@ pub struct ProxyConfig {
   /// Maximum allowed inbound request body size in bytes.
   /// `None` means unlimited; `Some(n)` enforces an `n`-byte upper bound.
   /// The top-level config loader maps TOML `0` / `"unlimited"` to `None`;
-  /// the deprecated `experimental.h3.request_max_body_size = 0` still produces
-  /// `Some(0)` for backward compatibility (programmatic `Some(0)` is otherwise
-  /// not reachable from the top-level config key). Applies to h1/h2 and serves
-  /// as the fallback for h3 when `h3_request_max_body_size` is `None`.
+  /// programmatic callers may still use `Some(0)` to reject any non-empty body.
+  /// Applies uniformly to HTTP/1.1, HTTP/2, and HTTP/3.
   /// Default after config load is `Some(DEFAULTS::REQUEST_MAX_BODY_SIZE)`.
   pub request_max_body_size: Option<usize>,
 
@@ -125,16 +123,6 @@ pub struct ProxyConfig {
   pub http3: bool,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_alt_svc_max_age: u32,
-  /// Deprecated override for the h3 streaming body-size limit only.
-  /// `None` (the default after config load) inherits the top-level
-  /// `request_max_body_size`; `Some(n)` overrides the h3 streaming body-size limit only
-  /// (via `h3_request_max_body_size.or(request_max_body_size)` in the h3 body-forwarding
-  /// task). Pre-flight Content-Length checks still use the top-level
-  /// `request_max_body_size`. Populated from the deprecated
-  /// `experimental.h3.request_max_body_size` TOML key during the 0.13.x
-  /// deprecation window; removed in 0.14.0.
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-  pub h3_request_max_body_size: Option<usize>,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_concurrent_bidistream: u32,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -190,8 +178,6 @@ impl Default for ProxyConfig {
       http3: false,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_alt_svc_max_age: H3::ALT_SVC_MAX_AGE,
-      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-      h3_request_max_body_size: None,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_max_concurrent_connections: H3::MAX_CONCURRENT_CONNECTIONS,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]

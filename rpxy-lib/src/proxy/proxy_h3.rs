@@ -103,16 +103,11 @@ where
     // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
     // The underlying buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
     //
-    // Effective h3 body-size limit: the deprecated h3-specific override (`h3_request_max_body_size`,
-    // set via `experimental.h3.request_max_body_size`) wins when present; otherwise inherit the
-    // global `request_max_body_size`. Both are `Option<usize>` — `None` means unlimited and skips
-    // the count entirely. The pre-flight Content-Length check in `handle_request_inner` covers
-    // CL-known oversize uploads with a clean 413; this loop covers chunked / streaming overrun.
-    let effective_body_limit: Option<usize> = self
-      .globals
-      .proxy_config
-      .h3_request_max_body_size
-      .or(self.globals.proxy_config.request_max_body_size);
+    // The top-level body-size limit applies uniformly to h1, h2, and h3. `None` means
+    // unlimited and skips the count entirely. The pre-flight Content-Length check in
+    // `handle_request_inner` covers CL-known oversize uploads with a clean 413; this loop
+    // covers chunked / streaming overrun.
+    let effective_body_limit = self.globals.proxy_config.request_max_body_size;
     self.globals.runtime_handle.spawn(async move {
       let mut sender = body_sender;
       let mut size = 0usize;

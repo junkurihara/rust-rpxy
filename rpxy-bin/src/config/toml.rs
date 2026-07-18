@@ -158,8 +158,6 @@ pub struct ConfigToml {
   /// (bytes) or a string with a binary suffix (`"256k"`, `"10m"`, `"1g"`). Set to
   /// `0` or `"unlimited"` for no limit. When unset the loader substitutes the
   /// default (`DEFAULTS::REQUEST_MAX_BODY_SIZE`, 256 MiB).
-  /// `experimental.h3.request_max_body_size` continues to function as a deprecated
-  /// override for the h3 streaming body-size limit only; it will be removed in 0.14.0.
   pub request_max_body_size: Option<BodySizeValue>,
   pub apps: Option<Apps>,
   pub default_app: Option<String>,
@@ -261,19 +259,20 @@ impl ConfigTomlExt for ConfigToml {
   }
 }
 
-#[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 /// HTTP/3 protocol options for server configuration.
 ///
 /// # Fields
 /// - `alt_svc_max_age`: Optional max age for Alt-Svc header.
-/// - `request_max_body_size`: Optional maximum request body size.
+/// - `request_max_body_size`: Removed-key tombstone retained for migration errors.
 /// - `max_concurrent_connections`: Optional maximum H3 connections per endpoint/listener.
 /// - `max_concurrent_bidistream`: Optional maximum concurrent bidirectional streams.
 /// - `max_concurrent_unistream`: Optional maximum concurrent unidirectional streams.
 /// - `max_idle_timeout`: Optional maximum idle timeout in milliseconds.
 pub struct Http3Option {
   pub alt_svc_max_age: Option<u32>,
+  /// Removed in 0.14.0. Kept through the 0.14.x line so old configs fail with
+  /// migration guidance instead of being accepted as an ignored unknown field.
   pub request_max_body_size: Option<usize>,
   pub max_concurrent_connections: Option<u32>,
   pub max_concurrent_bidistream: Option<u32>,
@@ -312,7 +311,6 @@ pub struct TcpRecvProxyProtocolOption {
 
 #[derive(Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct Experimental {
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3: Option<Http3Option>,
 
   #[cfg(feature = "cache")]
@@ -402,6 +400,15 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       self.max_clients_per_ip.is_none(),
       "`max_clients_per_ip` was removed in 0.14.0; remove the key from the configuration and enforce source-IP admission at the network/L4 edge if required. `max_clients` is now the process-wide H1/H2 connection cap; see the 0.14.0 migration notes."
     );
+    ensure!(
+      self
+        .experimental
+        .as_ref()
+        .and_then(|experimental| experimental.h3.as_ref())
+        .and_then(|h3| h3.request_max_body_size)
+        .is_none(),
+      "`experimental.h3.request_max_body_size` was removed in 0.14.0; remove the key and use the top-level `request_max_body_size`, which applies to HTTP/1.1, HTTP/2, and HTTP/3."
+    );
 
     let mut proxy_config = ProxyConfig {
       // listen port and socket
@@ -459,8 +466,7 @@ impl TryInto<ProxyConfig> for &ConfigToml {
       proxy_config.request_max_body_size = parse_body_size(v, "request_max_body_size")?;
       if proxy_config.request_max_body_size.is_none() {
         warn!(
-          "request_max_body_size disables the top-level request body size limit; \
-           protocol-specific deprecated overrides, where enabled, may still apply. \
+          "request_max_body_size disables the request body size limit for HTTP/1.1, HTTP/2, and HTTP/3. \
            Ensure external controls (load balancer, WAF, firewall) are in place."
         );
       }
@@ -474,15 +480,6 @@ impl TryInto<ProxyConfig> for &ConfigToml {
           proxy_config.http3 = true;
           if let Some(x) = h3option.alt_svc_max_age {
             proxy_config.h3_alt_svc_max_age = x;
-          }
-          if let Some(x) = h3option.request_max_body_size {
-            warn!(
-              "`experimental.h3.request_max_body_size` is deprecated and will be removed in 0.14.0; \
-               use the top-level `request_max_body_size` instead. \
-               The h3 streaming body-size limit will use the deprecated value until then; \
-               pre-flight Content-Length checks still use the top-level `request_max_body_size`."
-            );
-            proxy_config.h3_request_max_body_size = Some(x);
           }
           if let Some(x) = h3option.max_concurrent_connections {
             proxy_config.h3_max_concurrent_connections = x;
@@ -1579,13 +1576,8 @@ mod tests {
     );
   }
 
-  /// The deprecated `experimental.h3.request_max_body_size` continues to populate the
-  /// deprecated h3 streaming override. (Both fields are `Option<usize>`; only the h3
-  /// streaming body-size calculation uses `h3.or(global)`, so the override is selected
-  /// there. Pre-flight Content-Length checks still use the top-level value.)
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[test]
-  fn request_max_body_size_h3_override_populates_h3_field_and_wins_streaming_calc() {
+  fn request_max_body_size_h3_positive_value_is_rejected_as_removed() {
     let toml_str = r#"
       listen_port = 8080
       request_max_body_size = 100000
@@ -1593,16 +1585,11 @@ mod tests {
       request_max_body_size = 65536
     "#;
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
-    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
-    // Top-level still wins for h1/h2.
-    assert_eq!(proxy_config.request_max_body_size, Some(100_000));
-    // H3 override populated; combined via `h3.or(global)` it is selected for the h3
-    // streaming body-size limit only (pre-flight CL checks still use the top-level value).
-    assert_eq!(proxy_config.h3_request_max_body_size, Some(65_536));
-    assert_eq!(
-      proxy_config.h3_request_max_body_size.or(proxy_config.request_max_body_size),
-      Some(65_536)
-    );
+    let result: Result<ProxyConfig, _> = (&config).try_into();
+    let error = result.err().expect("removed key must be rejected").to_string();
+    assert!(error.contains("experimental.h3.request_max_body_size"));
+    assert!(error.contains("removed in 0.14.0"));
+    assert!(error.contains("top-level `request_max_body_size`"));
   }
 
   // --- max_cache_total_size config tests ---
@@ -1808,22 +1795,22 @@ mod tests {
     assert_eq!(proxy_config.request_max_body_size, Some(10_485_760));
   }
 
-  // --- deprecated h3 key regression tests ---
+  // --- removed h3 key tombstone tests ---
 
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[test]
-  fn request_max_body_size_h3_zero_maps_to_some_zero() {
+  fn request_max_body_size_h3_zero_is_rejected_as_removed() {
     let toml_str = r#"
       listen_port = 8080
       [experimental.h3]
       request_max_body_size = 0
     "#;
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
-    let proxy_config: ProxyConfig = (&config).try_into().unwrap();
-    assert_eq!(proxy_config.h3_request_max_body_size, Some(0));
+    let result: Result<ProxyConfig, _> = (&config).try_into();
+    let error = result.err().expect("removed key must be rejected").to_string();
+    assert!(error.contains("experimental.h3.request_max_body_size"));
+    assert!(error.contains("remove the key"));
   }
 
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[test]
   fn request_max_body_size_h3_string_suffix_rejected() {
     let toml_str = r#"
@@ -1834,7 +1821,6 @@ mod tests {
     assert!(toml::from_str::<ConfigToml>(toml_str).is_err());
   }
 
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[test]
   fn request_max_body_size_h3_unlimited_string_rejected() {
     let toml_str = r#"
@@ -1845,18 +1831,40 @@ mod tests {
     assert!(toml::from_str::<ConfigToml>(toml_str).is_err());
   }
 
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[test]
-  fn request_max_body_size_top_level_suffix_with_h3_zero_keeps_both_semantics() {
+  fn http3_schema_known_fields_are_type_checked_in_every_feature_build() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.h3]
+      alt_svc_max_age = "3600"
+    "#;
+    assert!(toml::from_str::<ConfigToml>(toml_str).is_err());
+  }
+
+  #[cfg(not(any(feature = "http3-quinn", feature = "http3-s2n")))]
+  #[test]
+  fn http3_schema_is_parsed_but_inert_without_an_http3_feature() {
     let toml_str = r#"
       listen_port = 8080
       request_max_body_size = "10m"
       [experimental.h3]
-      request_max_body_size = 0
+      alt_svc_max_age = 3600
+      max_concurrent_connections = 512
     "#;
     let config: ConfigToml = toml::from_str(toml_str).unwrap();
+    let h3 = config.experimental.as_ref().and_then(|experimental| experimental.h3.as_ref());
+    assert_eq!(h3.and_then(|options| options.alt_svc_max_age), Some(3600));
     let proxy_config: ProxyConfig = (&config).try_into().unwrap();
     assert_eq!(proxy_config.request_max_body_size, Some(10_485_760));
-    assert_eq!(proxy_config.h3_request_max_body_size, Some(0));
+  }
+
+  #[test]
+  fn http3_schema_unknown_fields_remain_ignored() {
+    let toml_str = r#"
+      listen_port = 8080
+      [experimental.h3]
+      future_option = "ignored"
+    "#;
+    assert!(toml::from_str::<ConfigToml>(toml_str).is_ok());
   }
 }
