@@ -196,7 +196,6 @@ mod tests {
   /// Generic-over-Body test path. `LimitedBody<Full<Bytes>>` lets us hit the wrapper
   /// without constructing a `hyper::body::Incoming` (which has no public constructor).
   /// Production type `LimitedIncoming = LimitedBody<Incoming>` shares this exact code.
-
   /// Under-limit body passes through; counters do not raise an error.
   #[tokio::test]
   async fn limited_body_under_limit_passes_through() {
