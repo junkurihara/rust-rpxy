@@ -236,6 +236,8 @@ tls = { https_redirection = true, tls_cert_path = 'server.crt', tls_cert_key_pat
 
 If it is true, `rpxy` returns status code `301` to the cleartext request with the new location `https://<requested_host>/<requested_query_and_path>` served over TLS. Note tht `https_redirection` can be set only when both `listen_port` and `listen_port_tls` are specified in the global section.
 
+Cleartext requests are never forwarded to an application that requires client authentication. Such an application returns the normal `301` redirect when `https_redirection` is enabled; if the operator explicitly sets `https_redirection = false`, `rpxy` rejects the cleartext request with status code `421` instead.
+
 ### Third Step: More Flexible Routing Based on URL Path
 
 `rpxy` can, of course, route requests to multiple backend destinations according to path information. The routing information can be specified for each application (`server_name`) as follows.
@@ -390,7 +392,7 @@ tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_p
 
 However, currently we have a limitation on HTTP/3 support for applications that enable client authentication. If an application is configured with client authentication, HTTP/3 doesn't work for that application.
 
-Client authentication is enforced per server name during the TLS handshake, so a request reaching a client-authentication application over a TLS session established for a different server name is always rejected. The `ignore_sni_consistency` relaxation never applies to such applications.
+Client authentication is enforced per server name during the TLS handshake, so a request reaching a client-authentication application over a TLS session established for a different server name is always rejected. The `ignore_sni_consistency` relaxation never applies to such applications. A cleartext request resolved to a client-authentication application is never forwarded: it receives the normal HTTPS redirect when enabled, or status code `421` when `https_redirection = false`.
 
 ### Hybrid Caching Feature with Temporary File and On-Memory Cache
 

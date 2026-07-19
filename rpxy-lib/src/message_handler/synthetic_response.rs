@@ -36,6 +36,32 @@ pub(crate) fn synthetic_error_response_with_close(
   Ok(res)
 }
 
+/// Generate synthetic response message of a redirection to https host with 301
+pub(super) fn secure_redirection_response<B>(
+  server_name: &ServerName,
+  tls_port: Option<u16>,
+  req: &Request<B>,
+) -> HttpResult<Response<ResponseBody>> {
+  let server_name: String = server_name.to_string();
+  let pq = match req.uri().path_and_query() {
+    Some(x) => x.as_str(),
+    _ => "",
+  };
+  let new_uri = Uri::builder().scheme("https").path_and_query(pq);
+  let dest_uri = match tls_port {
+    Some(443) | None => new_uri.authority(server_name),
+    Some(p) => new_uri.authority(format!("{server_name}:{p}")),
+  }
+  .build()
+  .map_err(|e| HttpError::FailedToRedirect(e.to_string()))?;
+  let response = Response::builder()
+    .status(StatusCode::MOVED_PERMANENTLY)
+    .header("Location", dest_uri.to_string())
+    .body(ResponseBody::Boxed(empty()))
+    .map_err(|e| HttpError::FailedToRedirect(e.to_string()))?;
+  Ok(response)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -78,30 +104,4 @@ mod tests {
     let res = synthetic_error_response_with_close(StatusCode::PAYLOAD_TOO_LARGE, Version::HTTP_3).unwrap();
     assert!(res.headers().get(header::CONNECTION).is_none());
   }
-}
-
-/// Generate synthetic response message of a redirection to https host with 301
-pub(super) fn secure_redirection_response<B>(
-  server_name: &ServerName,
-  tls_port: Option<u16>,
-  req: &Request<B>,
-) -> HttpResult<Response<ResponseBody>> {
-  let server_name: String = server_name.to_string();
-  let pq = match req.uri().path_and_query() {
-    Some(x) => x.as_str(),
-    _ => "",
-  };
-  let new_uri = Uri::builder().scheme("https").path_and_query(pq);
-  let dest_uri = match tls_port {
-    Some(443) | None => new_uri.authority(server_name),
-    Some(p) => new_uri.authority(format!("{server_name}:{p}")),
-  }
-  .build()
-  .map_err(|e| HttpError::FailedToRedirect(e.to_string()))?;
-  let response = Response::builder()
-    .status(StatusCode::MOVED_PERMANENTLY)
-    .header("Location", dest_uri.to_string())
-    .body(ResponseBody::Boxed(empty()))
-    .map_err(|e| HttpError::FailedToRedirect(e.to_string()))?;
-  Ok(response)
 }
