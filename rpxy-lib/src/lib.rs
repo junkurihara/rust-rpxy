@@ -1,6 +1,5 @@
 mod backend;
 mod constants;
-mod count;
 mod error;
 mod forwarder;
 mod globals;
@@ -17,7 +16,7 @@ use crate::{
   globals::Globals,
   log::*,
   message_handler::HttpMessageHandlerBuilder,
-  proxy::{ListenerKind, ListenerSpecBuilder, ProxyBuilder},
+  proxy::{ConnectionAdmission, ListenerKind, ListenerSpecBuilder, ProxyBuilder},
 };
 use futures::stream::{FuturesUnordered, StreamExt};
 use hot_reload::ReloaderReceiver;
@@ -181,8 +180,6 @@ pub async fn entrypoint(
   // 2. build global shared context
   let globals = Arc::new(Globals {
     proxy_config: proxy_config.clone(),
-    request_count: Default::default(),
-    per_ip_connection_count: count::PerIpConnectionCount::new(proxy_config.max_clients_per_ip),
     runtime_handle: runtime_handle.clone(),
     cert_reloader_rx: cert_rx.clone(),
     unsafe_debug_headers: *unsafe_debug_headers,
@@ -209,6 +206,7 @@ pub async fn entrypoint(
   // 5. spawn each proxy for a given socket with copied Arc-ed message_handler.
   // build hyper connection builder shared with proxy instances
   let connection_builder = proxy::connection_builder(&globals);
+  let h1h2_connection_admission = ConnectionAdmission::new(globals.proxy_config.max_clients);
 
   // spawn each proxy for a given socket with copied Arc-ed backend, message_handler and connection builder.
   let addresses = globals.proxy_config.listen_sockets.clone();
@@ -245,6 +243,7 @@ pub async fn entrypoint(
     .map(|listener_spec| {
       ProxyBuilder::default()
         .globals(globals.clone())
+        .h1h2_connection_admission(h1h2_connection_admission.clone())
         .listener_spec(listener_spec)
         .connection_builder(connection_builder.clone())
         .message_handler(message_handler.clone())

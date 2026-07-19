@@ -1,7 +1,4 @@
-use crate::{
-  constants::*,
-  count::{PerIpConnectionCount, RequestCount},
-};
+use crate::constants::*;
 use hot_reload::ReloaderReceiver;
 use ipnet::IpNet;
 use rpxy_certs::ServerCryptoBase;
@@ -21,16 +18,17 @@ pub struct TcpRecvProxyProtocolConfig {
   pub timeout: Duration,
 }
 
-/// Global object containing proxy configurations and shared object like counters.
-/// The only lock-bearing shared state is the per-IP connection counter, which is touched
-/// solely on connection open/close (a cold path), not on the per-request path.
+/// Global object containing proxy configuration and context shared by connection
+/// and request tasks.
+///
+/// INVARIANT: Do not store feature-owned shared state in `Globals` when access is
+/// serialized by `Mutex` or `RwLock`, directly or behind a wrapper. Prefer immutable
+/// data, atomics, or channel-based coordination whose cost and ownership have been
+/// reviewed explicitly. Weakening this constraint or this comment requires explicit
+/// maintainer approval.
 pub struct Globals {
   /// Configuration parameters for proxy transport and request handlers
   pub proxy_config: ProxyConfig,
-  /// Shared context - Counter for serving requests
-  pub request_count: RequestCount,
-  /// Shared context - Per-source-IP concurrent connection counter
-  pub per_ip_connection_count: PerIpConnectionCount,
   /// Shared context - Async task runtime handler
   pub runtime_handle: tokio::runtime::Handle,
   /// Shared context - Certificate reloader service receiver
@@ -71,8 +69,7 @@ pub struct ProxyConfig {
   /// Idle timeout as an HTTP client, used as the keep alive interval for upstream connections
   pub upstream_idle_timeout: Duration,
 
-  pub max_clients: usize,          // when serving requests
-  pub max_clients_per_ip: usize,   // per source IP; 0 disables the per-IP limit
+  pub max_clients: usize,          // process-wide H1/H2 TCP connection cap
   pub max_concurrent_streams: u32, // when instantiate server
   pub keepalive: bool,             // when instantiate server
 
@@ -99,10 +96,8 @@ pub struct ProxyConfig {
   /// Maximum allowed inbound request body size in bytes.
   /// `None` means unlimited; `Some(n)` enforces an `n`-byte upper bound.
   /// The top-level config loader maps TOML `0` / `"unlimited"` to `None`;
-  /// the deprecated `experimental.h3.request_max_body_size = 0` still produces
-  /// `Some(0)` for backward compatibility (programmatic `Some(0)` is otherwise
-  /// not reachable from the top-level config key). Applies to h1/h2 and serves
-  /// as the fallback for h3 when `h3_request_max_body_size` is `None`.
+  /// programmatic callers may still use `Some(0)` to reject any non-empty body.
+  /// Applies uniformly to HTTP/1.1, HTTP/2, and HTTP/3.
   /// Default after config load is `Some(DEFAULTS::REQUEST_MAX_BODY_SIZE)`.
   pub request_max_body_size: Option<usize>,
 
@@ -128,20 +123,11 @@ pub struct ProxyConfig {
   pub http3: bool,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_alt_svc_max_age: u32,
-  /// Deprecated override for the h3 streaming body-size limit only.
-  /// `None` (the default after config load) inherits the top-level
-  /// `request_max_body_size`; `Some(n)` overrides the h3 streaming body-size limit only
-  /// (via `h3_request_max_body_size.or(request_max_body_size)` in the h3 body-forwarding
-  /// task). Pre-flight Content-Length checks still use the top-level
-  /// `request_max_body_size`. Populated from the deprecated
-  /// `experimental.h3.request_max_body_size` TOML key during the 0.13.x
-  /// deprecation window; removed in 0.14.0.
-  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-  pub h3_request_max_body_size: Option<usize>,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_concurrent_bidistream: u32,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_concurrent_unistream: u32,
+  /// Maximum H3 connections admitted independently by each endpoint/listener.
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   pub h3_max_concurrent_connections: u32,
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
@@ -162,7 +148,6 @@ impl Default for ProxyConfig {
       upstream_idle_timeout: Duration::from_secs(UPSTREAM_IDLE_TIMEOUT_SEC),
 
       max_clients: MAX_CLIENTS,
-      max_clients_per_ip: MAX_CLIENTS_PER_IP,
       max_concurrent_streams: MAX_CONCURRENT_STREAMS,
       keepalive: true,
 
@@ -193,8 +178,6 @@ impl Default for ProxyConfig {
       http3: false,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_alt_svc_max_age: H3::ALT_SVC_MAX_AGE,
-      #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
-      h3_request_max_body_size: None,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
       h3_max_concurrent_connections: H3::MAX_CONCURRENT_CONNECTIONS,
       #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]

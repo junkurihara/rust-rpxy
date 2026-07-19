@@ -2,9 +2,9 @@ pub const RESPONSE_HEADER_SERVER: &str = "rpxy";
 pub const TCP_LISTEN_BACKLOG: u32 = 1024;
 pub const PROXY_IDLE_TIMEOUT_SEC: u64 = 20;
 pub const UPSTREAM_IDLE_TIMEOUT_SEC: u64 = 20;
-pub const TLS_HANDSHAKE_TIMEOUT_SEC: u64 = 15; // default as with firefox browser
+/// Maximum time an accepted TCP connection may retain admission while completing TLS.
+pub const TLS_HANDSHAKE_TIMEOUT_SEC: u64 = 5;
 pub const MAX_CLIENTS: usize = 512;
-pub const MAX_CLIENTS_PER_IP: usize = 0; // 0 disables the per-IP connection limit
 pub const MAX_CONCURRENT_STREAMS: u32 = 64;
 
 /// Protocol-agnostic defaults applied across h1/h2/h3 when unconfigured.
@@ -22,7 +22,7 @@ pub mod DEFAULTS {
 #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
 pub mod H3 {
   pub const ALT_SVC_MAX_AGE: u32 = 3600;
-  pub const MAX_CONCURRENT_CONNECTIONS: u32 = 4096;
+  pub const MAX_CONCURRENT_CONNECTIONS: u32 = 512;
   pub const MAX_CONCURRENT_BIDISTREAM: u32 = 64;
   pub const MAX_CONCURRENT_UNISTREAM: u32 = 64;
   pub const MAX_IDLE_TIMEOUT: u64 = 10; // secs

@@ -43,19 +43,12 @@ tcp_listen_backlog = 1024
 # Optional for h2
 max_concurrent_streams = 100
 
-# Optional. Counted in total for http1.1, 2, 3
+# Optional. Shared cap for accepted HTTP/1.1 and HTTP/2 TCP connections, including
+# PROXY protocol parsing and TLS handshakes. 0 rejects all HTTP/1.1 and HTTP/2 connections.
+# HTTP/3 uses the independent per-endpoint connection cap under [experimental.h3].
 max_clients = 512
 
-# Optional. Max concurrent connections per source IP, in addition to max_clients. 0 disables it (default).
-# This caps how many connections a single client IP may hold so one source cannot exhaust max_clients.
-# The source IP is the immediate TCP/QUIC peer, or the real client address recovered from an inbound
-# PROXY protocol header (see [experimental.tcp_recv_proxy_protocol]). It does NOT use X-Forwarded-For /
-# Forwarded, so it is only meaningful when rpxy is the edge or inbound PROXY protocol is enabled; behind
-# a bare L7 load balancer every connection collapses to the LB's IP. Hence it is disabled by default.
-# For HTTP/3, this caps QUIC connections per IP; a single IP's concurrent H3 request streams are then
-# bounded by max_clients_per_ip * [experimental.h3] max_concurrent_bidistream, so size them together
-# relative to max_clients.
-# max_clients_per_ip = 0
+# Enforce source-IP admission at the network/L4 edge when required; rpxy does not provide a per-IP limit.
 
 # Optional. Trusted proxies whose incoming X-Forwarded-* / Forwarded headers are
 # recursively trusted. If omitted or empty, forwarding headers from preceding peers
@@ -75,14 +68,12 @@ max_clients = 512
 # query strings.
 # redact_query_in_access_log = true
 
-# Optional. Maximum inbound request body size (h1/h2/h3 by default; the deprecated
-# h3 override can still override the h3 streaming limit during the deprecation
-# window). Default: 256 MiB.
+# Optional. Maximum inbound request body size for h1/h2/h3. Default: 256 MiB.
 # Accepts an integer (bytes), or a string with a suffix: "256k", "10m", "1g".
 # Requests whose Content-Length exceeds this limit are rejected with 413 before
 # any upstream contact; chunked/streamed bodies are detected mid-flight.
-# Set to 0 or "unlimited" to disable the top-level limit (ensure external controls
-# are in place; a deprecated h3 streaming override, where configured, may still apply).
+# Set to 0 or "unlimited" to disable the limit for all three protocols (ensure
+# external controls are in place).
 # request_max_body_size = "256m"
 
 # Optional. Required when any reverse_proxy entry uses load_balance = "sticky".
@@ -114,6 +105,7 @@ server_name = 'localhost' # Domain name
 # Optional: TLS setting. if https_port is specified and tls is true above, this must be given.
 # https_redirection can be specified only when both http_port and https_port are specified. If not explicitly specified, it is true by default.
 # if only https_port is given, https_redirection must not be specified.
+# Plaintext requests are never forwarded to an app with client_ca_cert_path: they receive a 301 redirect when enabled, or 421 when https_redirection is false.
 tls = { https_redirection = true, tls_cert_path = '/certs/server.crt', tls_cert_key_path = '/certs/server.key' } # for docker volume mounted certs
 #tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_path = './server.key' }          # for local
 #tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_path = './server.key', client_ca_cert_path = './client_cert.ca.crt' }          # for local with client_cert
@@ -205,20 +197,15 @@ ignore_sni_consistency = false
 # A non-zero value is recommended in production unless long-lived connections (e.g. WebSocket) are required.
 connection_handling_timeout = 0 # sec
 
-# If this specified, h3 is enabled
+# If this is specified, h3 is enabled. The H3 connection limit is independent
+# from max_clients and applies separately to each H3 endpoint/listener.
 [experimental.h3]
 alt_svc_max_age = 3600             # sec
-# DEPRECATED in 0.13.2; will be removed in 0.14.0. Use the top-level `request_max_body_size`
-# instead (which applies to h1/h2 and to h3 by default). When this key is set it overrides the
-# h3 streaming body-size limit only; the top-level limit still handles pre-flight
-# Content-Length checks, and rpxy emits a deprecation warning on config load/reload.
-# This deprecated key remains integer-only (bytes); 0 keeps the legacy
-# reject-non-empty-body behavior. Suffixes ("256k") and the "unlimited"
-# string are only supported by the top-level key.
-# request_max_body_size = 65536    # bytes
-max_concurrent_connections = 10000
-max_concurrent_bidistream = 100
-max_concurrent_unistream = 100
+# At 0, Quinn silently drops new attempts while s2n closes them explicitly;
+# both enforce reject-all.
+max_concurrent_connections = 512   # H3 connections per endpoint/listener. Default: 512.
+max_concurrent_bidistream = 100    # bidirectional streams per H3 connection
+max_concurrent_unistream = 100     # unidirectional streams per H3 connection
 max_idle_timeout = 10              # secs. 0 represents an infinite timeout.
 # WARNING: If a peer or its network path malfunctions or acts maliciously, an infinite idle timeout can result in permanently hung futures!
 
@@ -229,6 +216,7 @@ max_cache_entry = 1000               # optional. default is 1k
 max_cache_each_size = 65535          # optional. default is 64k
 max_cache_each_size_on_memory = 65535 # optional. default is 64k, same as max_cache_each_size (cacheable objects are served from memory by default; the file tier engages when max_cache_each_size is raised beyond this). if 0, it is always file cache. Worst-case memory use is max_cache_entry x this value.
 max_cache_total_size = "1g"          # optional. default is 1 GiB. ceiling on the total bytes retained by the cache across both tiers; accepts an integer (bytes) or a string with a binary suffix ("256m", "1g"). set "unlimited" to disable (0 also works, but note that 0 means "always file cache" for max_cache_each_size_on_memory above, so the string form is recommended here).
+# Note: cached responses are keyed on the request URI forwarded upstream. A backend that varies content by the original (client-facing) host, scheme, or URI - e.g. multiple virtual hosts flattened onto one upstream via set_upstream_host or default_app - must emit an appropriate `Vary` header on cacheable responses or mark them non-cacheable.
 
 # ACME settings. Unless specified, ACME is disabled.
 [experimental.acme]

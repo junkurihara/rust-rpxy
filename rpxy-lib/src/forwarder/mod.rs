@@ -9,5 +9,3 @@ pub(crate) use client::ForwardRequest;
 
 #[cfg(feature = "cache")]
 pub(crate) use cache::CacheError;
-#[cfg(feature = "cache")]
-pub(crate) use cache::ClientFacingEffectiveUri;

@@ -236,6 +236,8 @@ tls = { https_redirection = true, tls_cert_path = 'server.crt', tls_cert_key_pat
 
 If it is true, `rpxy` returns status code `301` to the cleartext request with the new location `https://<requested_host>/<requested_query_and_path>` served over TLS. Note tht `https_redirection` can be set only when both `listen_port` and `listen_port_tls` are specified in the global section.
 
+Cleartext requests are never forwarded to an application that requires client authentication. Such an application returns the normal `301` redirect when `https_redirection` is enabled; if the operator explicitly sets `https_redirection = false`, `rpxy` rejects the cleartext request with status code `421` instead.
+
 ### Third Step: More Flexible Routing Based on URL Path
 
 `rpxy` can, of course, route requests to multiple backend destinations according to path information. The routing information can be specified for each application (`server_name`) as follows.
@@ -348,25 +350,35 @@ The [`./bench`](./bench/) directory contains a very simple example of `rpxy` con
 ```toml
 [experimental.h3]
 alt_svc_max_age = 3600
-max_concurrent_connections = 10000
+max_concurrent_connections = 512
 max_concurrent_bidistream = 100
 max_concurrent_unistream = 100
 max_idle_timeout = 10
 ```
 
-The request body size limit is no longer HTTP/3-specific. Configure it via the **top-level** `request_max_body_size` key, which applies to HTTP/1.1, HTTP/2, and to HTTP/3 by default (the deprecated h3 streaming override below can still replace the h3 streaming limit during the deprecation window):
+`max_concurrent_connections` limits established and handshaking HTTP/3
+connections independently for each configured HTTP/3 endpoint/listener. It
+defaults to 512; `0` rejects every HTTP/3 connection attempt. This limit is
+separate from the process-wide `max_clients` cap for HTTP/1.1 and HTTP/2.
+At `0`, Quinn silently drops new attempts at its pending-attempt buffer, while
+s2n explicitly closes them; both enforce the same reject-all resource policy.
+`max_concurrent_bidistream` and `max_concurrent_unistream` remain per-connection
+stream limits, so they do not replace the connection limit. Multiple HTTP/3
+listeners each receive their own `max_concurrent_connections` capacity.
+
+Configure the request body size limit via the **top-level** `request_max_body_size` key. It applies uniformly to HTTP/1.1, HTTP/2, and HTTP/3:
 
 ```toml
-# Top-level (applies to h1/h2 and to h3 by default).
+# Top-level (applies to h1/h2/h3).
 # Default: 256 MiB. Accepts an integer (bytes) or a string with a binary suffix.
 request_max_body_size = "256m"   # or 268435456, "1g"; 0 / "unlimited" disables the top-level limit
 ```
 
-The value is either an integer (bytes) or a string with an optional binary suffix: `"256k"` (KiB), `"10m"` (MiB), `"1g"` (GiB). Set it to `0` or `"unlimited"` to disable the top-level/default body-size limit (ensure external controls such as a load balancer, WAF, or firewall are in place). Deprecated protocol-specific overrides, where configured, may still apply. A config-load warning is emitted when the top-level/default limit is disabled.
+The value is either an integer (bytes) or a string with an optional binary suffix: `"256k"` (KiB), `"10m"` (MiB), `"1g"` (GiB). Set it to `0` or `"unlimited"` to disable the body-size limit for all three protocols (ensure external controls such as a load balancer, WAF, or firewall are in place). A config-load warning is emitted when the limit is disabled.
 
 The body is processed as a stream; this setting is not a preallocated memory buffer size. Requests whose `Content-Length` exceeds the limit are rejected up front with `413 Payload Too Large` before any upstream contact; chunked / streamed bodies are detected mid-flight and the stream/connection is reset. Set this explicitly to a smaller value in production when large uploads are not required.
 
-The previous HTTP/3-only `experimental.h3.request_max_body_size` key continues to work as a deprecated override and emits a deprecation warning on config load/reload. It remains integer-only (bytes); the suffix and `"unlimited"` formats are supported by the top-level key only, and `0` on the deprecated key keeps its legacy "reject any non-empty body" behavior. It overrides the HTTP/3 streaming body-size limit only — pre-flight `Content-Length` checks still use the top-level `request_max_body_size`. It will be removed in 0.14.0; migrate to the top-level key.
+The previous HTTP/3-only `experimental.h3.request_max_body_size` key was removed in 0.14.0. Configurations that still contain it fail to load with migration guidance; remove it and use the top-level key instead.
 
 ### Client Authentication via Client Certificates
 
@@ -380,7 +392,7 @@ tls = { https_redirection = true, tls_cert_path = './server.crt', tls_cert_key_p
 
 However, currently we have a limitation on HTTP/3 support for applications that enable client authentication. If an application is configured with client authentication, HTTP/3 doesn't work for that application.
 
-Client authentication is enforced per server name during the TLS handshake, so a request reaching a client-authentication application over a TLS session established for a different server name is always rejected. The `ignore_sni_consistency` relaxation never applies to such applications.
+Client authentication is enforced per server name during the TLS handshake, so a request reaching a client-authentication application over a TLS session established for a different server name is always rejected. The `ignore_sni_consistency` relaxation never applies to such applications. A cleartext request resolved to a client-authentication application is never forwarded: it receives the normal HTTPS redirect when enabled, or status code `421` when `https_redirection = false`.
 
 ### Hybrid Caching Feature with Temporary File and On-Memory Cache
 
@@ -400,7 +412,7 @@ A *storable* (in the context of an HTTP message) response is stored if its size 
 
 The total bytes retained by the cache are additionally capped by `max_cache_total_size` (default 1 GiB): when storing a new response would exceed it, the least recently used entries are evicted until the new response fits. The ceiling bounds the data referenced by live cache entries; transient extra disk usage can briefly appear while responses are being stored or evicted files are being deleted.
 
-Cache entries are keyed on the scheme, host, and path/query the client requested, so different virtual hosts never share cached responses even when they proxy to the same backend.
+Cache entries are keyed on the request URI forwarded upstream, and response variation is governed by the standard HTTP caching contract: if a backend serves different content depending on forwarded attributes such as the original host, scheme, or URI — in particular when multiple virtual hosts are flattened onto one upstream via `set_upstream_host` or the `default_app` fallback — it must declare an appropriate `Vary` header on such responses (or make them non-cacheable).
 
 ### Automated Certificate Issuance and Renewal via TLS-ALPN-01 ACME Protocol
 

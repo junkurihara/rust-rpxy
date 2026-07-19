@@ -140,7 +140,7 @@ impl RpxyCache {
         return;
       };
 
-      let cache_key = derive_cache_key_from_effective_uri(&uri);
+      let cache_key = derive_cache_key_from_uri(&uri);
       let cache_object = CacheObject::new(policy_clone, target, hash, size);
       // The file (if any) is now fully written and renamed into place, so it is safe to publish
       // the metadata; this also accounts for the file count and evicts any displaced file.
@@ -159,7 +159,7 @@ impl RpxyCache {
       self.count().await,
       self.inner.total_bytes()
     );
-    let cache_key = derive_cache_key_from_effective_uri(req.uri());
+    let cache_key = derive_cache_key_from_uri(req.uri());
 
     // First check cache chance
     let cached_object = self.inner.get(&cache_key).ok()??;
@@ -1101,11 +1101,12 @@ fn derive_filename_from_uri(uri: &hyper::Uri) -> String {
   general_purpose::URL_SAFE_NO_PAD.encode(digest)
 }
 
-/// Derive the LRU cache key from the client-facing effective request URI. The caller MUST pass
-/// the effective URI (scheme + authority + path/query, as the client addressed it), NOT the
-/// upstream-rewritten request URI - otherwise distinct client-facing vhosts that rewrite to the
-/// same upstream target would collide on one key (cross-vhost cache poisoning).
-fn derive_cache_key_from_effective_uri(uri: &hyper::Uri) -> String {
+/// Derive the LRU cache key from the URI passed into the cache layer - the upstream-facing
+/// request URI seen by the forwarder after the handler's rewrite. Host matching and `Vary`
+/// matching are delegated to `http-cache-semantics`. On Host-flattened paths (such as
+/// `set_upstream_host` or the `default_app` fallback) the backend must emit an appropriate
+/// `Vary` header, or avoid cacheable responses, if forwarded attributes change response content.
+fn derive_cache_key_from_uri(uri: &hyper::Uri) -> String {
   uri.to_string()
 }
 
@@ -1380,7 +1381,7 @@ mod tests {
       Bytes::from_static(&[0u8; 32]),
       object.len(),
     );
-    let cache_key = derive_cache_key_from_effective_uri(&uri);
+    let cache_key = derive_cache_key_from_uri(&uri);
     cache.inner.push(&cache_key, &cache_object).unwrap();
 
     let req = Request::builder().uri(uri.clone()).body(()).unwrap();
@@ -1572,7 +1573,7 @@ mod tests {
     let manager = LruCacheManager::new(10, None);
     let file_store = test_file_store();
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_effective_uri(&uri);
+    let key = derive_cache_key_from_uri(&uri);
 
     let path_a = dir.join("file-a");
     fs::write(&path_a, b"AAAA").await.unwrap();
@@ -1612,7 +1613,7 @@ mod tests {
     let manager = LruCacheManager::new(10, None);
     let file_store = test_file_store();
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_effective_uri(&uri);
+    let key = derive_cache_key_from_uri(&uri);
 
     let path_a = dir.join("file-a");
     fs::write(&path_a, b"AAAA").await.unwrap();
@@ -1655,7 +1656,7 @@ mod tests {
       Bytes::from_static(&[1u8; 32]),
       4,
     );
-    publish_cache_object(&manager, &file_store, &derive_cache_key_from_effective_uri(&uri_x), obj_a).await;
+    publish_cache_object(&manager, &file_store, &derive_cache_key_from_uri(&uri_x), obj_a).await;
     assert_eq!(file_store.count().await, 1);
 
     let uri_y: Uri = "http://example.com/y".parse().unwrap();
@@ -1665,7 +1666,7 @@ mod tests {
       Bytes::from_static(&[2u8; 32]),
       5,
     );
-    publish_cache_object(&manager, &file_store, &derive_cache_key_from_effective_uri(&uri_y), obj_b).await;
+    publish_cache_object(&manager, &file_store, &derive_cache_key_from_uri(&uri_y), obj_b).await;
 
     assert!(
       fs::metadata(&path_a).await.is_err(),
@@ -1690,7 +1691,7 @@ mod tests {
   /// Parse a URI and derive its cache key (shorthand for the ceiling tests).
   fn key_of(uri: &str) -> (Uri, String) {
     let uri: Uri = uri.parse().unwrap();
-    let key = derive_cache_key_from_effective_uri(&uri);
+    let key = derive_cache_key_from_uri(&uri);
     (uri, key)
   }
 
@@ -2357,7 +2358,7 @@ mod tests {
   async fn evict_if_generation_spares_newer_entry() {
     let manager = LruCacheManager::new(10, None);
     let uri: Uri = "http://example.com/x".parse().unwrap();
-    let key = derive_cache_key_from_effective_uri(&uri);
+    let key = derive_cache_key_from_uri(&uri);
 
     let obj_a = CacheObject::new(
       fresh_policy(&uri),

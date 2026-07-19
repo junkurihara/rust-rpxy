@@ -32,12 +32,6 @@ where
     <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::RecvStream: Send,
     <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
   {
-    // Per-IP cap at the established-connection level; held for the whole QUIC connection lifetime.
-    let Some(_per_ip_guard) = self.globals.per_ip_connection_count.try_acquire(client_addr.ip()) else {
-      debug!("Per-IP connection limit reached for {client_addr}, dropping HTTP/3 connection");
-      return Ok(());
-    };
-
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
     debug!("QUIC/HTTP3 connection established from {:?} {}", client_addr, tls_server_name);
 
@@ -62,15 +56,7 @@ where
               continue;
             }
           };
-          // We consider the connection count separately from the stream count.
-          // Max clients for h1/h2 = max 'stream' for h3.
-          let request_count = self.globals.request_count.clone();
-          if request_count.increment() >= self.globals.proxy_config.max_clients {
-            request_count.decrement();
-            h3_conn.shutdown(0).await?;
-            break;
-          }
-          trace!("Request incoming: current # {}", request_count.current());
+          trace!("HTTP/3 request stream incoming");
 
           let self_inner = self.clone();
           let tls_server_name_inner = tls_server_name.clone();
@@ -83,8 +69,7 @@ where
             } else if let Err(e) = fut.await {
               warn!("HTTP/3 error on serve stream: {}", e);
             }
-            request_count.decrement();
-            trace!("Request processed: current # {}", request_count.current());
+            trace!("HTTP/3 request stream processed");
           });
         }
       }
@@ -118,16 +103,11 @@ where
     // Buffering and sending body through channel for protocol conversion like h3 -> h2/http1.1
     // The underlying buffering, i.e., buffer given by the API recv_data.await?, is handled by quinn.
     //
-    // Effective h3 body-size limit: the deprecated h3-specific override (`h3_request_max_body_size`,
-    // set via `experimental.h3.request_max_body_size`) wins when present; otherwise inherit the
-    // global `request_max_body_size`. Both are `Option<usize>` — `None` means unlimited and skips
-    // the count entirely. The pre-flight Content-Length check in `handle_request_inner` covers
-    // CL-known oversize uploads with a clean 413; this loop covers chunked / streaming overrun.
-    let effective_body_limit: Option<usize> = self
-      .globals
-      .proxy_config
-      .h3_request_max_body_size
-      .or(self.globals.proxy_config.request_max_body_size);
+    // The top-level body-size limit applies uniformly to h1, h2, and h3. `None` means
+    // unlimited and skips the count entirely. The pre-flight Content-Length check in
+    // `handle_request_inner` covers CL-known oversize uploads with a clean 413; this loop
+    // covers chunked / streaming overrun.
+    let effective_body_limit = self.globals.proxy_config.request_max_body_size;
     self.globals.runtime_handle.spawn(async move {
       let mut sender = body_sender;
       let mut size = 0usize;

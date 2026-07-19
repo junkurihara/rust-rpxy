@@ -59,7 +59,7 @@ serde = { version = "1.0.228", default-features = false, features = [
   "derive",
   "std",
 ] }
-tokio = { version = "1.52.3", default-features = false, features = [
+tokio = { version = "1.53.0", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -68,11 +68,11 @@ tokio = { version = "1.52.3", default-features = false, features = [
 ] }
 tokio-util = { version = "0.7.18", default-features = false }
 async-trait = { version = "0.1.89" }
-futures-util = { version = "0.3.32", default-features = false }
+futures-util = { version = "0.3.33", default-features = false }
 
 # config
-clap = { version = "4.6.1", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "1.1.2", default-features = false, features = [
+clap = { version = "4.6.2", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "1.1.3", default-features = false, features = [
   "parse",
   "serde",
 ] }

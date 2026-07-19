@@ -4,8 +4,44 @@ use anyhow::anyhow;
 use hot_reload::ReloaderReceiver;
 use hyper_util::client::legacy::connect::Connect;
 use rpxy_certs::{ServerCrypto, ServerCryptoBase};
-use s2n_quic::provider;
+use s2n_quic::provider::{self, endpoint_limits};
 use std::sync::Arc;
+
+struct H3ConnectionLimiter {
+  backend_default: endpoint_limits::Default,
+  limit: usize,
+}
+
+impl H3ConnectionLimiter {
+  fn new(limit: usize) -> Self {
+    Self {
+      backend_default: endpoint_limits::Default::default(),
+      limit,
+    }
+  }
+}
+
+fn h3_connection_outcome(
+  backend_default: endpoint_limits::Outcome,
+  connection_count: usize,
+  limit: usize,
+) -> endpoint_limits::Outcome {
+  if backend_default != endpoint_limits::Outcome::allow() {
+    return backend_default;
+  }
+  if connection_count >= limit {
+    endpoint_limits::Outcome::close()
+  } else {
+    endpoint_limits::Outcome::allow()
+  }
+}
+
+impl endpoint_limits::Limiter for H3ConnectionLimiter {
+  fn on_connection_attempt(&mut self, info: &endpoint_limits::ConnectionAttempt) -> endpoint_limits::Outcome {
+    let backend_default = endpoint_limits::Limiter::on_connection_attempt(&mut self.backend_default, info);
+    h3_connection_outcome(backend_default, info.connection_count, self.limit)
+  }
+}
 
 impl<T> Proxy<T>
 where
@@ -88,8 +124,7 @@ where
       .with_max_open_local_bidirectional_streams(self.globals.proxy_config.h3_max_concurrent_bidistream as u64)?
       .with_max_open_remote_bidirectional_streams(self.globals.proxy_config.h3_max_concurrent_bidistream as u64)?
       .with_max_open_local_unidirectional_streams(self.globals.proxy_config.h3_max_concurrent_unistream as u64)?
-      .with_max_open_remote_unidirectional_streams(self.globals.proxy_config.h3_max_concurrent_unistream as u64)?
-      .with_max_active_connection_ids(self.globals.proxy_config.h3_max_concurrent_connections as u64)?;
+      .with_max_open_remote_unidirectional_streams(self.globals.proxy_config.h3_max_concurrent_unistream as u64)?;
     limits = if let Some(v) = self.globals.proxy_config.h3_max_idle_timeout {
       limits.with_max_idle_timeout(v)?
     } else {
@@ -106,6 +141,9 @@ where
       .with_tls(server_crypto.to_owned())?
       .with_io(io)?
       .with_limits(limits)?
+      .with_endpoint_limits(H3ConnectionLimiter::new(
+        self.globals.proxy_config.h3_max_concurrent_connections as usize,
+      ))?
       .start()?;
 
     // quic event loop. this immediately cancels when crypto is updated by tokio::select!
@@ -133,5 +171,57 @@ where
     }
 
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn connection_limit_allows_below_and_closes_at_capacity() {
+    assert_eq!(
+      h3_connection_outcome(endpoint_limits::Outcome::allow(), 3, 4),
+      endpoint_limits::Outcome::allow()
+    );
+    assert_eq!(
+      h3_connection_outcome(endpoint_limits::Outcome::allow(), 4, 4),
+      endpoint_limits::Outcome::close()
+    );
+    assert_eq!(
+      h3_connection_outcome(endpoint_limits::Outcome::allow(), 5, 4),
+      endpoint_limits::Outcome::close()
+    );
+  }
+
+  #[test]
+  fn connection_limit_zero_rejects_the_first_attempt() {
+    assert_eq!(
+      h3_connection_outcome(endpoint_limits::Outcome::allow(), 0, 0),
+      endpoint_limits::Outcome::close()
+    );
+  }
+
+  #[test]
+  fn connection_limit_preserves_backend_default_rejections() {
+    for outcome in [
+      endpoint_limits::Outcome::drop(),
+      endpoint_limits::Outcome::retry(),
+      endpoint_limits::Outcome::close(),
+    ] {
+      assert_eq!(h3_connection_outcome(outcome.clone(), 0, usize::MAX), outcome);
+    }
+  }
+
+  #[test]
+  fn connection_limit_handles_usize_max_without_arithmetic() {
+    assert_eq!(
+      h3_connection_outcome(endpoint_limits::Outcome::allow(), usize::MAX - 1, usize::MAX),
+      endpoint_limits::Outcome::allow()
+    );
+    assert_eq!(
+      h3_connection_outcome(endpoint_limits::Outcome::allow(), usize::MAX, usize::MAX),
+      endpoint_limits::Outcome::close()
+    );
   }
 }
