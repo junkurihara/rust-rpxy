@@ -43,11 +43,11 @@ pub(super) fn secure_redirection_response<B>(
   req: &Request<B>,
 ) -> HttpResult<Response<ResponseBody>> {
   let server_name: String = server_name.to_string();
-  let pq = match req.uri().path_and_query() {
-    Some(x) => x.as_str(),
-    _ => "",
+  let path_and_query = match req.uri().path_and_query() {
+    Some(value) if value.as_str() != "*" => value.as_str(),
+    Some(_) | None => "/",
   };
-  let new_uri = Uri::builder().scheme("https").path_and_query(pq);
+  let new_uri = Uri::builder().scheme("https").path_and_query(path_and_query);
   let dest_uri = match tls_port {
     Some(443) | None => new_uri.authority(server_name),
     Some(p) => new_uri.authority(format!("{server_name}:{p}")),
@@ -65,6 +65,37 @@ pub(super) fn secure_redirection_response<B>(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn secure_redirect_preserves_origin_form_path_and_query() {
+    let req = Request::builder().uri("/path?key=value").body(()).unwrap();
+    let response = secure_redirection_response(&ServerName::from("example.com"), None, &req).unwrap();
+
+    assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
+    assert_eq!(
+      response.headers().get(header::LOCATION).unwrap(),
+      "https://example.com/path?key=value"
+    );
+  }
+
+  #[test]
+  fn secure_redirect_maps_authority_form_to_root_path() {
+    let uri = Uri::builder().authority("example.com:443").build().unwrap();
+    let req = Request::builder().uri(uri).body(()).unwrap();
+    let response = secure_redirection_response(&ServerName::from("example.com"), None, &req).unwrap();
+
+    assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
+    assert_eq!(response.headers().get(header::LOCATION).unwrap(), "https://example.com/");
+  }
+
+  #[test]
+  fn secure_redirect_maps_asterisk_form_to_root_path() {
+    let req = Request::builder().uri("*").body(()).unwrap();
+    let response = secure_redirection_response(&ServerName::from("example.com"), None, &req).unwrap();
+
+    assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
+    assert_eq!(response.headers().get(header::LOCATION).unwrap(), "https://example.com/");
+  }
 
   /// HTTP/1.1: `Connection: close` is inserted so the unread body can't be fed into a
   /// recycled connection.
