@@ -2,6 +2,10 @@
 
 ## 0.14.1 or 0.15.0 (Unreleased)
 
+### Bugfix
+
+- Warn about unsupported or misplaced TOML fields during initial configuration loading and hot reload instead of silently ignoring them.
+
 ## 0.14.0
 
 ### Important Changes
