@@ -19,9 +19,9 @@ http3 = []
 ahash = { version = "0.8.12" }
 tracing = { version = "0.1.44" }
 derive_builder = { version = "0.20.2" }
-thiserror = { version = "2.0.18" }
+thiserror = { version = "2.0.19" }
 hot_reload = { version = "0.3.6" }
-async-trait = { version = "0.1.89" }
+async-trait = { version = "0.1.91" }
 rustls = { version = "0.23.42", default-features = false, features = [
   "std",
   "aws_lc_rs",
@@ -33,7 +33,7 @@ rustls-webpki = { version = "0.103.13", default-features = false, features = [
 x509-parser = { version = "0.18.1" }
 
 [dev-dependencies]
-tokio = { version = "1.53.0", default-features = false, features = [
+tokio = { version = "1.53.1", default-features = false, features = [
   "rt-multi-thread",
   "macros",
 ] }

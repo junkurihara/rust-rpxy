@@ -49,7 +49,7 @@ bytes = "1.12.1"
 itoa = "1.0.18"
 derive_builder = "0.20.2"
 futures = { version = "0.3.33", features = ["alloc", "async-await"] }
-tokio = { version = "1.53.0", default-features = false, features = [
+tokio = { version = "1.53.1", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -59,16 +59,16 @@ tokio = { version = "1.53.0", default-features = false, features = [
 ] }
 tokio-util = { version = "0.7.18", default-features = false }
 pin-project-lite = "0.2.17"
-async-trait = "0.1.89"
+async-trait = "0.1.91"
 
 # Error handling
-anyhow = "1.0.103"
-thiserror = "2.0.18"
+anyhow = "1.0.104"
+thiserror = "2.0.19"
 
 # http for both server and client
 http = "1.4.2"
 http-body-util = "0.1.4"
-hyper = { version = "1.10.1", default-features = false }
+hyper = { version = "1.11.0", default-features = false }
 hyper-util = { version = "0.1.20", features = ["full"] }
 futures-util = { version = "0.3.33", default-features = false }
 futures-channel = { version = "0.3.33", default-features = false }
