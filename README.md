@@ -311,7 +311,7 @@ gRPC requests (`Content-Type: application/grpc`) are always sent to the upstream
 
 Use `force_http11_upstream` or `force_http2_upstream` to override the ordinary upstream-version selection. These options are mutually exclusive; gRPC requests remain HTTP/2.
 
-`upstream_options` belongs to an individual `reverse_proxy` entry, not to the app/domain table. Placing it at the app/domain level is silently ignored.
+`upstream_options` belongs to an individual `reverse_proxy` entry, not to the app/domain table. Placing it at the app/domain level emits an unsupported-field warning and has no effect.
 
 ```toml
 [[apps.example.reverse_proxy]]
