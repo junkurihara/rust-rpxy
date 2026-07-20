@@ -11,10 +11,7 @@ use rpxy_lib::{AppConfig, AppConfigList, ProxyConfig, ReverseProxyConfig, TlsCon
 use rpxy_lib::reexports::IpNet;
 use rpxy_trusted_proxies::resolve_trusted_proxy_entries;
 use serde::Deserialize;
-use std::{
-  fs,
-  net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::time::Duration;
 
 #[cfg(feature = "proxy-protocol")]
@@ -653,24 +650,40 @@ fn build_listen_sockets(
 }
 
 impl ConfigToml {
-  pub fn new(config_path: &std::path::PathBuf) -> std::result::Result<Self, anyhow::Error> {
-    let config_str = fs::read_to_string(config_path)?;
+  pub(crate) fn parse(config_str: &str) -> std::result::Result<Self, anyhow::Error> {
+    let (config, unsupported_fields) = Self::deserialize_with_unsupported_fields(config_str)?;
 
-    // Check unused fields during deserialization
-    let t = toml::Deserializer::parse(&config_str)?;
-    let mut unused = ahash::HashSet::default();
-
-    let res = serde_ignored::deserialize(t, |path| {
-      unused.insert(path.to_string());
-    })
-    .map_err(|e| anyhow!(e));
-
-    if !unused.is_empty() {
-      let str = unused.iter().fold(String::new(), |acc, x| acc + x + "\n");
-      warn!("Configuration file contains unsupported fields. Check typos:\n{}", str);
+    if !unsupported_fields.is_empty() {
+      warn!(
+        "Configuration file contains unsupported fields. Check typos:\n{}",
+        unsupported_fields.join("\n")
+      );
     }
 
-    res
+    Ok(config)
+  }
+
+  fn deserialize_with_unsupported_fields(config_str: &str) -> std::result::Result<(Self, Vec<String>), anyhow::Error> {
+    let deserializer = toml::Deserializer::parse(config_str)?;
+    let mut unsupported_fields = Vec::new();
+    let config = serde_ignored::deserialize(deserializer, |path| {
+      unsupported_fields.push(Self::normalize_unsupported_path(&path.to_string()));
+    })
+    .map_err(|e| anyhow!(e))?;
+
+    unsupported_fields.sort_unstable();
+    unsupported_fields.dedup();
+
+    Ok((config, unsupported_fields))
+  }
+
+  fn normalize_unsupported_path(path: &str) -> String {
+    // serde_ignored uses `?` for synthetic Option/untagged-wrapper segments that are meaningless to operators.
+    path
+      .split('.')
+      .filter(|segment| *segment != "?")
+      .collect::<Vec<_>>()
+      .join(".")
   }
 }
 
@@ -913,9 +926,122 @@ pub(crate) fn validate_server_name(server_name: &str) -> Result<(), anyhow::Erro
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::sync::{Arc, Mutex};
+
+  #[derive(Clone, Default)]
+  struct TestWriter {
+    buffer: Arc<Mutex<Vec<u8>>>,
+  }
+
+  impl TestWriter {
+    fn contents(&self) -> String {
+      String::from_utf8(self.buffer.lock().unwrap().clone()).unwrap()
+    }
+  }
+
+  struct TestWriterGuard {
+    buffer: Arc<Mutex<Vec<u8>>>,
+  }
+
+  impl std::io::Write for TestWriterGuard {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+      self.buffer.lock().unwrap().extend_from_slice(bytes);
+      Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+      Ok(())
+    }
+  }
+
+  impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for TestWriter {
+    type Writer = TestWriterGuard;
+
+    fn make_writer(&'a self) -> Self::Writer {
+      TestWriterGuard {
+        buffer: self.buffer.clone(),
+      }
+    }
+  }
 
   #[cfg(feature = "sticky-cookie")]
   const VALID_STICKY_COOKIE_SECRET: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+  const MISPLACED_UPSTREAM_OPTIONS_CONFIG: &str = r#"
+    [apps.testdomain]
+    server_name = "example.com"
+    upstream_options = ["force_http11_upstream"]
+
+    [[apps.testdomain.reverse_proxy]]
+    upstream = [{ location = "backend.example", tls = true }]
+  "#;
+
+  #[test]
+  fn misplaced_app_upstream_options_is_reported_as_unsupported() {
+    let (_, unsupported_fields) = ConfigToml::deserialize_with_unsupported_fields(MISPLACED_UPSTREAM_OPTIONS_CONFIG).unwrap();
+
+    assert_eq!(unsupported_fields, vec!["apps.testdomain.upstream_options"]);
+  }
+
+  #[test]
+  fn reverse_proxy_upstream_options_is_supported() {
+    let config = r#"
+      [apps.testdomain]
+      server_name = "example.com"
+
+      [[apps.testdomain.reverse_proxy]]
+      upstream = [{ location = "backend.example", tls = true }]
+      upstream_options = ["force_http11_upstream"]
+    "#;
+
+    let (_, unsupported_fields) = ConfigToml::deserialize_with_unsupported_fields(config).unwrap();
+
+    assert!(unsupported_fields.is_empty());
+  }
+
+  #[test]
+  fn unsupported_fields_are_sorted_and_unique() {
+    let config = r#"
+      z_unknown = true
+      a_unknown = true
+
+      [apps.testdomain]
+      server_name = "example.com"
+      app_unknown = true
+    "#;
+
+    let (_, unsupported_fields) = ConfigToml::deserialize_with_unsupported_fields(config).unwrap();
+
+    assert_eq!(
+      unsupported_fields,
+      vec!["a_unknown", "apps.testdomain.app_unknown", "z_unknown"]
+    );
+  }
+
+  #[test]
+  fn centralized_parser_preserves_toml_errors() {
+    assert!(ConfigToml::parse("listen_port = \"not-a-port\"").is_err());
+    assert!(ConfigToml::parse("[apps").is_err());
+  }
+
+  #[test]
+  fn centralized_parser_warns_with_unsupported_path_only() {
+    let writer = TestWriter::default();
+    let subscriber = tracing_subscriber::fmt()
+      .without_time()
+      .with_ansi(false)
+      .with_writer(writer.clone())
+      .finish();
+
+    tracing::subscriber::with_default(subscriber, || {
+      ConfigToml::parse(MISPLACED_UPSTREAM_OPTIONS_CONFIG).unwrap();
+    });
+
+    let output = writer.contents();
+    assert!(output.contains("Configuration file contains unsupported fields. Check typos:"));
+    assert!(output.contains("apps.testdomain.upstream_options"));
+    assert!(!output.contains("force_http11_upstream"));
+  }
 
   #[cfg(feature = "sticky-cookie")]
   fn config_with_reverse_proxy(load_balance: Option<&str>, path: Option<&str>, secret: Option<&str>) -> ConfigToml {
