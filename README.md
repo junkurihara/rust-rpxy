@@ -305,6 +305,20 @@ This example configuration demonstrates a very common path-based routing situati
 
 Since this is currently a work-in-progress project, we are frequently adding new options. We first add new option entries in `config-example.toml` as examples. Please refer to it for up-to-date options. We will prepare comprehensive documentation for all options.
 
+### Upstream HTTP Version
+
+gRPC requests (`Content-Type: application/grpc`) are always sent to the upstream using HTTP/2. For other requests, a plaintext HTTP upstream (`tls = false`) always receives HTTP/1.1. A TLS upstream (`tls = true`) preserves the client's HTTP version by default, except that HTTP/3 is sent upstream as HTTP/2 because upstream HTTP/3 is not supported.
+
+Use `force_http11_upstream` or `force_http2_upstream` to override the ordinary upstream-version selection. These options are mutually exclusive; gRPC requests remain HTTP/2.
+
+`upstream_options` belongs to an individual `reverse_proxy` entry, not to the app/domain table. Placing it at the app/domain level is silently ignored.
+
+```toml
+[[apps.example.reverse_proxy]]
+upstream = [{ location = "backend.example:443", tls = true }]
+upstream_options = ["force_http11_upstream"]
+```
+
 ### Forwarding Headers and Trusted Proxies
 
 `rpxy` always rewrites the downstream-facing forwarding headers that backend applications commonly trust, including `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-SSL`, and `X-Original-URI`.
