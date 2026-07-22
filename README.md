@@ -583,10 +583,14 @@ Your Docker container can receive only TCP-based connections, i.e., HTTP/2 or ea
 
 ### Managing `rpxy` via Web Interface
 
-Check the third-party project [`Gamerboy59/rpxy-webui`](https://github.com/Gamerboy59/rpxy-webui) to manage `rpxy` via a web interface.
+<details>
+<summary>Third-party web interface</summary>
 
-> [!NOTE]
-> `rpxy-webui` is developed and maintained independently of `rpxy`, and it may not follow the latest `rpxy` releases. In particular, recent releases of `rpxy` include breaking configuration changes, where configuration files containing removed keys fail to load. Please check which version of `rpxy` is supported by `rpxy-webui` before use.
+> [!WARNING]
+> Check the third-party project [`Gamerboy59/rpxy-webui`](https://github.com/Gamerboy59/rpxy-webui) to manage `rpxy` via a web interface.
+> However, `rpxy-webui` is developed and maintained independently of `rpxy`, and it may not follow the latest `rpxy` releases. In particular, recent releases of `rpxy` include breaking configuration changes, where configuration files containing removed keys fail to load. Please check which version of `rpxy` is supported by `rpxy-webui` before use.
+
+</details>
 
 ### Other TIPS
 
