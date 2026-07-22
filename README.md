@@ -69,13 +69,21 @@ Then you have an executable binary `rust-rpxy/target/release/rpxy`.
 > [!NOTE]
 > At this point, it can be built only on Linux, macOS and some Unix-like OSes ([#150](https://github.com/junkurihara/rust-rpxy/issues/150), [#478](https://github.com/junkurihara/rust-rpxy/pull/478)). If you want to use `rpxy` on Windows, please consider using the docker image (see below) as a workaround.
 
+> [!NOTE]
+> We do not have an installation option via [`crates.io`](https://crates.io/), i.e., `cargo install`, at this point since some dependencies are not yet published. Alternatively, you can use the docker image (see below) as the easiest way for `amd64` environments.
+
 ### Package Installation for Linux (RPM/DEB)
 
 You can find the Jenkins CI/CD build scripts for `rpxy` in the [./.build](./.build) directory.
 
-Prebuilt packages for Linux RPM and DEB are available at [https://rpxy.gamerboy59.dev](https://rpxy.gamerboy59.dev), provided by [@Gamerboy59](https://github.com/Gamerboy59).
+<details>
+<summary>Prebuilt packages</summary>
 
-Note that we do not have an installation option via [`crates.io`](https://crates.io/), i.e., `cargo install`, at this point since some dependencies are not yet published. Alternatively, you can use the docker image (see below) as the easiest way for `amd64` environments.
+> [!WARNING]
+> Prebuilt packages for Linux RPM and DEB are available at [https://rpxy.gamerboy59.dev](https://rpxy.gamerboy59.dev), provided by [@Gamerboy59](https://github.com/Gamerboy59).
+> However, these packages are built and distributed by a third party, and they may lag behind the latest release of `rpxy`, sometimes by several versions. Since new releases often include security-related fixes and improvements, please check the packaged version before installation. To always run the latest release, use the prebuilt binaries on the [GitHub Releases page](https://github.com/junkurihara/rust-rpxy/releases) or the docker image (see below).
+
+</details>
 
 ## Usage
 
@@ -576,6 +584,9 @@ Your Docker container can receive only TCP-based connections, i.e., HTTP/2 or ea
 ### Managing `rpxy` via Web Interface
 
 Check the third-party project [`Gamerboy59/rpxy-webui`](https://github.com/Gamerboy59/rpxy-webui) to manage `rpxy` via a web interface.
+
+> [!NOTE]
+> `rpxy-webui` is developed and maintained independently of `rpxy`, and it may not follow the latest `rpxy` releases. In particular, recent releases of `rpxy` include breaking configuration changes, where configuration files containing removed keys fail to load. Please check which version of `rpxy` is supported by `rpxy-webui` before use.
 
 ### Other TIPS
 
