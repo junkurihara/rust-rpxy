@@ -19,7 +19,7 @@ ahash = "0.8.12"
 thiserror = "2.0.19"
 tracing = "0.1.44"
 async-trait = "0.1.91"
-base64 = "0.22.1"
+base64 = "0.23.0"
 aws-lc-rs = { version = "1.17.3", default-features = false, features = [
   "aws-lc-sys",
 ] }
