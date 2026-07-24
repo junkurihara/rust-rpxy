@@ -37,8 +37,8 @@ tokio = { version = "1.53.1", default-features = false, features = [
   "rt",
   "macros",
 ] }
-tokio-util = { version = "0.7.18", default-features = false }
-tokio-stream = { version = "0.1.18", default-features = false }
+tokio-util = { version = "0.7.19", default-features = false }
+tokio-stream = { version = "0.1.19", default-features = false }
 futures-util = { version = "0.3.33", default-features = false, features = [
   "alloc",
 ] }
