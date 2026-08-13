@@ -1212,6 +1212,24 @@ mod tests {
   }
 
   #[test]
+  fn client_visible_scheme_malformed_xfp_does_not_fall_through_to_forwarded_https() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+      X_FORWARDED_PROTO,
+      HeaderValue::from_bytes(b"\xffhttps").expect("HeaderValue accepts non-UTF-8 bytes"),
+    );
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
+
+    let scheme = client_visible_scheme(
+      false,
+      &"10.1.2.3:1234".parse().unwrap(),
+      &headers,
+      &trusted(&["10.0.0.0/8"]),
+    );
+    assert_eq!(scheme, "http");
+  }
+
+  #[test]
   fn trusted_proxy_uses_forwarded_when_xff_missing() {
     let mut headers = HeaderMap::new();
     headers.insert(header::HOST, HeaderValue::from_static("app.example"));
