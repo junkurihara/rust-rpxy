@@ -16,15 +16,15 @@ post-quantum = ["rustls/prefer-post-quantum"]
 [dependencies]
 url = { version = "2.5.8" }
 ahash = "0.8.12"
-thiserror = "2.0.19"
+thiserror = "2.0.20"
 tracing = "0.1.44"
-async-trait = "0.1.91"
-base64 = "0.23.0"
-aws-lc-rs = { version = "1.17.3", default-features = false, features = [
+async-trait = "0.1.92"
+base64 = "0.23.1"
+aws-lc-rs = { version = "1.18.0", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.6.2"
-rustls = { version = "0.23.42", default-features = false, features = [
+rustls = { version = "0.23.43", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
@@ -39,7 +39,7 @@ tokio = { version = "1.53.1", default-features = false, features = [
 ] }
 tokio-util = { version = "0.7.19", default-features = false }
 tokio-stream = { version = "0.1.19", default-features = false }
-futures-util = { version = "0.3.33", default-features = false, features = [
+futures-util = { version = "0.3.34", default-features = false, features = [
   "alloc",
 ] }
 
