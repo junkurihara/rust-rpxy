@@ -159,10 +159,8 @@ pub(in crate::message_handler) fn add_forwarding_header(
   // Constant values use HeaderValue::from_static (no runtime byte validation or allocation);
   // the port uses HeaderValue::from(u16) (lighter than to_string() + parse). insert() replaces
   // any existing values with a single value, matching add_header_entry_overwrite_if_exist.
-  headers.insert(
-    X_FORWARDED_PROTO,
-    HeaderValue::from_static(if tls { "https" } else { "http" }),
-  );
+  let client_scheme = client_visible_scheme(tls, client_addr, headers, trusted_forwarded_proxies);
+  headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static(client_scheme));
   headers.insert(X_FORWARDED_PORT, HeaderValue::from(listen_addr.port()));
 
   /////////// As Nginx-Proxy
@@ -840,8 +838,9 @@ fn push_forwarded_port(out: &mut String, port: &ForwardedPort) {
 
 /// Decide the request's client-visible scheme (`"https"` or `"http"`).
 ///
-/// Backs the sticky-cookie `Secure` attribute (via [`client_visible_secure`]). The decision is
-/// fail-closed and bounded by the trusted-forwarded-proxy boundary:
+/// Used both for the outgoing `X-Forwarded-Proto` header and (via [`client_visible_secure`])
+/// the sticky-cookie `Secure` attribute. The decision is fail-closed and bounded by the
+/// trusted-forwarded-proxy boundary:
 ///
 /// 1. If the rpxy listener is TLS-terminating, return `"https"`.
 /// 2. Otherwise, only honor forwarding-derived scheme when the immediate peer is in
@@ -853,7 +852,6 @@ fn push_forwarded_port(out: &mut String, port: &ForwardedPort) {
 ///    value, or any parse failure maps to `"http"`. A parse failure does NOT fall through to
 ///    the lower-priority source — a malformed `X-Forwarded-Proto` short-circuits without
 ///    consulting `Forwarded`.
-#[cfg(feature = "sticky-cookie")]
 fn client_visible_scheme(
   tls_enabled: bool,
   client_addr: &SocketAddr,
@@ -904,7 +902,6 @@ pub(in crate::message_handler) fn client_visible_secure(
 /// - `Err(())` when the header is present but unreadable (non-UTF-8 etc.). Caller MUST
 ///   NOT fall back; doing so would let a malformed XFP enable a low-priority `Forwarded:
 ///   proto=https` to elevate `Secure`.
-#[cfg(feature = "sticky-cookie")]
 fn xforwarded_proto_first(headers: &HeaderMap) -> Result<Option<String>, ()> {
   let raw = match join_header_values(headers, X_FORWARDED_PROTO) {
     Ok(Some(v)) => v,
@@ -932,7 +929,6 @@ fn xforwarded_proto_first(headers: &HeaderMap) -> Result<Option<String>, ()> {
 /// - `Ok(None)` when the header is absent, the first entry has no `proto=`, or the value
 ///   is empty.
 /// - `Err(())` on header value / quoted-string parse failure (fail-closed signal).
-#[cfg(feature = "sticky-cookie")]
 fn forwarded_first_proto(headers: &HeaderMap) -> Result<Option<String>, ()> {
   let raw = match join_header_values(headers, header::FORWARDED) {
     Ok(Some(v)) => v,
@@ -1173,6 +1169,46 @@ mod tests {
 
     assert_eq!(headers.get(X_FORWARDED_FOR).unwrap(), "203.0.113.20, 10.1.2.3");
     assert_eq!(headers.get(X_REAL_IP).unwrap(), "203.0.113.20");
+  }
+
+  #[test]
+  fn trusted_peer_honors_x_forwarded_proto_https() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+    headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static("https"));
+    headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10"));
+
+    add_forwarding_header_from_original(
+      &mut headers,
+      &"10.1.2.3:1234".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &trusted(&["10.0.0.0/8"]),
+    )
+    .unwrap();
+
+    // A trusted peer's https scheme must be preserved, not rewritten to http.
+    assert_eq!(headers.get(X_FORWARDED_PROTO).unwrap(), "https");
+  }
+
+  #[test]
+  fn trusted_peer_without_proto_header_falls_back_to_http() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+    headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("198.51.100.10"));
+
+    add_forwarding_header_from_original(
+      &mut headers,
+      &"10.1.2.3:1234".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &trusted(&["10.0.0.0/8"]),
+    )
+    .unwrap();
+
+    assert_eq!(headers.get(X_FORWARDED_PROTO).unwrap(), "http");
   }
 
   #[test]
