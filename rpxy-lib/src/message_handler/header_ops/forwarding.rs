@@ -842,10 +842,12 @@ fn push_forwarded_port(out: &mut String, port: &ForwardedPort) {
 /// the sticky-cookie `Secure` attribute. The decision is fail-closed and bounded by the
 /// trusted-forwarded-proxy boundary:
 ///
-/// 1. If the rpxy listener is TLS-terminating, return `"https"`.
+/// 1. If the rpxy listener is TLS-terminating, return `"https"` (constant fast path).
 /// 2. Otherwise, only honor forwarding-derived scheme when the immediate peer is in
 ///    `trusted_forwarded_proxies` (same trust boundary as the forwarding-header policy); an
-///    untrusted peer is always `"http"` regardless of inbound forwarding headers.
+///    untrusted peer is always `"http"` regardless of inbound forwarding headers. With an
+///    empty `trusted_forwarded_proxies` list no peer can ever be trusted, so the result is
+///    the constant `"http"` and the header-parsing work is skipped on the hot path.
 /// 3. Header priority: `X-Forwarded-Proto` first comma-element wins; fall back to the
 ///    `proto=` parameter of the first `Forwarded` entry.
 /// 4. Only a `https` value (case-insensitive) maps to `"https"`; every other value, an absent
@@ -860,6 +862,9 @@ fn client_visible_scheme(
 ) -> &'static str {
   if tls_enabled {
     return "https";
+  }
+  if trusted_forwarded_proxies.is_empty() {
+    return "http";
   }
   let peer_ip = canonicalize_ip(client_addr.to_canonical().ip());
   if !is_trusted_proxy(&peer_ip, trusted_forwarded_proxies) {
