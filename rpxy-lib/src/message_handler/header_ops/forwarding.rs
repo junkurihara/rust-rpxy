@@ -96,6 +96,14 @@ pub(super) struct ForwardedEntry {
   by: Option<String>,
 }
 
+impl ForwardedEntry {
+  /// Overwrite the `proto=` value of this entry. Used to pin rpxy's own hop to the local
+  /// listener protocol when generating a `Forwarded` header from re-parsed headers.
+  pub(super) fn set_proto(&mut self, proto: impl Into<String>) {
+    self.proto = Some(proto.into());
+  }
+}
+
 /// Add or update forwarding headers like `x-forwarded-for`.
 /// If only `forwarded` header exists, it will update `x-forwarded-for` with the proxy chain.
 /// If both `x-forwarded-for` and `forwarded` headers exist, it will update `x-forwarded-for` first and then add `forwarded` header.
@@ -111,6 +119,14 @@ pub(in crate::message_handler) fn add_forwarding_header(
   authoritative_host: Option<&str>,
   trusted_forwarded_proxies: &[IpNet],
 ) -> Result<()> {
+  // Resolve the client-visible scheme from the ORIGINAL inbound headers, before any
+  // forwarding-header mutation below. This must happen first: the incoming `Forwarded`
+  // header is regenerated from the normalized chain further down (and a proto-only entry
+  // such as `Forwarded: proto=https` does not survive normalization because a chain entry
+  // requires `for=`), so evaluating afterwards would read rpxy's own rewritten value and
+  // diverge from the sticky-cookie `Secure` decision, which sees the original headers.
+  let client_scheme = client_visible_scheme(tls, client_addr, headers, trusted_forwarded_proxies);
+
   let peer_ip = canonicalize_ip(client_addr.to_canonical().ip());
   let has_forwarded = headers.contains_key(header::FORWARDED);
   let normalized_chain = normalize_forwarding_chain(headers, &peer_ip, tls, authoritative_host, trusted_forwarded_proxies);
@@ -159,15 +175,20 @@ pub(in crate::message_handler) fn add_forwarding_header(
   // Constant values use HeaderValue::from_static (no runtime byte validation or allocation);
   // the port uses HeaderValue::from(u16) (lighter than to_string() + parse). insert() replaces
   // any existing values with a single value, matching add_header_entry_overwrite_if_exist.
-  let client_scheme = client_visible_scheme(tls, client_addr, headers, trusted_forwarded_proxies);
+  // `client_scheme` was resolved above from the original inbound headers, so X-Forwarded-Proto
+  // agrees with the sticky-cookie Secure decision regardless of the rewrites performed here.
   headers.insert(X_FORWARDED_PROTO, HeaderValue::from_static(client_scheme));
   headers.insert(X_FORWARDED_PORT, HeaderValue::from(listen_addr.port()));
 
   /////////// As Nginx-Proxy
   // x-real-ip: pre-built above from the first element of the XFF CSV.
   headers.insert(X_REAL_IP, x_real_ip_value);
-  // x-forwarded-ssl
-  headers.insert(X_FORWARDED_SSL, HeaderValue::from_static(if tls { "on" } else { "off" }));
+  // x-forwarded-ssl: derived from the same client-visible scheme as X-Forwarded-Proto so the
+  // two headers can never disagree about whether the client-facing connection was HTTPS.
+  headers.insert(
+    X_FORWARDED_SSL,
+    HeaderValue::from_static(if client_scheme == "https" { "on" } else { "off" }),
+  );
   // x-original-uri
   add_header_entry_overwrite_if_exist(headers, X_ORIGINAL_URI, original_uri.to_string())?;
   // x-forwarded-host
@@ -639,6 +660,14 @@ fn canonicalize_ip(ip: IpAddr) -> IpAddr {
   SocketAddr::new(ip, 0).to_canonical().ip()
 }
 
+/// Protocol string describing rpxy's own listener hop: `"https"` when rpxy terminates TLS,
+/// `"http"` otherwise. This is the protocol of the connection between rpxy's immediate peer
+/// and rpxy itself, as opposed to the client-visible scheme which may differ when a trusted
+/// upstream proxy terminates TLS in front of a plain rpxy listener.
+pub(super) fn listener_proto(tls_enabled: bool) -> &'static str {
+  if tls_enabled { "https" } else { "http" }
+}
+
 /// Build a ForwardedEntry for the immediate peer, which represents this proxy's authoritative view of the client connection. This is used as the basis for forwarding chain normalization and generation.
 fn build_peer_forwarded_entry(peer_ip: IpAddr, tls: bool, authoritative_host: Option<&str>) -> ForwardedEntry {
   ForwardedEntry {
@@ -647,7 +676,7 @@ fn build_peer_forwarded_entry(peer_ip: IpAddr, tls: bool, authoritative_host: Op
       port: None,
       raw: ForwardedNodeRaw::Ip,
     },
-    proto: if tls { Some("https".into()) } else { Some("http".into()) },
+    proto: Some(listener_proto(tls).into()),
     host: authoritative_host.map(str::to_owned),
     by: None,
   }
@@ -838,9 +867,18 @@ fn push_forwarded_port(out: &mut String, port: &ForwardedPort) {
 
 /// Decide the request's client-visible scheme (`"https"` or `"http"`).
 ///
-/// Used both for the outgoing `X-Forwarded-Proto` header and (via [`client_visible_secure`])
-/// the sticky-cookie `Secure` attribute. The decision is fail-closed and bounded by the
-/// trusted-forwarded-proxy boundary:
+/// Used for the outgoing `X-Forwarded-Proto` / `X-Forwarded-SSL` headers and (via
+/// [`client_visible_secure`]) the sticky-cookie `Secure` attribute.
+///
+/// # Call-order contract
+///
+/// MUST be called against the ORIGINAL inbound headers, before any forwarding-header
+/// mutation: `add_forwarding_header()` regenerates the incoming `Forwarded` header from the
+/// normalized chain (and a proto-only entry such as `Forwarded: proto=https` does not
+/// survive normalization), so a post-mutation evaluation would read rpxy's own rewritten
+/// value and diverge from the sticky-cookie decision, which sees the original headers.
+///
+/// The decision is fail-closed and bounded by the trusted-forwarded-proxy boundary:
 ///
 /// 1. If the rpxy listener is TLS-terminating, return `"https"` (constant fast path).
 /// 2. Otherwise, only honor forwarding-derived scheme when the immediate peer is in
@@ -1195,6 +1233,47 @@ mod tests {
 
     // A trusted peer's https scheme must be preserved, not rewritten to http.
     assert_eq!(headers.get(X_FORWARDED_PROTO).unwrap(), "https");
+    // X-Forwarded-SSL must agree with X-Forwarded-Proto on the same client-visible scheme.
+    assert_eq!(headers.get(X_FORWARDED_SSL).unwrap(), "on");
+  }
+
+  /// Regression test for the ordering of `client_visible_scheme()` inside
+  /// `add_forwarding_header()`.
+  ///
+  /// A trusted peer sends a proto-only `Forwarded` entry (`proto=https`, no `for=`) and no
+  /// `X-Forwarded-Proto`. Such an entry does not survive chain normalization (a chain entry
+  /// requires `for=`), so the incoming `Forwarded` header is regenerated as
+  /// `for=<peer>;proto=http`. `client_visible_scheme()` must therefore be evaluated BEFORE
+  /// that regeneration: afterwards it reads rpxy's own rewritten `proto=http` and emits
+  /// `X-Forwarded-Proto: http`, while the sticky-cookie path - which evaluates the same
+  /// logic against the original headers - decides `https`. Not feature-gated: this must
+  /// hold regardless of the sticky-cookie feature.
+  #[test]
+  fn add_forwarding_header_trusted_peer_proto_only_forwarded_https_yields_https() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+    headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
+
+    add_forwarding_header_from_original(
+      &mut headers,
+      &"10.1.2.3:1234".parse().unwrap(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &trusted(&["10.0.0.0/8"]),
+    )
+    .unwrap();
+
+    // The client-visible scheme resolved from the ORIGINAL inbound Forwarded header must
+    // win over the regenerated proto=http value.
+    assert_eq!(headers.get(X_FORWARDED_PROTO).unwrap(), "https");
+    assert_eq!(headers.get(X_FORWARDED_SSL).unwrap(), "on");
+    // The regenerated Forwarded header still describes rpxy's own hop with the local
+    // listener protocol (plain http), independent of the client-visible scheme.
+    assert_eq!(
+      headers.get(header::FORWARDED).unwrap(),
+      "for=10.1.2.3;proto=http;host=app.example"
+    );
   }
 
   #[test]
@@ -1225,12 +1304,7 @@ mod tests {
     );
     headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
 
-    let scheme = client_visible_scheme(
-      false,
-      &"10.1.2.3:1234".parse().unwrap(),
-      &headers,
-      &trusted(&["10.0.0.0/8"]),
-    );
+    let scheme = client_visible_scheme(false, &"10.1.2.3:1234".parse().unwrap(), &headers, &trusted(&["10.0.0.0/8"]));
     assert_eq!(scheme, "http");
   }
 
@@ -2011,6 +2085,39 @@ mod tests {
     let mut headers = HeaderMap::new();
     headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
     assert!(client_visible_secure(false, &trusted_addr(), &headers, &cidr_10()));
+  }
+
+  /// The sticky-cookie `Secure` decision and the outgoing `X-Forwarded-Proto` must be
+  /// derived from the SAME pre-mutation evaluation of the client-visible scheme. With a
+  /// proto-only `Forwarded: proto=https` entry (which does not survive chain
+  /// normalization), both paths must conclude `https`.
+  #[cfg(feature = "sticky-cookie")]
+  #[test]
+  fn cvs_agrees_with_outgoing_x_forwarded_proto_for_proto_only_forwarded() {
+    let build_headers = || {
+      let mut headers = HeaderMap::new();
+      headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+      headers.insert(header::FORWARDED, HeaderValue::from_static("proto=https"));
+      headers
+    };
+
+    // Sticky-cookie path: evaluated against the original inbound headers.
+    let secure = client_visible_secure(false, &trusted_addr(), &build_headers(), &cidr_10());
+
+    // Forwarding-header path: through add_forwarding_header().
+    let mut headers = build_headers();
+    add_forwarding_header_from_original(
+      &mut headers,
+      &trusted_addr(),
+      &"192.0.2.1:8080".parse().unwrap(),
+      false,
+      &Uri::from_static("/"),
+      &cidr_10(),
+    )
+    .unwrap();
+
+    assert!(secure);
+    assert_eq!(headers.get(X_FORWARDED_PROTO).unwrap(), "https");
   }
 
   #[cfg(feature = "sticky-cookie")]
