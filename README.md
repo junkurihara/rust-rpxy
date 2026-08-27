@@ -331,6 +331,8 @@ upstream_options = ["force_http11_upstream"]
 
 `rpxy` always rewrites the downstream-facing forwarding headers that backend applications commonly trust, including `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-SSL`, and `X-Original-URI`.
 
+When the immediate peer is trusted, `X-Forwarded-Proto` and `X-Forwarded-SSL` reflect the *client-visible* scheme carried by the incoming `X-Forwarded-Proto` (or the `proto=` parameter of `Forwarded`), so a plain `rpxy` listener behind a TLS-terminating proxy still reports `https` to backends. An untrusted peer always yields `http`. `X-Forwarded-Port` is not affected and always reports `rpxy`'s own listener port.
+
 By default, no preceding proxy is trusted. If `trusted_forwarded_proxies` is omitted or empty, any incoming `X-Forwarded-*` or `Forwarded` values from the client or an unknown preceding proxy are ignored, and `rpxy` rebuilds the outgoing forwarding view from the immediate peer address only.
 
 ```toml

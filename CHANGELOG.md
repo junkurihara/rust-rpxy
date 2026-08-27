@@ -4,6 +4,7 @@
 
 ### Bugfix
 
+- **Fix: honor a trusted proxy's client-visible scheme when rewriting `X-Forwarded-Proto` and `X-Forwarded-SSL`.** Previously both headers were derived solely from whether rpxy's own listener terminated TLS, so a plain listener behind a trusted TLS-terminating proxy forwarded `X-Forwarded-Proto: http` even when the client connection was HTTPS. They are now derived from the same fail-closed, trusted-forwarded-proxy-bounded scheme resolution already used for the sticky-cookie `Secure` attribute, evaluated against the original inbound headers so the two decisions can never disagree. An untrusted peer still cannot inject a scheme, and the `proto=` value rpxy emits for its own hop in a generated `Forwarded` header continues to describe the local listener protocol. `X-Forwarded-Port` is unchanged and still reports rpxy's own listener port.
 - Warn about unsupported or misplaced TOML fields during initial configuration loading and hot reload instead of silently ignoring them.
 
 ## 0.14.0
