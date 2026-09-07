@@ -20,11 +20,11 @@ thiserror = "2.0.20"
 tracing = "0.1.44"
 async-trait = "0.1.92"
 base64 = "0.23.1"
-aws-lc-rs = { version = "1.18.0", default-features = false, features = [
+aws-lc-rs = { version = "1.18.1", default-features = false, features = [
   "aws-lc-sys",
 ] }
 blocking = "1.7.0"
-rustls = { version = "0.23.43", default-features = false, features = [
+rustls = { version = "0.23.44", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
