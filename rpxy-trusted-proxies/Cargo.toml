@@ -20,7 +20,7 @@ update-snapshots = ["dep:chrono", "dep:reqwest", "dep:serde", "dep:serde_json"]
 anyhow = "1.0.104"
 ipnet = "2.12.2"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"], optional = true }
-reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "rustls"], optional = true }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "rustls"], optional = true }
 serde = { version = "1.0.229", features = ["derive"], optional = true }
 serde_json = { version = "1.0.151", optional = true }
 
