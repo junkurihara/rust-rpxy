@@ -43,7 +43,7 @@ post-quantum = [
 ]
 
 [dependencies]
-rand = "0.10.2"
+rand = "0.10.3"
 ahash = "0.8.12"
 bytes = "1.12.1"
 itoa = "1.0.18"
@@ -63,7 +63,7 @@ async-trait = "0.1.92"
 
 # Error handling
 anyhow = "1.0.104"
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 
 # http for both server and client
 http = "1.5.0"
@@ -78,7 +78,7 @@ hyper-tls = { version = "0.6.0", features = [
   "alpn",
   "vendored",
 ], optional = true }
-hyper-rustls = { version = "0.27.9", default-features = false, features = [
+hyper-rustls = { version = "0.27.10", default-features = false, features = [
   "aws-lc-rs",
   "http1",
   "http2",
@@ -101,11 +101,11 @@ tracing = { version = "0.1.44" }
 quinn = { version = "0.11.12", optional = true }
 h3 = { version = "0.0.8", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-s2n-quic = { version = "1.88.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+s2n-quic = { version = "1.89.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.88.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.88.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.89.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.89.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
@@ -115,7 +115,7 @@ socket2 = { version = "0.6.5", features = ["all"] }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
-lru = { version = "0.18.4", optional = true }
+lru = { version = "0.18.5", optional = true }
 sha2 = { version = "0.11.0", default-features = false, optional = true }
 
 # proxy protocol / CIDR matching
