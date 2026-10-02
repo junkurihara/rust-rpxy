@@ -1531,9 +1531,9 @@ dependencies = [
 
 [[package]]
 name = "lazy_static"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "libc"
@@ -2017,9 +2017,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.18"
+version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9746dbde176634f4f2f1faf2404e30a31b2bc1e9cafb5329c95d8177a18c9fc"
+checksum = "0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -2042,9 +2042,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.15"
+version = "0.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35a133f956daabe89a61a685c2649f13d82d5aa4bd5d12d1277e1072a21c0694"
+checksum = "af66907df18639dcf4db56ca65490cabc4b27a97dbadd96f2926cca73298f016"
 dependencies = [
  "cfg_aliases",
  "libc",
@@ -2490,7 +2490,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "s2n-codec"
-version = "0.89.0"
+version = "0.90.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -2499,7 +2499,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic"
-version = "1.89.0"
+version = "1.90.0"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -2519,7 +2519,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-core"
-version = "0.89.0"
+version = "0.90.0"
 dependencies = [
  "atomic-waker",
  "byteorder",
@@ -2538,7 +2538,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-crypto"
-version = "0.89.0"
+version = "0.90.0"
 dependencies = [
  "aws-lc-rs",
  "cfg-if",
@@ -2561,7 +2561,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-platform"
-version = "0.89.0"
+version = "0.90.0"
 dependencies = [
  "cfg-if",
  "futures",
@@ -2574,7 +2574,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-rustls"
-version = "0.89.0"
+version = "0.90.0"
 dependencies = [
  "bytes",
  "rustls",
@@ -2587,7 +2587,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls"
-version = "0.89.0"
+version = "0.90.0"
 dependencies = [
  "bytes",
  "errno",
@@ -2600,7 +2600,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls-default"
-version = "0.89.0"
+version = "0.90.0"
 dependencies = [
  "s2n-quic-rustls",
  "s2n-quic-tls",
@@ -2608,7 +2608,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-transport"
-version = "0.89.0"
+version = "0.90.0"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -3801,9 +3801,9 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
+checksum = "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
 dependencies = [
  "proc-macro2",
  "quote",
