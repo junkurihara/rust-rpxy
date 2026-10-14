@@ -602,7 +602,7 @@ impl FileStore {
     // `incr_count`-before-publish makes this unreachable in practice.
     let _ = self
       .cnt
-      .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| Some(c.saturating_sub(1)));
+      .try_update(Ordering::Relaxed, Ordering::Relaxed, |c| Some(c.saturating_sub(1)));
     debug!(
       "Removed a cache file at {:?} (file count: {})",
       path.as_ref(),
