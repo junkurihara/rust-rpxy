@@ -1408,9 +1408,9 @@ dependencies = [
 
 [[package]]
 name = "inout"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4250ce6452e92010fdf7268ccc5d14faa80bb12fc741938534c58f16804e03c7"
+checksum = "d8c0d789294fb457b791f7797a04478704788f30b407e5d0b01deaa846572d9f"
 dependencies = [
  "hybrid-array",
 ]
@@ -2372,9 +2372,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -2490,7 +2490,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "s2n-codec"
-version = "0.90.0"
+version = "0.91.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -2499,7 +2499,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic"
-version = "1.90.0"
+version = "1.91.0"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -2519,7 +2519,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-core"
-version = "0.90.0"
+version = "0.91.0"
 dependencies = [
  "atomic-waker",
  "byteorder",
@@ -2538,7 +2538,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-crypto"
-version = "0.90.0"
+version = "0.91.0"
 dependencies = [
  "aws-lc-rs",
  "cfg-if",
@@ -2561,7 +2561,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-platform"
-version = "0.90.0"
+version = "0.91.0"
 dependencies = [
  "cfg-if",
  "futures",
@@ -2574,7 +2574,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-rustls"
-version = "0.90.0"
+version = "0.91.0"
 dependencies = [
  "bytes",
  "rustls",
@@ -2587,7 +2587,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls"
-version = "0.90.0"
+version = "0.91.0"
 dependencies = [
  "bytes",
  "errno",
@@ -2600,7 +2600,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-tls-default"
-version = "0.90.0"
+version = "0.91.0"
 dependencies = [
  "s2n-quic-rustls",
  "s2n-quic-tls",
@@ -2608,7 +2608,7 @@ dependencies = [
 
 [[package]]
 name = "s2n-quic-transport"
-version = "0.90.0"
+version = "0.91.0"
 dependencies = [
  "bytes",
  "futures-channel",
