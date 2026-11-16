@@ -45,7 +45,7 @@ post-quantum = [
 ]
 
 [dependencies]
-rand = "0.10.3"
+rand = "0.10.4"
 ahash = "0.8.12"
 bytes = "1.12.1"
 itoa = "1.0.19"
