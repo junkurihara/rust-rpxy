@@ -153,7 +153,7 @@ where
         warn!("HTTP/3 no SNI is given");
         continue;
       };
-      debug!("HTTP/3 connection incoming (SNI {:?})", new_server_name);
+      trace!("HTTP/3 connection incoming (SNI {:?})", new_server_name);
       let self_clone = self.clone();
 
       self.globals.runtime_handle.spawn(async move {

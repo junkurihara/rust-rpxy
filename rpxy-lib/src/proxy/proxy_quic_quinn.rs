@@ -93,7 +93,7 @@ where
               warn!("HTTP/3 no SNI is given");
               return Ok(());
             };
-            debug!(
+            trace!(
               "HTTP/3 connection incoming (SNI {:?})",
               new_server_name
             );

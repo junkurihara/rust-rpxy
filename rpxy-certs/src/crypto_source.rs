@@ -114,7 +114,7 @@ fn read_certs_and_keys(
   cert_key_path: &PathBuf,
   client_ca_cert_path: Option<&PathBuf>,
 ) -> Result<SingleServerCertsKeys, RpxyCertError> {
-  debug!("Read TLS server certificates and private key");
+  trace!("Read TLS server certificates and private key");
 
   // ------------------------
   // certificates
@@ -173,7 +173,7 @@ fn read_certs_and_keys(
   // client ca certificates
   let client_ca_certs = client_ca_cert_path
     .map(|path| {
-      debug!("Read CA certificates for client authentication");
+      trace!("Read CA certificates for client authentication");
       // Reads client certificate and returns client
       let inner = File::open(path).map_err(|e| {
         io::Error::new(

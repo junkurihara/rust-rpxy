@@ -5,7 +5,7 @@ mod reloader_service;
 mod server_crypto;
 
 mod log {
-  pub(super) use tracing::{debug, error, info, warn};
+  pub(super) use tracing::{error, info, trace, warn};
 }
 
 use crate::{error::*, log::*, reloader_service::DynCryptoSource};

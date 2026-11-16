@@ -33,7 +33,7 @@ where
     <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
   {
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
-    debug!("QUIC/HTTP3 connection established from {:?} {}", client_addr, tls_server_name);
+    trace!("QUIC/HTTP3 connection established from {:?} {}", client_addr, tls_server_name);
 
     // TODO: Evaluate whether tls_server_name should live in connection context
     // so listener_service_h3 does not need to thread it through this call.

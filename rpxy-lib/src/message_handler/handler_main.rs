@@ -156,7 +156,7 @@ where
           .default_server_name
           .as_ref()
           .ok_or(HttpError::NoMatchingBackendApp)?;
-        debug!("Serving by default app");
+        trace!("Serving by default app");
         fallback_to_default_app = true;
         self.app_manager.apps.get(default_server_name).unwrap()
       }
@@ -165,7 +165,7 @@ where
 
     // Redirect to https if !tls_enabled and redirect_to_https is true
     if !tls_enabled && backend_app.https_redirection.unwrap_or(false) {
-      debug!("Redirect to secure connection: {}", backend_app.server_name);
+      trace!("Redirect to secure connection: {}", backend_app.server_name);
       return secure_redirection_response(&backend_app.server_name, self.globals.proxy_config.public_https_port, &req);
     }
 

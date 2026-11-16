@@ -7,6 +7,10 @@
 - **Fix: honor a trusted proxy's client-visible scheme when rewriting `X-Forwarded-Proto` and `X-Forwarded-SSL`.** Previously both headers were derived solely from whether rpxy's own listener terminated TLS, so a plain listener behind a trusted TLS-terminating proxy forwarded `X-Forwarded-Proto: http` even when the client connection was HTTPS. They are now derived from the same fail-closed, trusted-forwarded-proxy-bounded scheme resolution already used for the sticky-cookie `Secure` attribute, evaluated against the original inbound headers so the two decisions can never disagree. An untrusted peer still cannot inject a scheme, and the `proto=` value rpxy emits for its own hop in a generated `Forwarded` header continues to describe the local listener protocol. `X-Forwarded-Port` is unchanged and still reports rpxy's own listener port.
 - Warn about unsupported or misplaced TOML fields during initial configuration loading and hot reload instead of silently ignoring them.
 
+### Improvement
+
+- **Demote routine per-request, per-connection, and per-reload `debug!` lines to `trace!`.** Lines that fired on the normal path of every request or connection (HTTP version rewrites toward the upstream, default-app fallback, HTTPS redirect, upgrade detection, cache hits/evictions, SNI / HTTP/3 connection setup, PROXY protocol `LOCAL`/`UNKNOWN` probes, routine sticky-cookie decisions) and the certificate reads repeated on every reload tick now log at `trace` instead of `debug`, so `RUST_LOG=debug` stays readable. Lifecycle events, anomalies (malformed headers or cookies, fallbacks, connection limits, health check failures), and the per-request "Request to be forwarded" line stay at `debug`. Message texts are unchanged.
+
 ## 0.14.0
 
 ### Important Changes
