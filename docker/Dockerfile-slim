@@ -37,6 +37,10 @@ RUN --mount=type=bind,target=. \
   --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
   --mount=type=cache,target=/root/.cargo/git,sharing=locked \
   --mount=type=cache,target=${CARGO_TARGET_CACHE},sharing=locked \
+  # The toolchain layer above can be reused from the build cache and pin an old
+  # stable; update it here (this layer reruns whenever the source changes) to
+  # satisfy `rust-version`.
+  rustup update stable --no-self-update && \
   echo "Building rpxy from source" && \
   # build rpxy
   cargo build --release --target $(cat /arch)-unknown-linux-musl --target-dir ${CARGO_TARGET_CACHE} ${CARGO_FEATURES} && \

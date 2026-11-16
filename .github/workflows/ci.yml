@@ -19,6 +19,13 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      # The runner image's preinstalled Rust can lag behind the latest stable,
+      # while the workspace tracks it via `rust-version`.
+      - name: Update Rust toolchain to latest stable
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustc --version
       - name: Run unit tests
         run: |
           cargo test --verbose
