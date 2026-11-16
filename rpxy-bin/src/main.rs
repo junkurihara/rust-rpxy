@@ -11,6 +11,11 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+// With `dhat-heap`, dhat's allocator replaces mimalloc, which is then compiled but never
+// referenced. Mark it as intentionally unused for cargo's `unused_dependencies` lint.
+#[cfg(all(feature = "dhat-heap", not(target_os = "illumos")))]
+use mimalloc as _;
+
 mod config;
 mod constants;
 mod error;
