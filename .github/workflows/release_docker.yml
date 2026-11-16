@@ -20,7 +20,7 @@ jobs:
       contents: read
       packages: write
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true) }}
     strategy:
       fail-fast: false
@@ -240,7 +240,7 @@ jobs:
       contents: write
       actions: write
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'develop' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.merged == true }}
     needs: build_and_push
     steps:

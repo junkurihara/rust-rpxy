@@ -39,6 +39,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   apt-get update && \
   apt-get install -qy --no-install-recommends $BUILD_DEPS ${ADDITIONAL_DEPS}
 
+# Tie the toolchain layer's cache to the current stable release: this file changes
+# only when a new stable is published, so the layer below is rebuilt exactly then.
+# Otherwise the layer cache can keep serving an old stable that no longer satisfies
+# `rust-version`, and `rustup update` in a later layer fails on overlayfs (EXDEV
+# when renaming component directories that live in a lower layer).
+ADD https://static.rust-lang.org/dist/channel-rust-stable.toml.sha256 /tmp/channel-rust-stable.toml.sha256
+
 RUN curl -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal --default-toolchain stable && \
   export PATH="$HOME/.cargo/bin:$PATH" && \
   echo "Install toolchain" && \

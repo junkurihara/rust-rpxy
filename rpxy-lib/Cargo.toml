@@ -3,11 +3,11 @@ name = "rpxy-lib"
 description = "Library of `rpxy`: a simple and ultrafast http reverse proxy"
 version.workspace = true
 authors.workspace = true
-homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 publish.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -37,8 +37,10 @@ post-quantum = [
   # rustls_post_quantum::provider() via builder_with_provider()), not on
   # rustls/prefer-post-quantum. Keep it in the chain so X25519MLKEM768 stays
   # offered on the QUIC path. See #602 review.
-  "s2n-quic-rustls/post-quantum",
-  "rpxy-acme/post-quantum",
+  # `?` keeps these optional deps off unless their own feature (http3-s2n /
+  # acme) enables them; without it, post-quantum alone would pull them in.
+  "s2n-quic-rustls?/post-quantum",
+  "rpxy-acme?/post-quantum",
   "rpxy-certs/post-quantum",
 ]
 
