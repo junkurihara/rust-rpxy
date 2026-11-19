@@ -323,11 +323,12 @@ fn check_content_length_limit<B>(req: &Request<B>, limit: Option<usize>) -> Http
   let Some(value) = req.headers().get(http::header::CONTENT_LENGTH) else {
     return Ok(());
   };
-  // Malformed Content-Length: let the downstream parser (hyper) handle it; we are only
-  // responsible for the size-bound check here. Parse as `u64` so that a syntactically
-  // valid but very large value (e.g. > 4 GiB on a 32-bit target) does not silently fall
-  // out of `s.parse::<usize>()` and skip the pre-flight 413; the comparison is widened
-  // to `u64`.
+  // Malformed Content-Length: rejected before this point by the h1/h2 parsers (hyper / h2)
+  // and, for HTTP/3, by the H3 adapter in `proxy_h3.rs`, which also rewrites a valid value to
+  // a single canonical one; we are only responsible for the size-bound check here. Parse as
+  // `u64` so that a syntactically valid but very large value (e.g. > 4 GiB on a 32-bit
+  // target) does not silently fall out of `s.parse::<usize>()` and skip the pre-flight 413;
+  // the comparison is widened to `u64`.
   let Ok(s) = value.to_str() else { return Ok(()) };
   let Ok(n) = s.parse::<u64>() else { return Ok(()) };
   if n > limit as u64 {
