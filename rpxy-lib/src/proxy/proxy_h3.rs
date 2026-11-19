@@ -133,20 +133,22 @@ where
     let content_length_mismatch_tx = content_length_mismatch.clone();
     self.globals.runtime_handle.spawn(async move {
       let mut sender = body_sender;
-      let mut size = 0usize;
+      // Counted as `u64` (the Content-Length range) so that it cannot wrap on 32-bit targets,
+      // where a large upload would otherwise be miscounted as a Content-Length mismatch.
+      let mut size = 0u64;
       // Received byte count that disagrees with the declared Content-Length (RFC 9114 §4.1.2).
       let mut mismatched_size = None;
       while let Some(mut body) = recv_stream.recv_data().await? {
         trace!("HTTP/3 incoming request body: remaining {}", body.remaining());
         // Checked before forwarding so that DATA beyond the declared length never reaches the upstream.
-        let received = size as u64 + body.remaining() as u64;
+        let received = size.saturating_add(body.remaining() as u64);
         if content_length.is_some_and(|declared| received > declared) {
           mismatched_size = Some(received);
           break;
         }
-        size += body.remaining();
+        size = received;
         if let Some(limit) = effective_body_limit
-          && size > limit
+          && size > limit as u64
         {
           error!(
             "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
@@ -160,8 +162,8 @@ where
         sender.send_data(body.copy_to_bytes(body.remaining())).await?;
       }
       // DATA ended before reaching the declared length.
-      if mismatched_size.is_none() && content_length.is_some_and(|declared| declared != size as u64) {
-        mismatched_size = Some(size as u64);
+      if mismatched_size.is_none() && content_length.is_some_and(|declared| declared != size) {
+        mismatched_size = Some(size);
       }
       if let (Some(declared), Some(received)) = (content_length, mismatched_size) {
         debug!(
