@@ -2206,7 +2206,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2231,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-acme"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2253,7 +2253,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-certs"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-lib"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "aes-gcm",
  "ahash",
@@ -2321,7 +2321,7 @@ dependencies = [
 
 [[package]]
 name = "rpxy-trusted-proxies"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "anyhow",
  "chrono",

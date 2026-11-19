@@ -1,6 +1,8 @@
 # CHANGELOG
 
-## 0.14.1 or 0.15.0 (Unreleased)
+## 0.14.2 or 0.15.0 (Unreleased)
+
+## 0.14.1
 
 ### Bugfix
 

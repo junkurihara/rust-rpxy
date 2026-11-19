@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.14.0"
+version = "0.14.1"
 authors = ["Jun Kurihara"]
 repository = "https://github.com/junkurihara/rust-rpxy"
 license = "MIT"
