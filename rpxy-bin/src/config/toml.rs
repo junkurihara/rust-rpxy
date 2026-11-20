@@ -356,13 +356,50 @@ pub struct ReverseProxyOption {
 
 #[cfg(feature = "health-check")]
 /// TOML deserialization: accepts both `true` and `{ type = "http", ... }`
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
-#[serde(untagged)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum HealthCheckOption {
   /// Simple boolean: `health_check = true` -> TCP with defaults
   Enabled(bool),
   /// Full config table: `[....health_check] type = "http" ...`
   Config(HealthCheckDetailOption),
+}
+
+#[cfg(feature = "health-check")]
+/// Hand-written instead of `#[serde(untagged)]`: an untagged enum buffers its input and
+/// deserializes the chosen variant outside the `serde_ignored` wrapper, so unknown keys inside the
+/// table would be dropped without the unsupported-field warning. Dispatching on the input type
+/// keeps the table's `MapAccess` wrapped.
+impl<'de> Deserialize<'de> for HealthCheckOption {
+  fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+  where
+    D: serde::Deserializer<'de>,
+  {
+    struct HealthCheckOptionVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for HealthCheckOptionVisitor {
+      type Value = HealthCheckOption;
+
+      fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a boolean or a health check table")
+      }
+
+      fn visit_bool<E>(self, value: bool) -> std::result::Result<Self::Value, E>
+      where
+        E: serde::de::Error,
+      {
+        Ok(HealthCheckOption::Enabled(value))
+      }
+
+      fn visit_map<A>(self, map: A) -> std::result::Result<Self::Value, A::Error>
+      where
+        A: serde::de::MapAccess<'de>,
+      {
+        HealthCheckDetailOption::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(HealthCheckOption::Config)
+      }
+    }
+
+    deserializer.deserialize_any(HealthCheckOptionVisitor)
+  }
 }
 
 #[cfg(feature = "health-check")]
@@ -1527,6 +1564,114 @@ mod tests {
     )
     .unwrap_err();
     assert!(err.to_string().contains("healthy_threshold"));
+  }
+
+  /// Single-app config whose only reverse proxy ends with `health_check_toml`.
+  #[cfg(feature = "health-check")]
+  fn config_with_health_check(health_check_toml: &str) -> String {
+    format!(
+      r#"
+      [apps.testdomain]
+      server_name = "example.com"
+
+      [[apps.testdomain.reverse_proxy]]
+      upstream = [{{ location = "backend.example", tls = true }}]
+      {health_check_toml}
+      "#
+    )
+  }
+
+  /// Deserialize `config_with_health_check(health_check_toml)` and return the health check option
+  /// together with the reported unsupported fields.
+  #[cfg(feature = "health-check")]
+  fn parse_health_check_option(health_check_toml: &str) -> (Option<HealthCheckOption>, Vec<String>) {
+    let config = config_with_health_check(health_check_toml);
+    let (config, unsupported_fields) = ConfigToml::deserialize_with_unsupported_fields(&config).unwrap();
+    let mut apps = config.apps.unwrap().0;
+    let mut reverse_proxy = apps.remove("testdomain").unwrap().reverse_proxy.unwrap();
+    (reverse_proxy.remove(0).health_check, unsupported_fields)
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn health_check_bool_is_deserialized() {
+    for enabled in [true, false] {
+      let (health_check, unsupported_fields) = parse_health_check_option(&format!("health_check = {enabled}"));
+      assert_eq!(health_check, Some(HealthCheckOption::Enabled(enabled)));
+      assert!(unsupported_fields.is_empty());
+    }
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn health_check_table_is_deserialized_without_unsupported_fields() {
+    let (health_check, unsupported_fields) = parse_health_check_option(
+      r#"
+      [apps.testdomain.reverse_proxy.health_check]
+      type = "http"
+      interval = 10
+      timeout = 5
+      unhealthy_threshold = 3
+      healthy_threshold = 2
+      path = "/health"
+      expected_status = 204
+      "#,
+    );
+
+    assert_eq!(
+      health_check,
+      Some(HealthCheckOption::Config(HealthCheckDetailOption {
+        check_type: Some("http".to_string()),
+        interval: Some(10),
+        timeout: Some(5),
+        unhealthy_threshold: Some(3),
+        healthy_threshold: Some(2),
+        path: Some("/health".to_string()),
+        expected_status: Some(204),
+      }))
+    );
+    assert!(unsupported_fields.is_empty());
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn health_check_unknown_fields_are_reported() {
+    let inline_table = r#"health_check = { type = "tcp", unhealthy_threshhold = 1 }"#;
+    let sub_table = r#"
+      [apps.testdomain.reverse_proxy.health_check]
+      type = "tcp"
+      unhealthy_threshhold = 1
+      "#;
+
+    for health_check_toml in [inline_table, sub_table] {
+      let (health_check, unsupported_fields) = parse_health_check_option(health_check_toml);
+
+      // Known fields are still applied; only the misspelled key is reported.
+      let Some(HealthCheckOption::Config(detail)) = health_check else {
+        panic!("health_check table was not deserialized as Config: {health_check:?}");
+      };
+      assert_eq!(detail.check_type.as_deref(), Some("tcp"));
+      assert_eq!(detail.unhealthy_threshold, None);
+      assert_eq!(
+        unsupported_fields,
+        vec!["apps.testdomain.reverse_proxy.0.health_check.unhealthy_threshhold"]
+      );
+    }
+  }
+
+  #[cfg(feature = "health-check")]
+  #[test]
+  fn health_check_invalid_types_are_rejected() {
+    for health_check_toml in [
+      "health_check = 1",
+      r#"health_check = "true""#,
+      r#"health_check = { unhealthy_threshold = "x" }"#,
+    ] {
+      assert!(
+        ConfigToml::parse(&config_with_health_check(health_check_toml)).is_err(),
+        "accepted invalid health_check: {health_check_toml}"
+      );
+    }
   }
 
   #[test]
