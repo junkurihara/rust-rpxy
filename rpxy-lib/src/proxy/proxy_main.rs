@@ -104,7 +104,7 @@ async fn serve_tls_handshake(
   let start = acceptor.unwrap();
   let client_hello = start.client_hello();
   let sni = client_hello.server_name();
-  debug!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", sni.unwrap_or("None"));
+  trace!("HTTP/2 or 1.1: SNI in ClientHello: {:?}", sni.unwrap_or("None"));
   let server_name = sni.map(ServerName::from);
   if server_name.is_none() {
     info!(peer = %client_addr, sni = "-", failure = "no_sni", "TLS handshake failed");

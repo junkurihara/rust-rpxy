@@ -73,7 +73,7 @@ pub(super) fn update_request_line<B>(
     .map(|v| v.as_bytes().starts_with(b"application/grpc"))
     == Some(true)
   {
-    debug!("Must be http/2 for gRPC request.");
+    trace!("Must be http/2 for gRPC request.");
     *req.version_mut() = Version::HTTP_2;
     return Ok(());
   }
@@ -81,11 +81,11 @@ pub(super) fn update_request_line<B>(
   // If not specified (force_httpXX_upstream) and https, version is preserved except for http/3
   if upstream_chosen.uri.scheme() == Some(&Scheme::HTTP) {
     // Change version to http/1.1 when destination scheme is http
-    debug!("Change version to http/1.1 when destination scheme is http unless upstream option enabled.");
+    trace!("Change version to http/1.1 when destination scheme is http unless upstream option enabled.");
     *req.version_mut() = Version::HTTP_11;
   } else if req.version() == Version::HTTP_3 {
     // HTTP/3 is always https
-    debug!("HTTP/3 is currently unsupported for request to upstream.");
+    trace!("HTTP/3 is currently unsupported for request to upstream.");
     *req.version_mut() = Version::HTTP_2;
   }
 

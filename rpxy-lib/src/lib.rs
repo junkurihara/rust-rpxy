@@ -25,6 +25,14 @@ use rustls::crypto::CryptoProvider;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
+// Mutually exclusive feature pairs: when both are enabled, the preferred one is used (see the
+// warnings in `entrypoint`) and the other's dependency is compiled but never referenced. Mark it
+// as intentionally unused so cargo's `unused_dependencies` lint only reports real leftovers.
+#[cfg(all(feature = "native-tls-backend", feature = "rustls-backend"))]
+use hyper_tls as _;
+#[cfg(all(feature = "http3-quinn", feature = "http3-s2n"))]
+use s2n_quic_h3 as _;
+
 /* ------------------------------------------------ */
 pub use crate::{
   constants::log_event_names,

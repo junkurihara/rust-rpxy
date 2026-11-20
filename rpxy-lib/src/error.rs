@@ -50,6 +50,9 @@ pub enum RpxyError {
   #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
   #[error("Exceeds max request body size for HTTP/3")]
   H3TooLargeBody,
+  #[cfg(any(feature = "http3-quinn", feature = "http3-s2n"))]
+  #[error("HTTP/3 request body does not match its Content-Length")]
+  H3ContentLengthMismatch,
   #[error("Request body exceeded limit: received {received} bytes, maximum allowed {limit}")]
   RequestBodyTooLarge { received: usize, limit: usize },
 
@@ -134,11 +137,17 @@ pub enum RpxyError {
   TaskJoinError(#[from] tokio::task::JoinError),
 
   // Others
-  #[error("Infallible")]
-  Infallible(#[from] std::convert::Infallible),
-
   /// No Acme server config for Acme challenge
   #[cfg(feature = "acme")]
   #[error("No Acme server config")]
   NoAcmeServerConfig,
+}
+
+/// `!` (and its alias `std::convert::Infallible`) has no values, so this conversion never runs.
+/// It lets generic bounds such as `B::Error: Into<RpxyError>` accept infallible error types
+/// (e.g. `Full<Bytes>` bodies) without an uninhabited variant in `RpxyError`.
+impl From<!> for RpxyError {
+  fn from(never: !) -> Self {
+    never
+  }
 }

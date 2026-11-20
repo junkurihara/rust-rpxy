@@ -6,15 +6,23 @@ use crate::{
   name_exp::ServerName,
 };
 use bytes::{Buf, Bytes};
-use http::{Request, Response};
+use http::{HeaderMap, HeaderName, HeaderValue, Request, Response, header};
 use http_body_util::BodyExt;
 use hyper_util::client::legacy::connect::Connect;
-use std::net::SocketAddr;
+use std::{
+  net::SocketAddr,
+  sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+  },
+};
 
 #[cfg(feature = "http3-quinn")]
-use h3::{quic::BidiStream, quic::Connection as ConnectionQuic, quic::OpenStreams, server::RequestStream};
+use h3::{error::Code, quic::BidiStream, quic::Connection as ConnectionQuic, quic::OpenStreams, server::RequestStream};
 #[cfg(all(feature = "http3-s2n", not(feature = "http3-quinn")))]
-use s2n_quic_h3::h3::{self, quic::BidiStream, quic::Connection as ConnectionQuic, quic::OpenStreams, server::RequestStream};
+use s2n_quic_h3::h3::{
+  self, error::Code, quic::BidiStream, quic::Connection as ConnectionQuic, quic::OpenStreams, server::RequestStream,
+};
 
 impl<T> Proxy<T>
 where
@@ -33,7 +41,7 @@ where
     <<C as OpenStreams<Bytes>>::BidiStream as BidiStream<Bytes>>::SendStream: Send,
   {
     let mut h3_conn = h3::server::Connection::<_, Bytes>::new(quic_connection).await?;
-    debug!("QUIC/HTTP3 connection established from {:?} {}", client_addr, tls_server_name);
+    trace!("QUIC/HTTP3 connection established from {:?} {}", client_addr, tls_server_name);
 
     // TODO: Evaluate whether tls_server_name should live in connection context
     // so listener_service_h3 does not need to thread it through this call.
@@ -85,7 +93,7 @@ where
   async fn h3_serve_stream<S>(
     &self,
     req: Request<()>,
-    stream: RequestStream<S, Bytes>,
+    mut stream: RequestStream<S, Bytes>,
     client_addr: SocketAddr,
     tls_server_name: ServerName,
   ) -> RpxyResult<()>
@@ -93,7 +101,18 @@ where
     S: BidiStream<Bytes> + Send + 'static,
     <S as BidiStream<Bytes>>::RecvStream: Send,
   {
-    let (req_parts, _) = req.into_parts();
+    let (mut req_parts, _) = req.into_parts();
+    // RFC 9114 §4.1.2 / §4.2: h3 does not check these fields itself. A malformed request is a
+    // stream error of type H3_MESSAGE_ERROR and is never handed to the message handler.
+    let content_length = match validate_request_headers(&mut req_parts.headers) {
+      Ok(content_length) => content_length,
+      Err(reason) => {
+        debug!("HTTP/3 malformed request from {}: {}", client_addr, reason);
+        stream.stop_stream(Code::H3_MESSAGE_ERROR);
+        stream.stop_sending(Code::H3_MESSAGE_ERROR);
+        return Ok(());
+      }
+    };
     // split stream and async body handling
     let (mut send_stream, mut recv_stream) = stream.split();
 
@@ -108,14 +127,28 @@ where
     // `handle_request_inner` covers CL-known oversize uploads with a clean 413; this loop
     // covers chunked / streaming overrun.
     let effective_body_limit = self.globals.proxy_config.request_max_body_size;
+    // Set by the body task when the received DATA does not match the declared Content-Length,
+    // so that the response side resets the stream instead of sending a response.
+    let content_length_mismatch = Arc::new(AtomicBool::new(false));
+    let content_length_mismatch_tx = content_length_mismatch.clone();
     self.globals.runtime_handle.spawn(async move {
       let mut sender = body_sender;
-      let mut size = 0usize;
+      // Counted as `u64` (the Content-Length range) so that it cannot wrap on 32-bit targets,
+      // where a large upload would otherwise be miscounted as a Content-Length mismatch.
+      let mut size = 0u64;
+      // Received byte count that disagrees with the declared Content-Length (RFC 9114 §4.1.2).
+      let mut mismatched_size = None;
       while let Some(mut body) = recv_stream.recv_data().await? {
         trace!("HTTP/3 incoming request body: remaining {}", body.remaining());
-        size += body.remaining();
+        // Checked before forwarding so that DATA beyond the declared length never reaches the upstream.
+        let received = size.saturating_add(body.remaining() as u64);
+        if content_length.is_some_and(|declared| received > declared) {
+          mismatched_size = Some(received);
+          break;
+        }
+        size = received;
         if let Some(limit) = effective_body_limit
-          && size > limit
+          && size > limit as u64
         {
           error!(
             "Exceeds max request body size for HTTP/3: received {}, maximum_allowed {}",
@@ -127,6 +160,22 @@ where
         }
         // create stream body to save memory, shallow copy (increment of ref-count) to Bytes using copy_to_bytes
         sender.send_data(body.copy_to_bytes(body.remaining())).await?;
+      }
+      // DATA ended before reaching the declared length.
+      if mismatched_size.is_none() && content_length.is_some_and(|declared| declared != size) {
+        mismatched_size = Some(size);
+      }
+      if let (Some(declared), Some(received)) = (content_length, mismatched_size) {
+        debug!(
+          "HTTP/3 request body does not match content-length: declared {}, received {}",
+          declared, received
+        );
+        // Publish the mismatch before aborting, so that the response side sees it no later than
+        // the message handler observes the aborted upstream body.
+        content_length_mismatch_tx.store(true, Ordering::SeqCst);
+        recv_stream.stop_sending(Code::H3_MESSAGE_ERROR);
+        sender.abort();
+        return Err(RpxyError::H3ContentLengthMismatch);
       }
 
       // trailers: use inner for work around. (directly get trailer)
@@ -149,6 +198,14 @@ where
         Some(tls_server_name),
       )
       .await?;
+
+    // The request body did not match its Content-Length: treat it as a stream error instead of
+    // sending the response, which is typically a 502 caused by the aborted upstream body. A
+    // mismatch detected after this point only stops the receiving side.
+    if content_length_mismatch.load(Ordering::SeqCst) {
+      send_stream.stop_stream(Code::H3_MESSAGE_ERROR);
+      return Ok(());
+    }
 
     let (new_res_parts, mut new_body) = res.into_parts();
     let new_res = Response::from_parts(new_res_parts, ());
@@ -183,5 +240,188 @@ where
       }
     }
     Ok(send_stream.finish().await?)
+  }
+}
+
+/// Connection-specific header fields that must not appear in an HTTP/3 message (RFC 9114 §4.2).
+static CONNECTION_SPECIFIC_HEADERS: [HeaderName; 5] = [
+  header::CONNECTION,
+  HeaderName::from_static("keep-alive"),
+  HeaderName::from_static("proxy-connection"),
+  header::TRANSFER_ENCODING,
+  header::UPGRADE,
+];
+
+/// Validate the header section of an HTTP/3 request (RFC 9114 §4.1.2, §4.2).
+///
+/// Rejects connection-specific fields, a `te` other than `trailers`, and an invalid or
+/// conflicting `content-length`. A valid `content-length` is rewritten to a single canonical
+/// value, so later consumers (the pre-flight size check, the upstream request) never see
+/// duplicates, list syntax, or surrounding whitespace. Returns the declared length, if any.
+fn validate_request_headers(headers: &mut HeaderMap) -> Result<Option<u64>, &'static str> {
+  if CONNECTION_SPECIFIC_HEADERS.iter().any(|name| headers.contains_key(name)) {
+    return Err("connection-specific header field");
+  }
+  let te_is_trailers_only = headers.get_all(header::TE).iter().all(|value| {
+    value
+      .as_bytes()
+      .split(|b| *b == b',')
+      .map(|element| element.trim_ascii())
+      .filter(|element| !element.is_empty())
+      .all(|element| element.eq_ignore_ascii_case(b"trailers"))
+  });
+  if !te_is_trailers_only {
+    return Err("te header field other than trailers");
+  }
+
+  let mut content_length = None;
+  for value in headers.get_all(header::CONTENT_LENGTH) {
+    for element in value.as_bytes().split(|b| *b == b',') {
+      let n = parse_decimal(element.trim_ascii()).ok_or("invalid content-length")?;
+      if content_length.is_some_and(|declared| declared != n) {
+        return Err("conflicting content-length");
+      }
+      content_length = Some(n);
+    }
+  }
+  if let Some(n) = content_length {
+    headers.insert(header::CONTENT_LENGTH, HeaderValue::from(n));
+  }
+  Ok(content_length)
+}
+
+/// Parse `1*DIGIT` into `u64`; rejects empty input, signs, and overflow.
+fn parse_decimal(digits: &[u8]) -> Option<u64> {
+  if digits.is_empty() {
+    return None;
+  }
+  digits.iter().try_fold(0u64, |acc, &b| {
+    if !b.is_ascii_digit() {
+      return None;
+    }
+    acc.checked_mul(10)?.checked_add(u64::from(b - b'0'))
+  })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn headers_with(fields: &[(&'static str, &'static str)]) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for (name, value) in fields {
+      headers.append(*name, HeaderValue::from_static(value));
+    }
+    headers
+  }
+
+  #[test]
+  fn content_length_absent_is_none() {
+    let mut h = headers_with(&[("content-type", "text/plain")]);
+    assert_eq!(validate_request_headers(&mut h), Ok(None));
+    assert!(!h.contains_key(header::CONTENT_LENGTH));
+  }
+
+  #[test]
+  fn content_length_single_value_is_returned() {
+    let mut h = headers_with(&[("content-length", "10")]);
+    assert_eq!(validate_request_headers(&mut h), Ok(Some(10)));
+    assert_eq!(h.get(header::CONTENT_LENGTH).unwrap(), "10");
+  }
+
+  /// Leading zeros and surrounding whitespace are rewritten to the canonical value, so the
+  /// pre-flight size check (`str::parse::<u64>`) can always parse it.
+  #[test]
+  fn content_length_is_canonicalised() {
+    for value in ["005", " 5", "5 ", "\t5"] {
+      let mut h = headers_with(&[("content-length", value)]);
+      assert_eq!(validate_request_headers(&mut h), Ok(Some(5)), "value {value:?}");
+      assert_eq!(h.get(header::CONTENT_LENGTH).unwrap(), "5", "value {value:?}");
+    }
+  }
+
+  /// RFC 9110 §8.6 allows identical duplicates; they collapse into a single field.
+  #[test]
+  fn identical_content_length_duplicates_are_normalised() {
+    let mut fields = headers_with(&[("content-length", "5"), ("content-length", "5")]);
+    assert_eq!(validate_request_headers(&mut fields), Ok(Some(5)));
+    assert_eq!(fields.get_all(header::CONTENT_LENGTH).iter().count(), 1);
+
+    let mut list = headers_with(&[("content-length", "5, 5")]);
+    assert_eq!(validate_request_headers(&mut list), Ok(Some(5)));
+    assert_eq!(list.get(header::CONTENT_LENGTH).unwrap(), "5");
+  }
+
+  #[test]
+  fn conflicting_content_length_is_rejected() {
+    let mut fields = headers_with(&[("content-length", "5"), ("content-length", "10")]);
+    assert_eq!(validate_request_headers(&mut fields), Err("conflicting content-length"));
+
+    let mut list = headers_with(&[("content-length", "5, 6")]);
+    assert_eq!(validate_request_headers(&mut list), Err("conflicting content-length"));
+  }
+
+  #[test]
+  fn invalid_content_length_is_rejected() {
+    for value in ["abc", "+5", "-5", "", "5,", "5 0", "0x10", "18446744073709551616"] {
+      let mut h = headers_with(&[("content-length", value)]);
+      assert_eq!(
+        validate_request_headers(&mut h),
+        Err("invalid content-length"),
+        "value {value:?}"
+      );
+    }
+    let mut obs_text = HeaderMap::new();
+    obs_text.insert(header::CONTENT_LENGTH, HeaderValue::from_bytes(b"5\xff").unwrap());
+    assert_eq!(validate_request_headers(&mut obs_text), Err("invalid content-length"));
+  }
+
+  #[test]
+  fn max_u64_content_length_is_accepted() {
+    let mut h = HeaderMap::new();
+    h.insert(header::CONTENT_LENGTH, HeaderValue::from(u64::MAX));
+    assert_eq!(validate_request_headers(&mut h), Ok(Some(u64::MAX)));
+  }
+
+  #[test]
+  fn connection_specific_fields_are_rejected() {
+    for name in ["connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade"] {
+      let mut h = headers_with(&[(name, "x")]);
+      assert_eq!(
+        validate_request_headers(&mut h),
+        Err("connection-specific header field"),
+        "field {name}"
+      );
+    }
+  }
+
+  #[test]
+  fn te_trailers_is_accepted() {
+    for value in ["trailers", "Trailers", " trailers "] {
+      let mut h = headers_with(&[("te", value)]);
+      assert_eq!(validate_request_headers(&mut h), Ok(None), "value {value:?}");
+    }
+    let mut repeated = headers_with(&[("te", "trailers"), ("te", "trailers")]);
+    assert_eq!(validate_request_headers(&mut repeated), Ok(None));
+  }
+
+  #[test]
+  fn te_other_than_trailers_is_rejected() {
+    for value in ["gzip", "trailers, gzip", "trailers;q=1"] {
+      let mut h = headers_with(&[("te", value)]);
+      assert_eq!(
+        validate_request_headers(&mut h),
+        Err("te header field other than trailers"),
+        "value {value:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn unrelated_headers_are_left_untouched() {
+    let mut h = headers_with(&[("host", "example.com"), ("content-type", "text/plain"), ("cookie", "a=b")]);
+    let before = h.clone();
+    assert_eq!(validate_request_headers(&mut h), Ok(None));
+    assert_eq!(h, before);
   }
 }

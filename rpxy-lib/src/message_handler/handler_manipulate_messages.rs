@@ -162,6 +162,7 @@ where
       authoritative_host.as_deref(),
       upstream_chosen,
       upstream_candidates,
+      tls_enabled,
       &self.globals.proxy_config.trusted_forwarded_proxies,
     )?;
 

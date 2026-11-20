@@ -174,7 +174,7 @@ impl RpxyCache {
       // Only evict if this exact generation is still current: a concurrent re-store may have
       // already replaced it with a fresh (live) entry that must not be removed, and whose file the
       // replacing store now owns.
-      debug!("Stale cache entry: {cache_key}");
+      trace!("Stale cache entry: {cache_key}");
       if self.inner.evict_if_generation(&cache_key, cached_object.generation).is_some()
         && let CacheFileOrOnMemory::File(path) = &cached_object.target
       {
@@ -198,7 +198,7 @@ impl RpxyCache {
             return None;
           }
         };
-        debug!("Cache hit from file: {cache_key}");
+        trace!("Cache hit from file: {cache_key}");
         ResponseBody::Streamed(stream_body)
       }
       CacheFileOrOnMemory::OnMemory(object) => {
@@ -209,7 +209,7 @@ impl RpxyCache {
         // after insertion, with no external aliasing. Re-hashing it on every hit only guards
         // against in-RAM corruption, which the stored `hash` itself equally suffers, so it is not
         // worth a full SHA-256 per hit.
-        debug!("Cache hit from on memory: {cache_key}");
+        trace!("Cache hit from on memory: {cache_key}");
         ResponseBody::Boxed(BoxBody::new(full(object)))
       }
     };
@@ -417,7 +417,7 @@ where
     // `saturating_add` keeps the size check correct even against a pathologically large frame
     // length, so the limit can never be bypassed by integer overflow.
     if size.saturating_add(data.len()) > max_each_size {
-      debug!("Response exceeds max_each_size ({max_each_size} bytes); forwarding without caching");
+      trace!("Response exceeds max_each_size ({max_each_size} bytes); forwarding without caching");
       cacheable = false;
       if let Some(s) = spill.take() {
         s.abort().await;
@@ -534,7 +534,7 @@ async fn publish_cache_object(
         if let CacheFileOrOnMemory::File(old_path) = v.target
           && Some(&old_path) != new_file_path.as_ref()
         {
-          debug!("Evicting displaced cache file");
+          trace!("Evicting displaced cache file");
           file_store.evict(&old_path).await;
         }
       }
@@ -602,8 +602,8 @@ impl FileStore {
     // `incr_count`-before-publish makes this unreachable in practice.
     let _ = self
       .cnt
-      .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| Some(c.saturating_sub(1)));
-    debug!(
+      .try_update(Ordering::Relaxed, Ordering::Relaxed, |c| Some(c.saturating_sub(1)));
+    trace!(
       "Removed a cache file at {:?} (file count: {})",
       path.as_ref(),
       self.cnt.load(Ordering::Relaxed)

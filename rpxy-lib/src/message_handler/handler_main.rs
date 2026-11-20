@@ -156,7 +156,7 @@ where
           .default_server_name
           .as_ref()
           .ok_or(HttpError::NoMatchingBackendApp)?;
-        debug!("Serving by default app");
+        trace!("Serving by default app");
         fallback_to_default_app = true;
         self.app_manager.apps.get(default_server_name).unwrap()
       }
@@ -165,7 +165,7 @@ where
 
     // Redirect to https if !tls_enabled and redirect_to_https is true
     if !tls_enabled && backend_app.https_redirection.unwrap_or(false) {
-      debug!("Redirect to secure connection: {}", backend_app.server_name);
+      trace!("Redirect to secure connection: {}", backend_app.server_name);
       return secure_redirection_response(&backend_app.server_name, self.globals.proxy_config.public_https_port, &req);
     }
 
@@ -323,11 +323,12 @@ fn check_content_length_limit<B>(req: &Request<B>, limit: Option<usize>) -> Http
   let Some(value) = req.headers().get(http::header::CONTENT_LENGTH) else {
     return Ok(());
   };
-  // Malformed Content-Length: let the downstream parser (hyper) handle it; we are only
-  // responsible for the size-bound check here. Parse as `u64` so that a syntactically
-  // valid but very large value (e.g. > 4 GiB on a 32-bit target) does not silently fall
-  // out of `s.parse::<usize>()` and skip the pre-flight 413; the comparison is widened
-  // to `u64`.
+  // Malformed Content-Length: rejected before this point by the h1/h2 parsers (hyper / h2)
+  // and, for HTTP/3, by the H3 adapter in `proxy_h3.rs`, which also rewrites a valid value to
+  // a single canonical one; we are only responsible for the size-bound check here. Parse as
+  // `u64` so that a syntactically valid but very large value (e.g. > 4 GiB on a 32-bit
+  // target) does not silently fall out of `s.parse::<usize>()` and skip the pre-flight 413;
+  // the comparison is widened to `u64`.
   let Ok(s) = value.to_str() else { return Ok(()) };
   let Ok(n) = s.parse::<u64>() else { return Ok(()) };
   if n > limit as u64 {

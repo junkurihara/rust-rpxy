@@ -54,7 +54,7 @@ ${SYSTEM_LOG_FILE} {
     compress
     delaycompress
     dateformat -%Y-%m-%d-%s
-    size ${LOG_SIZE}
+    maxsize ${LOG_SIZE}
     copytruncate
     su ${USER} ${USER}
 }
@@ -70,7 +70,7 @@ ${ACCESS_LOG_FILE} {
     compress
     delaycompress
     dateformat -%Y-%m-%d-%s
-    size ${LOG_SIZE}
+    maxsize ${LOG_SIZE}
     copytruncate
     su ${USER} ${USER}
 }

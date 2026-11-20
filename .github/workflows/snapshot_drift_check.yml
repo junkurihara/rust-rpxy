@@ -21,6 +21,15 @@ jobs:
         with:
           submodules: recursive
 
+      # The runner image's preinstalled Rust can lag behind the latest stable,
+      # while the workspace tracks it via `rust-version`. A toolchain mismatch
+      # must not surface as a false "snapshot drift" in the step below.
+      - name: Update Rust toolchain to latest stable
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustc --version
+
       - name: Cache cargo
         uses: actions/cache@v6
         with:

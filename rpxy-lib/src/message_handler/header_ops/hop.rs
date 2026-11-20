@@ -55,7 +55,7 @@ pub(in crate::message_handler) fn extract_upgrade(headers: &HeaderMap) -> Option
     return None;
   }
   let m = headers.get(header::UPGRADE)?.to_str().ok()?;
-  debug!("Upgrade in request header: {}", m);
+  trace!("Upgrade in request header: {}", m);
   Some(m.to_owned())
 }
 

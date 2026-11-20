@@ -10,7 +10,7 @@ use crate::{
 
 use super::{
   common::add_header_entry_overwrite_if_exist,
-  forwarding::{extract_forwarding_chain_from_headers, generate_forwarded_header, reduce_trusted_proxy_chain},
+  forwarding::{extract_forwarding_chain_from_headers, generate_forwarded_header, listener_proto, reduce_trusted_proxy_chain},
 };
 
 /// overwrite HOST value with upstream hostname (like 192.168.xx.x seen from rpxy)
@@ -46,11 +46,14 @@ pub(in crate::message_handler) fn apply_default_app_host_rewrite(
 /// This function is called after almost all other headers has been set and updated.
 /// `authoritative_host` is the host of the original request (URI host preferred, port
 /// included, Host-header fallback), computed once by the caller before any Host rewrite.
+/// `tls` states whether rpxy's own listener terminates TLS; it decides the `proto=` value
+/// emitted for rpxy's own hop when this function generates a `Forwarded` header.
 pub(in crate::message_handler) fn apply_upstream_options_to_header(
   headers: &mut HeaderMap,
   authoritative_host: Option<&str>,
   upstream_chosen: &Upstream,
   upstream_candidates: &UpstreamCandidates,
+  tls: bool,
   trusted_forwarded_proxies: &[IpNet],
 ) -> Result<()> {
   // `options` is a set, so dispatch by direct membership instead of iterating it. The three
@@ -81,7 +84,16 @@ pub(in crate::message_handler) fn apply_upstream_options_to_header(
       warn!("Failed to generate Forwarded header: no X-Forwarded-For information found in headers");
       return Ok(());
     };
-    let normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
+    let mut normalized_chain = reduce_trusted_proxy_chain(forwarding_chain, trusted_forwarded_proxies);
+    // The last hop of the normalized chain is rpxy's own peer entry. Its `proto=` must
+    // describe the connection between that peer and rpxy, i.e. rpxy's local listener
+    // protocol - NOT the client-visible scheme. X-Forwarded-Proto now carries the
+    // client-visible scheme (which may be `https` when a trusted upstream proxy terminates
+    // TLS in front of a plain listener), and re-parsing the headers would otherwise copy
+    // that value onto rpxy's own hop.
+    if let Some(own_hop) = normalized_chain.last_mut() {
+      own_hop.set_proto(listener_proto(tls));
+    }
     match generate_forwarded_header(&normalized_chain) {
       Ok(forwarded_value) => {
         add_header_entry_overwrite_if_exist(headers, header::FORWARDED, forwarded_value)?;
@@ -104,6 +116,11 @@ mod tests {
     globals::UpstreamUri,
   };
   use ahash::HashSet;
+  use ipnet::IpNet;
+
+  fn trusted(cidrs: &[&str]) -> Vec<IpNet> {
+    cidrs.iter().map(|c| c.parse::<IpNet>().unwrap()).collect()
+  }
 
   fn candidates_with_options(uri: &str, options: HashSet<UpstreamOption>) -> UpstreamCandidates {
     UpstreamCandidates {
@@ -126,7 +143,15 @@ mod tests {
       "http://backend.internal",
       HashSet::from_iter([UpstreamOption::UpgradeInsecureRequests]),
     );
-    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    apply_upstream_options_to_header(
+      &mut headers,
+      Some("app.example"),
+      &candidates.inner[0],
+      &candidates,
+      false,
+      &[],
+    )
+    .unwrap();
     assert_eq!(headers.get(header::UPGRADE_INSECURE_REQUESTS).unwrap(), "1");
   }
 
@@ -134,7 +159,15 @@ mod tests {
   fn upgrade_insecure_requests_absent_when_option_unset() {
     let mut headers = HeaderMap::new();
     let candidates = candidates_with_options("http://backend.internal", HashSet::default());
-    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    apply_upstream_options_to_header(
+      &mut headers,
+      Some("app.example"),
+      &candidates.inner[0],
+      &candidates,
+      false,
+      &[],
+    )
+    .unwrap();
     assert!(headers.get(header::UPGRADE_INSECURE_REQUESTS).is_none());
   }
 
@@ -146,7 +179,15 @@ mod tests {
       "http://backend.internal",
       HashSet::from_iter([UpstreamOption::UpgradeInsecureRequests]),
     );
-    apply_upstream_options_to_header(&mut headers, Some("app.example"), &candidates.inner[0], &candidates, &[]).unwrap();
+    apply_upstream_options_to_header(
+      &mut headers,
+      Some("app.example"),
+      &candidates.inner[0],
+      &candidates,
+      false,
+      &[],
+    )
+    .unwrap();
     // or_insert leaves a pre-existing value untouched
     assert_eq!(headers.get(header::UPGRADE_INSECURE_REQUESTS).unwrap(), "0");
   }
@@ -182,6 +223,7 @@ mod tests {
       Some("app.example:8443"),
       &upstream_candidates.inner[0],
       &upstream_candidates,
+      true,
       &[],
     )
     .unwrap();
@@ -189,6 +231,54 @@ mod tests {
     assert_eq!(
       headers.get(header::FORWARDED).unwrap(),
       "for=198.51.100.10;proto=https;host=\"app.example:8443\""
+    );
+  }
+
+  /// When the `forwarded_header` option generates a `Forwarded` header on a PLAIN listener
+  /// behind a trusted TLS-terminating proxy, `X-Forwarded-Proto` carries the client-visible
+  /// scheme (`https`) - but the `proto=` value of rpxy's own hop (the last chain entry) must
+  /// describe rpxy's local listener protocol (`http`), not the client-visible scheme.
+  #[test]
+  fn forwarded_header_generation_uses_listener_proto_for_own_hop() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::HOST, HeaderValue::from_static("app.example"));
+    headers.insert(
+      http::HeaderName::from_static("x-forwarded-for"),
+      HeaderValue::from_static("198.51.100.10, 10.1.2.3"),
+    );
+    headers.insert(
+      http::HeaderName::from_static("x-forwarded-proto"),
+      HeaderValue::from_static("https"),
+    );
+
+    let upstream = Upstream::from(&UpstreamUri {
+      inner: "http://backend.internal".parse().unwrap(),
+    });
+    let upstream_candidates = UpstreamCandidates {
+      inner: vec![upstream],
+      path: "/".into(),
+      replace_path: None,
+      load_balance: LoadBalance::default(),
+      options: HashSet::from_iter([UpstreamOption::ForwardedHeader]),
+      #[cfg(feature = "health-check")]
+      health_check_config: None,
+    };
+
+    apply_upstream_options_to_header(
+      &mut headers,
+      Some("app.example"),
+      &upstream_candidates.inner[0],
+      &upstream_candidates,
+      false,
+      &trusted(&["10.0.0.0/8"]),
+    )
+    .unwrap();
+
+    // The last hop (10.1.2.3, rpxy's own peer) carries proto=http from the local listener,
+    // while the earlier client hop has no proto= (not observable by rpxy).
+    assert_eq!(
+      headers.get(header::FORWARDED).unwrap(),
+      "for=198.51.100.10, for=10.1.2.3;proto=http;host=app.example"
     );
   }
 
@@ -243,6 +333,7 @@ mod tests {
       Some("app.example"),
       &upstream_candidates.inner[0],
       &upstream_candidates,
+      false,
       &[],
     )
     .unwrap();
@@ -273,6 +364,7 @@ mod tests {
       Some("app.example"),
       &upstream_candidates.inner[0],
       &upstream_candidates,
+      false,
       &[],
     )
     .unwrap();
@@ -306,6 +398,7 @@ mod tests {
       Some("app.example"),
       &upstream_candidates.inner[0],
       &upstream_candidates,
+      false,
       &[],
     )
     .unwrap_err();

@@ -10,8 +10,7 @@ impl TryFrom<&PathBuf> for ConfigToml {
 
   fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
     let config_str = std::fs::read_to_string(path).map_err(|e| format!("Failed to read config file: {}", e))?;
-    let config_toml: ConfigToml = toml::from_str(&config_str).map_err(|e| format!("Failed to parse toml config: {}", e))?;
-    Ok(config_toml)
+    ConfigToml::parse(&config_str).map_err(|e| format!("Failed to parse toml config: {}", e))
   }
 }
 
@@ -26,8 +25,7 @@ impl AsyncFileLoad for ConfigToml {
     let config_str = tokio::fs::read_to_string(path)
       .await
       .map_err(|e| format!("Failed to read config file: {}", e))?;
-    let config_toml: ConfigToml = toml::from_str(&config_str).map_err(|e| format!("Failed to parse toml config: {}", e))?;
-    Ok(config_toml)
+    ConfigToml::parse(&config_str).map_err(|e| format!("Failed to parse toml config: {}", e))
   }
 }
 

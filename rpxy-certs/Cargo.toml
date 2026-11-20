@@ -3,11 +3,11 @@ name = "rpxy-certs"
 description = "Cert manager library for `rpxy`"
 version.workspace = true
 authors.workspace = true
-homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 publish.workspace = true
 
 [features]
@@ -19,21 +19,21 @@ http3 = []
 ahash = { version = "0.8.12" }
 tracing = { version = "0.1.44" }
 derive_builder = { version = "0.20.2" }
-thiserror = { version = "2.0.18" }
+thiserror = { version = "2.0.21" }
 hot_reload = { version = "0.3.6" }
-async-trait = { version = "0.1.89" }
-rustls = { version = "0.23.42", default-features = false, features = [
+async-trait = { version = "0.1.92" }
+rustls = { version = "0.23.46", default-features = false, features = [
   "std",
   "aws_lc_rs",
 ] }
-rustls-webpki = { version = "0.103.13", default-features = false, features = [
+rustls-webpki = { version = "0.103.17", default-features = false, features = [
   "std",
   "aws-lc-rs",
 ] }
 x509-parser = { version = "0.18.1" }
 
 [dev-dependencies]
-tokio = { version = "1.53.0", default-features = false, features = [
+tokio = { version = "1.54.1", default-features = false, features = [
   "rt-multi-thread",
   "macros",
 ] }

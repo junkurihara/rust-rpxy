@@ -3,11 +3,11 @@ name = "rpxy-lib"
 description = "Library of `rpxy`: a simple and ultrafast http reverse proxy"
 version.workspace = true
 authors.workspace = true
-homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 publish.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -37,19 +37,21 @@ post-quantum = [
   # rustls_post_quantum::provider() via builder_with_provider()), not on
   # rustls/prefer-post-quantum. Keep it in the chain so X25519MLKEM768 stays
   # offered on the QUIC path. See #602 review.
-  "s2n-quic-rustls/post-quantum",
-  "rpxy-acme/post-quantum",
+  # `?` keeps these optional deps off unless their own feature (http3-s2n /
+  # acme) enables them; without it, post-quantum alone would pull them in.
+  "s2n-quic-rustls?/post-quantum",
+  "rpxy-acme?/post-quantum",
   "rpxy-certs/post-quantum",
 ]
 
 [dependencies]
-rand = "0.10.2"
+rand = "0.10.4"
 ahash = "0.8.12"
 bytes = "1.12.1"
-itoa = "1.0.18"
+itoa = "1.0.19"
 derive_builder = "0.20.2"
-futures = { version = "0.3.33", features = ["alloc", "async-await"] }
-tokio = { version = "1.53.0", default-features = false, features = [
+futures = { version = "0.3.34", features = ["alloc", "async-await"] }
+tokio = { version = "1.54.1", default-features = false, features = [
   "net",
   "rt-multi-thread",
   "time",
@@ -57,28 +59,28 @@ tokio = { version = "1.53.0", default-features = false, features = [
   "macros",
   "fs",
 ] }
-tokio-util = { version = "0.7.18", default-features = false }
+tokio-util = { version = "0.7.20", default-features = false }
 pin-project-lite = "0.2.17"
-async-trait = "0.1.89"
+async-trait = "0.1.92"
 
 # Error handling
-anyhow = "1.0.103"
-thiserror = "2.0.18"
+anyhow = "1.0.104"
+thiserror = "2.0.21"
 
 # http for both server and client
-http = "1.4.2"
-http-body-util = "0.1.4"
-hyper = { version = "1.10.1", default-features = false }
-hyper-util = { version = "0.1.20", features = ["full"] }
-futures-util = { version = "0.3.33", default-features = false }
-futures-channel = { version = "0.3.33", default-features = false }
+http = "1.5.0"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", default-features = false }
+hyper-util = { version = "0.1.21", features = ["full"] }
+futures-util = { version = "0.3.34", default-features = false }
+futures-channel = { version = "0.3.34", default-features = false }
 
 # http client for upstream
 hyper-tls = { version = "0.6.0", features = [
   "alpn",
   "vendored",
 ], optional = true }
-hyper-rustls = { version = "0.27.9", default-features = false, features = [
+hyper-rustls = { version = "0.27.10", default-features = false, features = [
   "aws-lc-rs",
   "http1",
   "http2",
@@ -88,8 +90,8 @@ hyper-rustls = { version = "0.27.9", default-features = false, features = [
 # tls and cert management for server
 rpxy-certs = { path = "../rpxy-certs/", default-features = false }
 hot_reload = "0.3.6"
-rustls = { version = "0.23.42", default-features = false }
-tokio-rustls = { version = "0.26.4", features = ["early-data"] }
+rustls = { version = "0.23.46", default-features = false }
+tokio-rustls = { version = "0.26.6", features = ["early-data"] }
 
 # acme
 rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true }
@@ -98,14 +100,14 @@ rpxy-acme = { path = "../rpxy-acme/", default-features = false, optional = true 
 tracing = { version = "0.1.44" }
 
 # http/3
-quinn = { version = "0.11.11", optional = true }
+quinn = { version = "0.11.12", optional = true }
 h3 = { version = "0.0.8", features = ["tracing"], optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-s2n-quic = { version = "1.83.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
+s2n-quic = { version = "1.92.0", path = "../submodules/s2n-quic/quic/s2n-quic/", default-features = false, features = [
   "provider-tls-rustls",
 ], optional = true }
-s2n-quic-core = { version = "0.83.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
-s2n-quic-rustls = { version = "0.83.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
+s2n-quic-core = { version = "0.92.0", path = "../submodules/s2n-quic/quic/s2n-quic-core", default-features = false, optional = true }
+s2n-quic-rustls = { version = "0.92.0", path = "../submodules/s2n-quic/quic/s2n-quic-rustls", optional = true }
 s2n-quic-h3 = { path = "../submodules/s2n-quic/quic/s2n-quic-h3/", features = [
   "tracing",
 ], optional = true }
@@ -115,12 +117,12 @@ socket2 = { version = "0.6.5", features = ["all"] }
 
 # cache
 http-cache-semantics = { path = "../submodules/rusty-http-cache-semantics", default-features = false, optional = true }
-lru = { version = "0.18.1", optional = true }
-sha2 = { version = "0.11.0", default-features = false, optional = true }
+lru = { version = "0.19.0", optional = true }
+sha2 = { version = "0.11.1", default-features = false, optional = true }
 
 # proxy protocol / CIDR matching
 ppp = { version = "2.3.0", optional = true }
-ipnet = { version = "2.12.0" }
+ipnet = { version = "2.12.2" }
 
 # cookie handling for sticky cookie
 chrono = { version = "0.4.45", default-features = false, features = [
@@ -128,12 +130,12 @@ chrono = { version = "0.4.45", default-features = false, features = [
   "alloc",
   "clock",
 ], optional = true }
-base64 = { version = "0.22.1", optional = true }
+base64 = { version = "0.23.1", optional = true }
 # Intentional RC pin: this code targets the 0.11 AEAD nonce-generation API.
 # Re-evaluate this dependency, or vendor/pin a final release, before the release freeze.
-aes-gcm = { version = "0.11.0", optional = true, features = ["rand_core"] }
+aes-gcm = { version = "0.11.1", optional = true, features = ["rand_core"] }
 secrecy = { version = "0.10.3", optional = true }
 
 
 [dev-dependencies]
-tokio-test = "0.4.5"
+tokio-test = "0.4.6"

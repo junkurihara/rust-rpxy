@@ -38,7 +38,7 @@ impl ConnectionAdmission {
     self
       .inner
       .active
-      .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |active| {
+      .try_update(Ordering::Relaxed, Ordering::Relaxed, |active| {
         if active < self.inner.limit { Some(active + 1) } else { None }
       })
       .ok()?;

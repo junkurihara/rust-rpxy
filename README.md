@@ -69,13 +69,21 @@ Then you have an executable binary `rust-rpxy/target/release/rpxy`.
 > [!NOTE]
 > At this point, it can be built only on Linux, macOS and some Unix-like OSes ([#150](https://github.com/junkurihara/rust-rpxy/issues/150), [#478](https://github.com/junkurihara/rust-rpxy/pull/478)). If you want to use `rpxy` on Windows, please consider using the docker image (see below) as a workaround.
 
+> [!NOTE]
+> We do not have an installation option via [`crates.io`](https://crates.io/), i.e., `cargo install`, at this point since some dependencies are not yet published. Alternatively, you can use the docker image (see below) as the easiest way for `amd64` environments.
+
 ### Package Installation for Linux (RPM/DEB)
 
 You can find the Jenkins CI/CD build scripts for `rpxy` in the [./.build](./.build) directory.
 
+<details>
+<summary>Prebuilt packages</summary>
+
 Prebuilt packages for Linux RPM and DEB are available at [https://rpxy.gamerboy59.dev](https://rpxy.gamerboy59.dev), provided by [@Gamerboy59](https://github.com/Gamerboy59).
 
-Note that we do not have an installation option via [`crates.io`](https://crates.io/), i.e., `cargo install`, at this point since some dependencies are not yet published. Alternatively, you can use the docker image (see below) as the easiest way for `amd64` environments.
+**Warning**: These packages are built and distributed by a third party, and they may lag behind the latest release of `rpxy`, sometimes by several versions. Since new releases often include security-related fixes and improvements, please check the packaged version before installation. To always run the latest release, use the prebuilt binaries on the [GitHub Releases page](https://github.com/junkurihara/rust-rpxy/releases) or the docker image (see below).
+
+</details>
 
 ## Usage
 
@@ -305,9 +313,25 @@ This example configuration demonstrates a very common path-based routing situati
 
 Since this is currently a work-in-progress project, we are frequently adding new options. We first add new option entries in `config-example.toml` as examples. Please refer to it for up-to-date options. We will prepare comprehensive documentation for all options.
 
+### Upstream HTTP Version
+
+gRPC requests (`Content-Type: application/grpc`) are always sent to the upstream using HTTP/2. For other requests, a plaintext HTTP upstream (`tls = false`) always receives HTTP/1.1. A TLS upstream (`tls = true`) preserves the client's HTTP version by default, except that HTTP/3 is sent upstream as HTTP/2 because upstream HTTP/3 is not supported.
+
+Use `force_http11_upstream` or `force_http2_upstream` to override the ordinary upstream-version selection. These options are mutually exclusive; gRPC requests remain HTTP/2.
+
+`upstream_options` belongs to an individual `reverse_proxy` entry, not to the app/domain table. Placing it at the app/domain level emits an unsupported-field warning and has no effect.
+
+```toml
+[[apps.example.reverse_proxy]]
+upstream = [{ location = "backend.example:443", tls = true }]
+upstream_options = ["force_http11_upstream"]
+```
+
 ### Forwarding Headers and Trusted Proxies
 
 `rpxy` always rewrites the downstream-facing forwarding headers that backend applications commonly trust, including `X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-SSL`, and `X-Original-URI`.
+
+When the immediate peer is trusted, `X-Forwarded-Proto` and `X-Forwarded-SSL` reflect the *client-visible* scheme carried by the incoming `X-Forwarded-Proto` (or the `proto=` parameter of `Forwarded`), so a plain `rpxy` listener behind a TLS-terminating proxy still reports `https` to backends. An untrusted peer always yields `http`. `X-Forwarded-Port` is not affected and always reports `rpxy`'s own listener port.
 
 By default, no preceding proxy is trusted. If `trusted_forwarded_proxies` is omitted or empty, any incoming `X-Forwarded-*` or `Forwarded` values from the client or an unknown preceding proxy are ignored, and `rpxy` rebuilds the outgoing forwarding view from the immediate peer address only.
 
@@ -561,7 +585,14 @@ Your Docker container can receive only TCP-based connections, i.e., HTTP/2 or ea
 
 ### Managing `rpxy` via Web Interface
 
+<details>
+<summary>Third-party web interface</summary>
+
 Check the third-party project [`Gamerboy59/rpxy-webui`](https://github.com/Gamerboy59/rpxy-webui) to manage `rpxy` via a web interface.
+
+**Warning**: `rpxy-webui` is developed and maintained independently of `rpxy`, and it may not follow the latest `rpxy` releases. In particular, recent releases of `rpxy` include breaking configuration changes, where configuration files containing removed keys fail to load. Please check which version of `rpxy` is supported by `rpxy-webui` before use.
+
+</details>
 
 ### Other TIPS
 
