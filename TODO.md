@@ -30,6 +30,12 @@
   - HTTP/2 and HTTP/1.1 use a per-domain `rustls::ServerConfig`, so client-auth can be configured per domain.
   - HTTP/3 currently uses an aggregated `rustls::ServerConfig` for all non-client-auth domains, so a domain configured with client authentication cannot be served over HTTP/3.
 
+### HTTP/3
+
+- Reset the response with `H3_MESSAGE_ERROR` when a request body / Content-Length mismatch is detected after the upstream response has started (RFC 9114 §4.1.2)
+  - Currently the mismatch flag is checked only once, before `send_response`; a later mismatch only stops the receiving side, so the response can still complete. No upstream desync (excess DATA is never forwarded).
+  - Idea: signal the mismatch via `tokio::sync::oneshot` and `tokio::select!` over the handler and response streaming, then `stop_stream` the send side. Needs an E2E test with an early-responding upstream.
+
 ### Observability
 
 - Traces and metrics via OpenTelemetry (`tracing-opentelemetry` crate)
