@@ -53,8 +53,8 @@ rpxy-lib = { path = "../rpxy-lib/", default-features = false }
 rpxy-trusted-proxies = { path = "../rpxy-trusted-proxies/" }
 
 
-anyhow = { version = "1.0.104" }
-ahash = { version = "0.8.12", features = ["serde"] }
+anyhow = { version = "1.0.105" }
+ahash = { version = "0.8.14", features = ["serde"] }
 serde = { version = "1.0.229", default-features = false, features = [
   "derive",
   "std",
@@ -71,8 +71,8 @@ async-trait = { version = "0.1.92" }
 futures-util = { version = "0.3.34", default-features = false }
 
 # config
-clap = { version = "4.6.7", features = ["std", "cargo", "wrap_help"] }
-toml = { version = "1.2.1", default-features = false, features = [
+clap = { version = "4.6.10", features = ["std", "cargo", "wrap_help"] }
+toml = { version = "1.2.3", default-features = false, features = [
   "parse",
   "serde",
 ] }
